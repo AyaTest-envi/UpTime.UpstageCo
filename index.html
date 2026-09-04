@@ -1,0 +1,2119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>Upstage Co — Attendance &amp; Break Log Tool</title>
+<style>
+  :root{
+    --ink:#FFFFFF;
+    --panel:#F6F6F6;
+    --panel-2:#ECECEC;
+    --line:#DDDDDD;
+    --accent:#0A0A0A;
+    --accent-dim:#ECECEC;
+    --ok:#2FD97B;
+    --ok-dim:#123321;
+    --warn:#F5B301;
+    --warn-dim:#332601;
+    --danger:#FF4D4D;
+    --danger-dim:#3A1414;
+    --text:#0A0A0A;
+    --muted:#6B6B6B;
+    --radius:14px;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  html,body{margin:0;padding:0;height:100%;background:var(--ink);color:var(--text);}
+  body{overscroll-behavior-y:none;}
+  #app{max-width:480px;margin:0 auto;min-height:100vh;display:flex;flex-direction:column;position:relative;background:var(--ink);}
+  .wide #app{max-width:1180px;}
+
+  /* ---------- Generic ---------- */
+  a{color:inherit;}
+  button{font-family:inherit;}
+  .btn{
+    appearance:none;border:none;border-radius:12px;padding:16px 18px;font-size:16px;font-weight:700;
+    cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;letter-spacing:.2px;
+    transition:transform .08s ease, filter .15s ease; color:var(--text);
+  }
+  .btn:active{transform:scale(.97);}
+  .btn-block{width:100%;}
+  .btn-lg{padding:22px 18px;font-size:19px;border-radius:16px;}
+  .btn-accent{background:var(--accent);color:#FFFFFF;}
+  .btn-ghost{background:var(--panel-2);color:var(--text);border:1px solid var(--line);}
+  .btn-ok{background:var(--ok);color:#052914;}
+  .btn-warn{background:var(--warn);color:#2b2000;}
+  .btn-danger{background:var(--danger);color:#2b0303;}
+  .btn-outline-danger{background:transparent;border:1px solid var(--danger);color:var(--danger);}
+  .btn[disabled]{opacity:.35;pointer-events:none;}
+  .btn-sm{padding:9px 12px;font-size:13px;border-radius:9px;}
+  .row{display:flex;align-items:center;}
+  .row-between{display:flex;align-items:center;justify-content:space-between;}
+  .col{display:flex;flex-direction:column;}
+  .gap-8{gap:8px;} .gap-12{gap:12px;} .gap-16{gap:16px;}
+  .muted{color:var(--muted);}
+  .small{font-size:12.5px;}
+  .tiny{font-size:11px;}
+  .h1{font-size:26px;font-weight:800;letter-spacing:-.3px;margin:0;}
+  .h2{font-size:19px;font-weight:800;margin:0;letter-spacing:-.2px;}
+  .h3{font-size:15px;font-weight:700;margin:0;color:var(--muted);}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:16px;}
+  .card-tight{padding:12px 14px;}
+  .pill{display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border-radius:999px;font-size:12.5px;font-weight:700;}
+  .pill-ok{background:var(--ok-dim);color:var(--ok);}
+  .pill-warn{background:var(--warn-dim);color:var(--warn);}
+  .pill-danger{background:var(--danger-dim);color:var(--danger);}
+  .pill-muted{background:var(--panel-2);color:var(--muted);}
+  .dot{width:9px;height:9px;border-radius:50%;display:inline-block;}
+  .dot-ok{background:var(--ok);} .dot-warn{background:var(--warn);} .dot-danger{background:var(--danger);} .dot-muted{background:var(--muted);}
+  input,select,textarea{
+    background:var(--panel-2);border:1px solid var(--line);color:var(--text);border-radius:10px;
+    padding:13px 14px;font-size:15.5px;width:100%;font-family:inherit;
+  }
+  input:focus,select:focus,textarea:focus{outline:2px solid var(--accent);outline-offset:-1px;}
+  label{font-size:12.5px;color:var(--muted);font-weight:700;margin-bottom:6px;display:block;text-transform:none;}
+  .field{margin-bottom:14px;}
+  .divider{height:1px;background:var(--line);margin:14px 0;}
+  .scroll{overflow-y:auto;-webkit-overflow-scrolling:touch;}
+  .topbar{position:sticky;top:0;z-index:20;background:rgba(255,255,255,.92);backdrop-filter:blur(8px);
+    border-bottom:1px solid var(--line);padding:14px 18px;display:flex;align-items:center;justify-content:space-between;}
+  .topbrand{position:sticky;top:0;z-index:21;background:var(--ink);padding:8px 14px;display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--line);}
+  .backbtn{background:none;border:none;color:var(--text);font-size:15px;font-weight:700;display:flex;align-items:center;gap:6px;padding:4px;}
+  .content{padding:16px 18px 100px;flex:1;}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+  .grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;}
+  table{width:100%;border-collapse:collapse;font-size:13.5px;}
+  th{text-align:left;color:var(--muted);font-weight:700;font-size:11.5px;text-transform:uppercase;letter-spacing:.4px;padding:8px 10px;border-bottom:1px solid var(--line);}
+  td{padding:10px;border-bottom:1px solid var(--line);}
+  tr:last-child td{border-bottom:none;}
+  .avatar{width:38px;height:38px;border-radius:50%;background:var(--panel-2);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:14px;border:1px solid var(--line);flex-shrink:0;}
+  .toast{position:fixed;bottom:110px;left:50%;transform:translateX(-50%);background:var(--panel-2);
+    border:1px solid var(--line);padding:12px 18px;border-radius:12px;font-size:14px;font-weight:600;z-index:200;
+    box-shadow:0 10px 30px rgba(0,0,0,.15); max-width:90%; text-align:center;}
+  .modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:100;display:flex;align-items:flex-end;justify-content:center;}
+  .wide .modal-bg{align-items:center;}
+  .modal{background:var(--ink);width:100%;max-width:480px;border-radius:20px 20px 0 0;padding:20px;max-height:92vh;overflow-y:auto;border:1px solid var(--line);border-bottom:none;}
+  .wide .modal{border-radius:16px;border-bottom:1px solid var(--line);}
+  .bottomnav{position:sticky;bottom:0;background:rgba(255,255,255,.96);backdrop-filter:blur(8px);border-top:1px solid var(--line);
+    display:flex;padding:8px 6px calc(8px + env(safe-area-inset-bottom));}
+  .navbtn{flex:1;background:none;border:none;color:var(--muted);display:flex;flex-direction:column;align-items:center;gap:3px;padding:6px;font-size:10.5px;font-weight:700;}
+  .navbtn.active{color:var(--accent);}
+  .navico{font-size:19px;}
+  .empty{text-align:center;padding:40px 20px;color:var(--muted);}
+  .photo-thumb{width:56px;height:56px;border-radius:10px;object-fit:cover;background:var(--panel-2);border:1px solid var(--line);}
+  video,canvas{width:100%;border-radius:14px;background:#000;}
+  .flowbig{font-size:44px;font-weight:800;letter-spacing:-1px;}
+  ::-webkit-scrollbar{display:none;}
+  .link{color:var(--accent);font-weight:700;text-decoration:none;cursor:pointer;}
+  .badge-req{color:var(--accent);font-weight:800;}
+  .sidebar{display:none;}
+  .wide .layout{display:flex;}
+  .wide .sidebar{display:flex;flex-direction:column;width:220px;flex-shrink:0;border-right:1px solid var(--line);padding:20px 12px;gap:4px;min-height:100vh;}
+  .wide .main{flex:1;min-width:0;}
+  .wide .bottomnav{display:none;}
+  .sidebtn{display:flex;align-items:center;gap:10px;padding:11px 12px;border-radius:10px;background:none;border:none;color:var(--muted);font-weight:700;font-size:14px;text-align:left;width:100%;}
+  .sidebtn.active{background:var(--accent-dim);color:var(--accent);}
+  .kpi{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px;flex:1;min-width:110px;}
+  .kpi .num{font-size:24px;font-weight:800;}
+  .kpi .lab{font-size:11.5px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.3px;}
+  .flexwrap{display:flex;flex-wrap:wrap;gap:10px;}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script>
+/* =====================================================================
+   UPSTAGE TRACK — functional prototype
+   Single-file demo app. All data is stored in this browser's localStorage
+   to simulate a cloud database so the full workflow can be tested end to
+   end without any backend. See the accompanying README for what a real
+   production build would need to change.
+   ===================================================================== */
+
+const LOGO_DATA_URL = "data:image/png;base64,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";
+const KEY = "upstage_track_db_v2";
+
+function uid(prefix){ return prefix + "_" + Math.random().toString(36).slice(2,9); }
+function nowISO(){ return new Date().toISOString(); }
+function fmtTime(iso){ if(!iso) return "—"; return new Date(iso).toLocaleTimeString([], {hour:'numeric',minute:'2-digit'}); }
+function fmtDate(iso){ return new Date(iso).toLocaleDateString([], {weekday:'short',day:'numeric',month:'short'}); }
+function fmtDateShort(iso){ return new Date(iso).toLocaleDateString([], {day:'2-digit',month:'2-digit',year:'2-digit'}); }
+function mins(ms){ return Math.round(ms/60000); }
+function hm(totalMins){
+  totalMins = Math.max(0, Math.round(totalMins));
+  const h = Math.floor(totalMins/60), m = totalMins%60;
+  return (h>0? h+"h ":"") + m+"m";
+}
+function hmsLive(totalSeconds){
+  totalSeconds = Math.max(0, Math.floor(totalSeconds));
+  const h = Math.floor(totalSeconds/3600);
+  const m = Math.floor((totalSeconds%3600)/60);
+  const s = totalSeconds%60;
+  const mm = String(m).padStart(2,'0'), ss = String(s).padStart(2,'0');
+  return h>0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
+}
+function startOfWeek(d=new Date()){
+  const dt = new Date(d); const day = (dt.getDay()+6)%7; // Monday start
+  dt.setHours(0,0,0,0); dt.setDate(dt.getDate()-day); return dt;
+}
+function thursdayOfWeek(weekStart){
+  const t = new Date(weekStart); t.setDate(weekStart.getDate()+3); t.setHours(23,59,59,999); return t;
+}
+function sameDay(a,b){ const x=new Date(a),y=new Date(b); return x.toDateString()===y.toDateString(); }
+function initials(name){ return name.split(" ").map(s=>s[0]).slice(0,2).join("").toUpperCase(); }
+function escapeHtml(s){ return (s||"").replace(/[&<>"]/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+
+/* ---------------- Demo data ---------------- */
+const NOTIFICATION_LABELS = {
+  forgotTimeOut: "Employee forgot to time out",
+  shiftStarting: "Shift is about to start",
+  breakExceeded: "Break or lunch has run over time",
+  timesheetCorrection: "Employee submitted a correction request",
+  timesheetApproved: "Timesheet was approved",
+  timesheetRejected: "Timesheet was rejected",
+  adminCorrection: "Admin corrected an attendance record",
+  xeroSyncFailure: "Xero sync failed"
+};
+function seed(){
+  const employees = [
+    {id:"emp_alex", empId:"EMP-001", name:"Alex Rivera", role:"Site Crew", pin:"1111", status:"active", email:"alex@upstage.co", department:"Production", payCategory:"Casual", employmentType:"Casual", hourlyRate:34.50, manager:"Julia Santos", defaultLocation:"Upstage Workshop", permission:"Employee"},
+    {id:"emp_shadelle", empId:"EMP-002", name:"Shadelle Nguyen", role:"Rigger", pin:"1111", status:"active", email:"shadelle@upstage.co", department:"Production", payCategory:"Casual", employmentType:"Casual", hourlyRate:38.00, manager:"Julia Santos", defaultLocation:"Upstage Workshop", permission:"Employee"},
+    {id:"emp_chris", empId:"EMP-003", name:"Chris Doyle", role:"Fabricator", pin:"1111", status:"active", email:"chris@upstage.co", department:"Workshop", payCategory:"Full-time", employmentType:"Full Time", hourlyRate:36.00, manager:"Julia Santos", defaultLocation:"Upstage Workshop", permission:"Employee"},
+    {id:"emp_julia", empId:"EMP-004", name:"Julia Santos", role:"Site Manager", pin:"1111", status:"active", email:"julia@upstage.co", department:"Production", payCategory:"Full-time", employmentType:"Full Time", hourlyRate:42.00, manager:"—", defaultLocation:"Upstage Workshop", permission:"Manager"},
+    {id:"emp_bodhi", empId:"EMP-005", name:"Bodhi Marsh", role:"Labourer", pin:"1111", status:"active", email:"bodhi@upstage.co", department:"Production", payCategory:"Casual", employmentType:"Casual", hourlyRate:32.00, manager:"Julia Santos", defaultLocation:"Upstage Workshop", permission:"Employee"},
+    {id:"emp_joel", empId:"EMP-006", name:"Joel Kaine", role:"Electrician", pin:"1111", status:"active", email:"joel@upstage.co", department:"Production", payCategory:"Casual", employmentType:"Casual", hourlyRate:40.00, manager:"Julia Santos", defaultLocation:"Upstage Workshop", permission:"Employee"},
+    {id:"emp_will", empId:"EMP-007", name:"Will Foster", role:"Office / Admin", pin:"1111", status:"active", email:"will@upstage.co", department:"Office", payCategory:"Full-time", employmentType:"Full Time", hourlyRate:35.00, manager:"Julia Santos", defaultLocation:"Upstage HQ", permission:"Payroll"},
+  ];
+  const superAdmin = {id:"admin_super", empId:"ADM-000", name:"Rosa Alvear", role:"Founder / Super Admin", pin:"9999", status:"active", email:"rosa@upstage.co", department:"Management", payCategory:"—", employmentType:"—", hourlyRate:null, manager:"—", defaultLocation:"Upstage HQ", permission:"Super Admin"};
+  const jobs = [
+    {id:"job_ateez", number:"2026-001", name:"ATEEZ Tour", client:"Live Nation", venue:"Accor Stadium", location:"Sydney, NSW", start:"2026-08-10", end:"2026-08-20", manager:"Julia Santos", status:"Active", notes:"Load-in Aug 10, show Aug 18, pack-down Aug 19-20.", assigned:["emp_alex","emp_shadelle","emp_bodhi","emp_joel","emp_julia"]},
+    {id:"job_foo", number:"2026-002", name:"Foo Fighters Australia", client:"Live Nation", venue:"Marvel Stadium", location:"Melbourne, VIC", start:"2026-09-01", end:"2026-09-06", manager:"Julia Santos", status:"Upcoming", notes:"", assigned:["emp_alex","emp_joel"]},
+    {id:"job_workshop", number:"WS-000", name:"Workshop", client:"Internal", venue:"Upstage Workshop", location:"Cebu City", start:"2026-01-01", end:"", manager:"Chris Doyle", status:"Active", notes:"General fabrication and maintenance.", assigned:["emp_chris","emp_bodhi"]},
+    {id:"job_accor", number:"2026-003", name:"Accor Stadium — Rigging", client:"Accor Stadium", venue:"Accor Stadium", location:"Sydney, NSW", start:"2026-07-01", end:"2026-07-15", manager:"Julia Santos", status:"Completed", notes:"", assigned:["emp_shadelle"]},
+    {id:"job_office", number:"OFF-000", name:"General Office", client:"Internal", venue:"Upstage HQ", location:"Cebu City", start:"2026-01-01", end:"", manager:"Will Foster", status:"Active", notes:"", assigned:["emp_will","emp_julia"]},
+  ];
+
+  const attendance = []; const worklogs = []; const auditLogs = []; const timesheets = [];
+  const TASK_CATEGORIES_SEED = ["Site / Bump In","Workshop","Warehouse / Prep","Pack Down","Office / Admin"];
+  const today = new Date();
+  function mk(empId, jobId, dayOffset, inH,inM,outH,outM, hasBreak, task){
+    const d = new Date(today); d.setDate(d.getDate()-dayOffset);
+    const ti = new Date(d); ti.setHours(inH,inM,0,0);
+    const to = new Date(d); to.setHours(outH,outM,0,0);
+    const attId = uid("att");
+    const breaks = [];
+    let unpaidMin = 0, paidMin = 0;
+    if(hasBreak){
+      const b1s = new Date(ti.getTime()+2*3600000); const b1e = new Date(b1s.getTime()+20*60000);
+      const b2s = new Date(ti.getTime()+4.5*3600000); const b2e = new Date(b2s.getTime()+30*60000);
+      breaks.push({id:uid("brk"), attendanceId:attId, type:"Morning Tea", start:b1s.toISOString(), end:b1e.toISOString(), paid:true, gpsStart:{lat:-33.847,lng:151.063}, gpsEnd:{lat:-33.847,lng:151.063}});
+      breaks.push({id:uid("brk"), attendanceId:attId, type:"Lunch", start:b2s.toISOString(), end:b2e.toISOString(), paid:false, gpsStart:{lat:-33.847,lng:151.063}, gpsEnd:{lat:-33.847,lng:151.063}});
+      paidMin = 20; unpaidMin = 30;
+    }
+    const grossMin = mins(to-ti);
+    const netMin = grossMin - unpaidMin;
+    attendance.push({
+      id:attId, employeeId:empId, jobId, timeIn:ti.toISOString(), timeOut: dayOffset===0? null : to.toISOString(),
+      photoIn:"PHOTO", photoOut: dayOffset===0? null : "PHOTO",
+      gpsIn:{lat:-33.8474,lng:151.0629,address:"Accor Stadium, Sydney Olympic Park NSW"},
+      gpsOut: dayOffset===0? null : {lat:-33.8474,lng:151.0629,address:"Accor Stadium, Sydney Olympic Park NSW"},
+      geofence:"inside", breakIds:breaks.map(b=>b.id), grossMin, unpaidBreakMin:unpaidMin, paidBreakMin:paidMin, netMin: dayOffset===0? null : netMin,
+      category: TASK_CATEGORIES_SEED[dayOffset%TASK_CATEGORIES_SEED.length], device:"iOS · iPhone",
+      status: dayOffset===0? "open" : (dayOffset<=1? "submitted" : "approved"), source:"app", summary:task
+    });
+    breaks.forEach(b=>attendance.push); // no-op, breaks stored separately below
+    breaksStore.push(...breaks);
+    worklogs.push({id:uid("wl"), attendanceId:attId, employeeId:empId, jobId, task, start:ti.toISOString(), finish: dayOffset===0?null:to.toISOString(), notes:"", photos: dayOffset%2===0?1:0});
+  }
+  const breaksStore = [];
+  mk("emp_alex","job_ateez",0,7,58,0,0,true,"Building 2m x 2m risers");
+  mk("emp_alex","job_ateez",1,8,2,17,10,true,"Loaded truck, unloaded rigging");
+  mk("emp_alex","job_ateez",2,7,55,16,40,true,"Installed stairs");
+  mk("emp_shadelle","job_ateez",0,7,45,0,0,true,"Rigging point survey");
+  mk("emp_shadelle","job_ateez",1,7,50,18,5,true,"Hung motor points");
+  mk("emp_chris","job_workshop",0,8,30,0,0,true,"Workshop fabrication — deck frames");
+  mk("emp_chris","job_workshop",1,8,25,17,0,true,"CAD drawings for stage deck v3");
+  mk("emp_julia","job_ateez",0,7,30,0,0,false,"Site coordination");
+  mk("emp_bodhi","job_workshop",1,8,58,17,20,true,"Maintenance — forklift service");
+  mk("emp_joel","job_ateez",2,8,0,16,30,true,"Site preparation, power distro");
+  mk("emp_will","job_office",1,9,1,17,30,true,"Payroll admin, timesheet review");
+
+  const settings = {
+    companyName:"Upstage Co", timezone:"Australia/Sydney", workWeekStart:"Monday",
+    standardHours:8, requirePhoto:true, requireGPS:true,
+    geofenceEnforced:false, lateThresholdMin:10, overtimeThresholdHrs:8,
+    autoClockOutHrs:12, galleryUploadAllowed:false, backgroundTracking:false,
+    breakRules:[
+      {id:"br1", name:"Morning Tea (Smoko)", minutes:20, paid:true},
+      {id:"br2", name:"Lunch", minutes:30, paid:false}
+    ],
+    geofences:[
+      {id:"geo1", name:"Upstage Workshop — Cebu City, PH", lat:10.3157, lng:123.8854, radiusM:200},
+      {id:"geo2", name:"Accor Stadium — Sydney, Australia", lat:-33.8474, lng:151.0629, radiusM:300},
+      {id:"geo3", name:"Upstage Office — Manila, PH", lat:14.5995, lng:120.9842, radiusM:250},
+      {id:"geo4", name:"Mactan Site — Lapu-Lapu City, PH", lat:10.3103, lng:123.9494, radiusM:250}
+    ],
+    xero:{connected:false, lastSync:null, tenant:null},
+    notifications:{forgotTimeOut:true, shiftStarting:true, breakExceeded:true, timesheetCorrection:true, timesheetApproved:true, timesheetRejected:true, adminCorrection:true, xeroSyncFailure:true}
+  };
+
+  employees.push(superAdmin);
+  auditLogs.push({id:uid("aud"), actor:"System", action:"Seed data generated", target:"Database", detail:"Demo dataset created for Upstage Co.", ts:nowISO()});
+
+  return {employees, jobs, attendance, breaks:breaksStore, worklogs, timesheets, correctionRequests:[], auditLogs, settings, notifications:[], session:null};
+}
+
+function loadDB(){
+  const raw = localStorage.getItem(KEY);
+  if(raw){ try{ return JSON.parse(raw); }catch(e){} }
+  const db = seed();
+  localStorage.setItem(KEY, JSON.stringify(db));
+  return db;
+}
+let DB = loadDB();
+function save(){ localStorage.setItem(KEY, JSON.stringify(DB)); }
+function isAdminRole(perm){ return perm && perm!=="Employee"; }
+/* Which admin tabs each permission level can see */
+const ROLE_TAB_ACCESS = {
+  "Super Admin": ["admin-dashboard","admin-employees","admin-jobs","admin-live","admin-timesheets","admin-reports","admin-payroll","admin-notifications","admin-audit","admin-xero","admin-settings"],
+  "Admin":       ["admin-dashboard","admin-employees","admin-jobs","admin-live","admin-timesheets","admin-reports","admin-payroll","admin-notifications","admin-audit","admin-xero","admin-settings"],
+  "Manager":     ["admin-dashboard","admin-employees","admin-jobs","admin-live","admin-timesheets","admin-reports","admin-notifications"],
+  "Payroll":     ["admin-dashboard","admin-reports","admin-payroll","admin-notifications"],
+};
+function canAccess(tab){
+  const role = DB.session?.role;
+  if(!isAdminRole(role)) return false;
+  return (ROLE_TAB_ACCESS[role]||[]).includes(tab);
+}
+function firstAllowedTab(role){ return (ROLE_TAB_ACCESS[role]||["admin-dashboard"])[0]; }
+function audit(actor, action, target, detail){
+  DB.auditLogs.unshift({id:uid("aud"), actor, action, target, detail, ts:nowISO()});
+  save();
+}
+
+/* ---------------- Router / State ---------------- */
+let route = {name:"login"};
+let toastTimer = null;
+function toast(msg){
+  const el = document.createElement("div");
+  el.className="toast"; el.textContent=msg;
+  document.body.appendChild(el);
+  clearTimeout(toastTimer);
+  setTimeout(()=>el.remove(), 2600);
+}
+function go(name, params={}){ route = {name, ...params}; render(); window.scrollTo(0,0); }
+
+function currentEmployee(){ return DB.employees.find(e=>e.id===DB.session?.employeeId); }
+function isWide(){ return document.body.classList.contains("wide"); }
+
+/* ---------------- Derived helpers ---------------- */
+function empOpenAttendance(empId){
+  return DB.attendance.find(a=>a.employeeId===empId && !a.timeOut);
+}
+function empOpenBreak(attId){
+  return DB.breaks.find(b=>b.attendanceId===attId && !b.end);
+}
+function empStatus(empId){
+  const att = empOpenAttendance(empId);
+  if(!att) return "off";
+  if(empOpenBreak(att.id)) return "break";
+  return "working";
+}
+function jobName(id){ const j=DB.jobs.find(j=>j.id===id); return j? j.name : "—"; }
+function empName(id){ const e=DB.employees.find(e=>e.id===id); return e? e.name : "—"; }
+function empRecordsForWeek(empId, weekStart){
+  const end = new Date(weekStart); end.setDate(end.getDate()+7);
+  return DB.attendance.filter(a=>a.employeeId===empId && new Date(a.timeIn)>=weekStart && new Date(a.timeIn)<end);
+}
+function weeklyNetMinutes(empId, weekStart){
+  return empRecordsForWeek(empId, weekStart).reduce((s,a)=> s + (a.netMin || (a.timeOut? mins(new Date(a.timeOut)-new Date(a.timeIn)) - (a.unpaidBreakMin||0) : 0)),0);
+}
+function todayNetMinutes(empId){
+  const att = DB.attendance.filter(a=>a.employeeId===empId && sameDay(a.timeIn, new Date()));
+  return att.reduce((s,a)=>{
+    if(a.netMin!=null) return s+a.netMin;
+    if(!a.timeOut) return s; // still open, don't count yet in "today" total until timeout (live timer handles current one)
+    return s;
+  },0);
+}
+
+/* ---------------- Geolocation & reverse geocode ---------------- */
+function getPosition(){
+  return new Promise((resolve)=>{
+    if(!navigator.geolocation){ resolve(null); return; }
+    navigator.geolocation.getCurrentPosition(
+      pos=> resolve({lat:pos.coords.latitude, lng:pos.coords.longitude, accuracy:pos.coords.accuracy}),
+      err=> resolve(null),
+      {enableHighAccuracy:true, timeout:8000}
+    );
+  });
+}
+async function reverseGeocode(lat,lng){
+  try{
+    const r = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=16`, {headers:{"Accept":"application/json"}});
+    const j = await r.json();
+    return j.display_name || `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+  }catch(e){
+    return `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+  }
+}
+function distMeters(lat1,lng1,lat2,lng2){
+  const R=6371000, toRad=d=>d*Math.PI/180;
+  const dLat=toRad(lat2-lat1), dLng=toRad(lng2-lng1);
+  const a=Math.sin(dLat/2)**2 + Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*Math.sin(dLng/2)**2;
+  return R*2*Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+function geofenceCheck(lat,lng){
+  for(const g of DB.settings.geofences){
+    if(distMeters(lat,lng,g.lat,g.lng) <= g.radiusM) return {inside:true, name:g.name};
+  }
+  return {inside:false, name:null};
+}
+function requireLocation(onSuccess, actionLabel){
+  (async function attempt(){
+    toast("Getting GPS location…");
+    const pos = await getPosition();
+    if(!pos){
+      const wrap = document.createElement("div"); wrap.className="modal-bg";
+      wrap.innerHTML = `<div class="modal">
+        <div class="h2" style="margin-bottom:8px;">Location Required</div>
+        <div class="muted small" style="margin-bottom:16px;">${actionLabel||"This action"} requires your device's location. Please enable location/GPS permissions for this browser and try again.</div>
+        <button class="btn btn-accent btn-block btn-lg" id="locRetry">Try Again</button>
+        <button class="btn btn-ghost btn-block" style="margin-top:8px;" id="locCancel">Cancel</button>
+      </div>`;
+      document.body.appendChild(wrap);
+      wrap.querySelector("#locCancel").onclick = ()=> wrap.remove();
+      wrap.querySelector("#locRetry").onclick = ()=> { wrap.remove(); attempt(); };
+      return;
+    }
+    onSuccess(pos);
+  })();
+}
+
+/* ---------------- Gallery photo picker (work log photos only) ---------------- */
+function openGalleryPhoto(onCapture, title){
+  const wrap = document.createElement("div");
+  wrap.className = "modal-bg";
+  wrap.innerHTML = `
+    <div class="modal">
+      <div class="row-between" style="margin-bottom:12px;">
+        <div class="h2">${title||"Add Photo"}</div>
+        <button class="btn btn-ghost btn-sm" id="galClose">Cancel</button>
+      </div>
+      <div class="col gap-12" style="align-items:center;text-align:center;padding:14px 0;">
+        <div style="font-size:40px;">🖼️</div>
+        <div class="muted small">Choose a photo from your device's gallery.</div>
+        <input type="file" accept="image/*" id="galInput" style="display:none;">
+        <button class="btn btn-accent btn-block btn-lg" id="galPick">Choose from Gallery</button>
+      </div>
+    </div>`;
+  document.body.appendChild(wrap);
+  wrap.querySelector("#galClose").addEventListener("click", ()=> wrap.remove());
+  wrap.querySelector("#galPick").addEventListener("click", ()=> wrap.querySelector("#galInput").click());
+  wrap.querySelector("#galInput").addEventListener("change", (e)=>{
+    const file = e.target.files && e.target.files[0];
+    if(!file) return;
+    const reader = new FileReader();
+    reader.onload = ()=>{ wrap.remove(); onCapture(reader.result); };
+    reader.readAsDataURL(file);
+  });
+}
+
+/* =====================================================================
+   RENDER
+   ===================================================================== */
+function render(){
+  const app = document.getElementById("app");
+  document.body.classList.toggle("wide", window.innerWidth>900 && isAdminRole(DB.session?.role));
+  if(!DB.session){
+    if(route.name==="privacy"){ app.innerHTML = screenPrivacy(); bindScreen(); return; }
+    app.innerHTML = screenLogin(); bindLogin(); return;
+  }
+  if(!isAdminRole(DB.session.role)){
+    app.innerHTML = renderEmployeeShell();
+    bindEmployeeShell();
+  } else {
+    app.innerHTML = renderAdminShell();
+    bindAdminShell();
+  }
+}
+
+/* ---------------- LOGIN ---------------- */
+function screenLogin(){
+  return `
+  <div class="content" style="padding-top:60px;display:flex;flex-direction:column;justify-content:center;min-height:100vh;max-width:380px;margin:0 auto;">
+    <div style="text-align:center;margin-bottom:34px;">
+      <div style="width:180px;margin:0 auto 18px;background:#000;border-radius:14px;padding:14px 18px;display:flex;align-items:center;justify-content:center;">
+        <img src="${LOGO_DATA_URL}" alt="Upstage Co" style="width:100%;height:auto;display:block;">
+      </div>
+      <div class="muted small" style="margin-top:4px;">Upstage Co Attendance and Break Log Tool</div>
+    </div>
+    <div class="card col gap-12" style="background:#000;border-color:#000;">
+      <div class="field" style="margin-bottom:0;">
+        <label>Select account (demo)</label>
+        <select id="loginUser">
+          <optgroup label="Employee-level (PIN: 1111)">
+            ${DB.employees.filter(e=>e.permission==="Employee").map(e=>`<option value="${e.id}">${escapeHtml(e.name)} — ${escapeHtml(e.role)}</option>`).join("")}
+          </optgroup>
+          <optgroup label="Manager (PIN: 1111)">
+            ${DB.employees.filter(e=>e.permission==="Manager").map(e=>`<option value="${e.id}">${escapeHtml(e.name)} — Manager</option>`).join("")}
+          </optgroup>
+          <optgroup label="Payroll (PIN: 1111)">
+            ${DB.employees.filter(e=>e.permission==="Payroll").map(e=>`<option value="${e.id}">${escapeHtml(e.name)} — Payroll</option>`).join("")}
+          </optgroup>
+          <optgroup label="Super Admin (PIN: 9999)">
+            ${DB.employees.filter(e=>e.permission==="Super Admin").map(e=>`<option value="${e.id}">${escapeHtml(e.name)} — Super Admin</option>`).join("")}
+          </optgroup>
+        </select>
+      </div>
+      <div class="field" style="margin-bottom:0;">
+        <label>PIN</label>
+        <input id="loginPin" type="password" inputmode="numeric" maxlength="4" placeholder="••••">
+      </div>
+      <button class="btn btn-block btn-lg" id="loginBtn" style="background:#fff;color:#000;">Log In</button>
+      <a class="link small" style="text-align:center;color:#fff;" id="forgotLink">Forgot PIN?</a>
+    </div>
+    <div class="tiny" style="text-align:center;margin-top:22px;color:#000;">
+      By logging in you acknowledge Upstage Co's attendance photo &amp; location policy. <span class="link" id="privacyLink">View privacy notice</span>.
+    </div>
+  </div>`;
+}
+function bindLogin(){
+  document.getElementById("loginBtn").onclick = ()=>{
+    const id = document.getElementById("loginUser").value;
+    const pin = document.getElementById("loginPin").value;
+    const e = DB.employees.find(e=>e.id===id);
+    if(!e){ toast("Select an account"); return; }
+    if(pin !== e.pin){ toast("Incorrect PIN"); return; }
+    if(e.status==="disabled"){ toast("This account has been disabled. Contact your admin."); return; }
+    DB.session = {role:e.permission, employeeId:e.id, name:e.name};
+    audit(e.name,"Logged in",`${e.permission} session`,"");
+    save();
+    go(isAdminRole(e.permission) ? firstAllowedTab(e.permission) : "emp-home");
+  };
+  document.getElementById("forgotLink").onclick = ()=> toast("A real build emails/SMSs a reset link via your auth provider (e.g. Firebase Auth / Auth0).");
+  document.getElementById("privacyLink").onclick = ()=> { PRIVACY_FROM_LOGIN=true; go("privacy"); };
+}
+let PRIVACY_FROM_LOGIN=false;
+
+/* ---------------- EMPLOYEE SHELL ---------------- */
+function renderEmployeeShell(){
+  const body = ({
+    "emp-home": screenEmpHome,
+    "job-select": screenJobSelect,
+    "worklog": screenWorklog,
+    "worklog-add": screenWorklogAdd,
+    "history": screenHistory,
+    "timesheet": screenTimesheet,
+    "emp-att-detail": screenEmpAttDetail,
+    "profile": screenProfile,
+    "privacy": screenPrivacy,
+  })[route.name]?.() || screenEmpHome();
+
+  const nav = ["emp-home","worklog","history","timesheet","profile"];
+  const icons = {"emp-home":"🏠","worklog":"🛠️","history":"📋","timesheet":"🧾","profile":"👤"};
+  const labels = {"emp-home":"Home","worklog":"Work Log","history":"History","timesheet":"Timesheet","profile":"Profile"};
+
+  return `
+    <div class="topbrand"><div style="background:#000;border-radius:6px;padding:3px 6px;display:flex;align-items:center;"><img src="${LOGO_DATA_URL}" alt="Upstage Co" style="width:22px;height:auto;display:block;"></div><b class="small">Upstage Co</b></div>
+    <div class="scroll" style="flex:1;">${body}</div>
+    <div class="bottomnav">
+      ${nav.map(n=>`<button class="navbtn ${route.name===n?'active':''}" data-nav="${n}"><span class="navico">${icons[n]}</span>${labels[n]}</button>`).join("")}
+    </div>
+  `;
+}
+function bindEmployeeShell(){
+  document.querySelectorAll("[data-nav]").forEach(b=> b.onclick = ()=> go(b.dataset.nav));
+  bindScreen();
+}
+
+function attStatusPill(status){
+  return ({
+    open: '<span class="pill pill-muted">Open shift</span>',
+    draft: '<span class="pill pill-muted">Draft</span>',
+    submitted: '<span class="pill pill-warn">Submitted</span>',
+    approved: '<span class="pill pill-ok">Approved</span>',
+    rejected: '<span class="pill pill-danger">Rejected</span>',
+    corrected: '<span class="pill pill-warn">Corrected</span>',
+  })[status] || `<span class="pill pill-muted">${status}</span>`;
+}
+function statusPill(st){
+  if(st==="working") return `<span class="pill pill-ok"><span class="dot dot-ok"></span> Working</span>`;
+  if(st==="break") return `<span class="pill pill-warn"><span class="dot dot-warn"></span> On Break</span>`;
+  return `<span class="pill pill-muted"><span class="dot dot-muted"></span> Not Working</span>`;
+}
+
+function screenEmpHome(){
+  const emp = currentEmployee();
+  const st = empStatus(emp.id);
+  const openAtt = empOpenAttendance(emp.id);
+  const openBrk = openAtt ? empOpenBreak(openAtt.id) : null;
+  const weekStart = startOfWeek();
+  const weekMin = weeklyNetMinutes(emp.id, weekStart);
+  let todayMin = todayNetMinutes(emp.id);
+  if(openAtt){
+    const elapsed = mins(new Date()-new Date(openAtt.timeIn));
+    const breaksSoFar = DB.breaks.filter(b=>b.attendanceId===openAtt.id && b.end).reduce((s,b)=> s+ (b.paid? 0 : mins(new Date(b.end)-new Date(b.start))),0);
+    todayMin += Math.max(0, elapsed - breaksSoFar - (openBrk? mins(new Date()-new Date(openBrk.start)) : 0));
+  }
+  const job = openAtt? DB.jobs.find(j=>j.id===openAtt.jobId) : null;
+  const hour = new Date().getHours();
+  const greeting = hour<12?"Good morning":hour<17?"Good afternoon":"Good evening";
+  const firstName = emp.name.split(" ")[0];
+
+  const todaysLogs = DB.worklogs.filter(w=>w.employeeId===emp.id && sameDay(w.start,new Date()));
+  const recentAtt = DB.attendance.filter(a=>a.employeeId===emp.id).sort((a,b)=>new Date(b.timeIn)-new Date(a.timeIn)).slice(0,3);
+  const issues = DB.attendance.filter(a=>a.employeeId===emp.id && a.status==="submitted").length;
+  const rejectedCount = DB.attendance.filter(a=>a.employeeId===emp.id && a.status==="rejected").length;
+  const draftCount = DB.attendance.filter(a=>a.employeeId===emp.id && a.status==="draft").length;
+
+  const breakSecs = openBrk ? Math.floor((Date.now()-new Date(openBrk.start).getTime())/1000) : 0;
+
+  return `
+  <div class="topbar"><div class="h2">${greeting}, ${escapeHtml(firstName)}</div><div class="row gap-8" style="align-items:center;">${st==="break"?`<span id="statusTimer" data-since="${openBrk.start}" class="tiny" style="font-family:ui-monospace,Menlo,Consolas,monospace;font-weight:700;color:var(--warn);">${hmsLive(breakSecs)}</span>`:""}${statusPill(st)}</div></div>
+  <div class="content">
+    <div class="card" style="margin-bottom:14px;">
+      <div class="row-between">
+        <div>
+          <div class="muted small">Current job</div>
+          <div class="h2">${job? escapeHtml(job.name) : "No job selected"}</div>
+        </div>
+        <div style="text-align:right;">
+          <div class="muted small">Since</div>
+          <div class="h2">${openAtt? fmtTime(openAtt.timeIn): "—"}</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="grid2" style="margin-bottom:16px;">
+      <div class="kpi"><div class="num">${hm(todayMin)}</div><div class="lab">Today</div></div>
+      <div class="kpi"><div class="num">${hm(weekMin)}</div><div class="lab">This week</div></div>
+    </div>
+
+    <div class="col gap-12" style="margin-bottom:20px;">
+      ${st==="off" ? `
+        <button class="btn btn-accent btn-block btn-lg" id="btnTimeIn">🟢 TIME IN</button>
+      `: st==="working" ? `
+        <div class="grid2">
+          <button class="btn btn-warn btn-lg" id="btnStartBreak">☕ START BREAK</button>
+          <button class="btn btn-danger btn-lg" id="btnTimeOut">🔴 TIME OUT</button>
+        </div>
+      `: `
+        <button class="btn btn-ok btn-block btn-lg" id="btnEndBreak">▶️ END BREAK</button>
+        <div class="tiny muted" style="text-align:center;">On break since ${fmtTime(openBrk.start)}</div>
+      `}
+    </div>
+
+    ${rejectedCount>0 ? `<div class="card card-tight" style="border-color:var(--danger);margin-bottom:12px;" >
+      <div class="row gap-8"><span class="dot dot-danger"></span><div class="small"><b>${rejectedCount}</b> ${rejectedCount>1?'entries need':'entry needs'} correction — check History.</div></div>
+    </div>`:""}
+    ${draftCount>0 ? `<div class="card card-tight" style="border-color:var(--line);margin-bottom:12px;" >
+      <div class="row-between"><div class="small"><b>${draftCount}</b> completed ${draftCount>1?'shifts':'shift'} not yet submitted.</div><a class="link small" id="goSubmit">Timesheet →</a></div>
+    </div>`:""}
+    ${issues>0 ? `<div class="card card-tight" style="border-color:var(--warn);margin-bottom:16px;" >
+      <div class="row gap-8"><span class="dot dot-warn"></span><div class="small"><b>${issues}</b> timesheet ${issues>1?'entries':'entry'} awaiting admin approval.</div></div>
+    </div>`:""}
+
+    <div class="row-between" style="margin-bottom:10px;"><div class="h3">TODAY'S WORK</div><a class="link small" id="goWorklog">Add +</a></div>
+    ${todaysLogs.length? todaysLogs.map(w=>`
+      <div class="card card-tight" style="margin-bottom:8px;">
+        <div class="row-between"><b class="small">${escapeHtml(jobName(w.jobId))}</b><span class="tiny muted">${fmtTime(w.start)}–${w.finish?fmtTime(w.finish):'now'}</span></div>
+        <div class="small muted" style="margin-top:2px;">${escapeHtml(w.task)}</div>
+      </div>`).join("") : `<div class="empty small">No work logged yet today.</div>`}
+
+    <div class="row-between" style="margin:18px 0 10px;"><div class="h3">RECENT ATTENDANCE</div><a class="link small" id="goHistory">View all</a></div>
+    ${recentAtt.map(a=>`
+      <div class="card card-tight" style="margin-bottom:8px;">
+        <div class="row-between">
+          <div class="small"><b>${fmtDate(a.timeIn)}</b> · ${escapeHtml(jobName(a.jobId))}</div>
+          ${attStatusPill(a.status)}
+        </div>
+        <div class="tiny muted" style="margin-top:3px;">${fmtTime(a.timeIn)} → ${a.timeOut?fmtTime(a.timeOut):'—'}</div>
+      </div>`).join("")}
+  </div>`;
+}
+
+function screenJobSelect(){
+  const emp = currentEmployee();
+  const jobs = DB.jobs.filter(j=> j.assigned.includes(emp.id) && j.status!=="Completed");
+  return `
+  <div class="topbar"><button class="backbtn" id="back">← Back</button><div class="h2">Select Job</div><div style="width:40px"></div></div>
+  <div class="content">
+    <div class="muted small" style="margin-bottom:14px;">Choose the job you're clocking in for.</div>
+    <div class="col gap-10">
+      ${jobs.map(j=>`
+        <button class="btn btn-ghost btn-block" style="justify-content:flex-start;text-align:left;padding:16px;" data-job="${j.id}">
+          <div>
+            <div style="font-weight:800;">${escapeHtml(j.name)}</div>
+            <div class="tiny muted">#${j.number} · ${escapeHtml(j.venue)}, ${escapeHtml(j.location)}</div>
+          </div>
+        </button>`).join("")}
+      ${jobs.length===0? `<div class="empty">No jobs assigned to you yet. Ask your admin to assign one.</div>`:""}
+    </div>
+  </div>`;
+}
+
+const TASK_CATEGORIES = ["Warehouse / Prep","Site / Bump In","Pack Down","Workshop","Office / Admin"];
+function deviceLabel(){
+  const ua = navigator.userAgent||"";
+  let os = /iPhone|iPad|iPod/.test(ua)?"iOS":/Android/.test(ua)?"Android":/Mac OS/.test(ua)?"Mac":/Windows/.test(ua)?"Windows":"Unknown device";
+  return os + " · " + (navigator.platform||"web browser");
+}
+function doTimeIn(jobId){
+  const wrap = document.createElement("div"); wrap.className="modal-bg";
+  wrap.innerHTML = `<div class="modal">
+    <div class="h2" style="margin-bottom:6px;">${escapeHtml(jobName(jobId))}</div>
+    <div class="muted small" style="margin-bottom:14px;">What will you be doing?</div>
+    <div class="field"><select id="taskCat">${TASK_CATEGORIES.map(c=>`<option>${c}</option>`).join("")}</select></div>
+    <button class="btn btn-accent btn-block btn-lg" id="taskGo">Time In</button>
+    <button class="btn btn-ghost btn-block" style="margin-top:8px;" id="taskCancel">Cancel</button>
+  </div>`;
+  document.body.appendChild(wrap);
+  wrap.querySelector("#taskCancel").onclick=()=>wrap.remove();
+  wrap.querySelector("#taskGo").onclick=()=>{
+    const category = wrap.querySelector("#taskCat").value;
+    wrap.remove();
+    requireLocation(async (pos)=>{
+      const gps = {lat:pos.lat, lng:pos.lng, accuracy:pos.accuracy};
+      const address = await reverseGeocode(pos.lat,pos.lng);
+      const fence = geofenceCheck(pos.lat,pos.lng);
+      const emp = currentEmployee();
+      const att = {
+        id:uid("att"), employeeId:emp.id, jobId, category, timeIn:nowISO(), timeOut:null,
+        photoIn:null, photoOut:null, gpsIn:{...gps,address}, gpsOut:null, device:deviceLabel(),
+        geofence: fence.inside? "inside":"outside", geofenceName: fence.name,
+        breakIds:[], grossMin:null, unpaidBreakMin:0, paidBreakMin:0, netMin:null,
+        status:"open", source:navigator.onLine?"app":"app-offline-pending", summary:""
+      };
+      DB.attendance.push(att); audit(emp.name,"Clock In",jobName(jobId),`${category} · Location: ${address}`); save();
+      go("emp-home");
+      setTimeout(()=> showConfirmModal("CLOCK IN RECORDED", [
+        ["Time", fmtTime(att.timeIn)],
+        ["Job", jobName(jobId)],
+        ["Task", category],
+        ["Location", address],
+        ["GPS accuracy", gps.accuracy? Math.round(gps.accuracy)+"m" : "—"],
+        ["Geofence", fence.inside? `🟢 Inside ${fence.name}` : "🟠 Outside approved location"]
+      ]), 50);
+    }, "Timing in");
+  };
+}
+function doStartBreak(){
+  const emp = currentEmployee(); const att = empOpenAttendance(emp.id);
+  const rules = DB.settings.breakRules;
+  const optionsHtml = rules.map(r=>`<option value="${r.id}">${escapeHtml(r.name)} (${r.minutes} min, ${r.paid?'paid':'unpaid'})</option>`).join("");
+  const wrap = document.createElement("div"); wrap.className="modal-bg";
+  wrap.innerHTML = `<div class="modal">
+    <div class="h2" style="margin-bottom:14px;">Start Break</div>
+    <div class="field"><label>Break type</label><select id="brkType">${optionsHtml}</select></div>
+    <button class="btn btn-warn btn-block btn-lg" id="brkGo">Start Break</button>
+    <button class="btn btn-ghost btn-block" style="margin-top:8px;" id="brkCancel">Cancel</button>
+  </div>`;
+  document.body.appendChild(wrap);
+  wrap.querySelector("#brkCancel").onclick=()=>wrap.remove();
+  wrap.querySelector("#brkGo").onclick= async ()=>{
+    const ruleId = wrap.querySelector("#brkType").value;
+    const rule = rules.find(r=>r.id===ruleId);
+    wrap.remove();
+    toast("Getting GPS location…");
+    const pos = await getPosition();
+    const brk = {id:uid("brk"), attendanceId:att.id, type:rule.name, start:nowISO(), end:null, paid:rule.paid, plannedMinutes:rule.minutes, gpsStart:pos||{lat:0,lng:0}, gpsEnd:null};
+    DB.breaks.push(brk); att.breakIds.push(brk.id);
+    audit(emp.name,"Start Break",jobName(att.jobId),rule.name); save();
+    go("emp-home"); toast(`${rule.name} started`);
+  };
+}
+function doEndBreak(){
+  const emp = currentEmployee(); const att = empOpenAttendance(emp.id); const brk = empOpenBreak(att.id);
+  (async ()=>{
+    toast("Getting GPS location…");
+    const pos = await getPosition();
+    brk.end = nowISO(); brk.gpsEnd = pos||{lat:0,lng:0};
+    audit(emp.name,"End Break",jobName(att.jobId), `${brk.type} — ${hm(mins(new Date(brk.end)-new Date(brk.start)))}`); save();
+    go("emp-home"); toast(`Break ended — ${hm(mins(new Date(brk.end)-new Date(brk.start)))}`);
+  })();
+}
+function doTimeOut(){
+  const emp = currentEmployee(); const att = empOpenAttendance(emp.id);
+  const openBrk = empOpenBreak(att.id);
+  if(openBrk){ toast("End your current break before timing out."); return; }
+  requireLocation(async (pos)=>{
+    const gps = {lat:pos.lat, lng:pos.lng, accuracy:pos.accuracy};
+    const address = await reverseGeocode(pos.lat,pos.lng);
+    showWorkSummaryModal((summary)=>{
+      att.timeOut = nowISO(); att.photoOut = null; att.gpsOut = {...gps,address};
+      att.grossMin = mins(new Date(att.timeOut)-new Date(att.timeIn));
+      const brks = DB.breaks.filter(b=>att.breakIds.includes(b.id));
+      att.unpaidBreakMin = brks.filter(b=>!b.paid).reduce((s,b)=>s+mins(new Date(b.end)-new Date(b.start)),0);
+      att.paidBreakMin = brks.filter(b=>b.paid).reduce((s,b)=>s+mins(new Date(b.end)-new Date(b.start)),0);
+      att.netMin = att.grossMin - att.unpaidBreakMin;
+      att.summary = summary; att.status="draft";
+      audit(emp.name,"Clock Out",jobName(att.jobId), `Net: ${hm(att.netMin)}`);
+      save(); go("emp-home");
+      setTimeout(()=> showConfirmModal("CLOCK OUT RECORDED", [
+        ["Worked today", hm(att.netMin)],
+        ["Break", hm(att.unpaidBreakMin+att.paidBreakMin)],
+        ["Job", jobName(att.jobId)],
+        ["Location", address],
+        ["GPS accuracy", gps.accuracy? Math.round(gps.accuracy)+"m" : "—"]
+      ]), 50);
+    });
+  }, "Timing out");
+}
+function showWorkSummaryModal(onDone){
+  const wrap = document.createElement("div"); wrap.className="modal-bg";
+  wrap.innerHTML = `<div class="modal">
+    <div class="h2" style="margin-bottom:14px;">What did you work on today?</div>
+    <div class="field"><textarea id="sumText" rows="4" placeholder="e.g. Built stage decks, loaded truck, installed stairs..."></textarea></div>
+    <button class="btn btn-accent btn-block btn-lg" id="sumGo">Confirm Time Out</button>
+    <button class="btn btn-ghost btn-block" style="margin-top:8px;" id="sumSkip">Skip &amp; Confirm</button>
+  </div>`;
+  document.body.appendChild(wrap);
+  wrap.querySelector("#sumGo").onclick=()=>{ const t=wrap.querySelector("#sumText").value; wrap.remove(); onDone(t); };
+  wrap.querySelector("#sumSkip").onclick=()=>{ wrap.remove(); onDone(""); };
+}
+function showConfirmModal(title, rows){
+  const wrap = document.createElement("div"); wrap.className="modal-bg";
+  wrap.innerHTML = `<div class="modal" style="text-align:center;">
+    <div style="font-size:44px;margin-bottom:6px;">✅</div>
+    <div class="h2" style="margin-bottom:16px;">${title}</div>
+    <div class="col gap-8" style="text-align:left;">
+      ${rows.map(([k,v])=>`<div class="row-between card-tight" style="background:var(--panel-2);border-radius:10px;"><span class="muted small">${k}</span><b class="small">${escapeHtml(String(v))}</b></div>`).join("")}
+    </div>
+    <button class="btn btn-accent btn-block btn-lg" style="margin-top:18px;" id="okClose">Done</button>
+  </div>`;
+  document.body.appendChild(wrap);
+  wrap.querySelector("#okClose").onclick=()=>wrap.remove();
+}
+
+function screenWorklog(){
+  const emp = currentEmployee();
+  const logs = DB.worklogs.filter(w=>w.employeeId===emp.id).sort((a,b)=>new Date(b.start)-new Date(a.start));
+  const byDay = {};
+  logs.forEach(l=>{ const k = fmtDate(l.start); byDay[k]=byDay[k]||[]; byDay[k].push(l); });
+  return `
+  <div class="topbar"><div class="h2">Work Log</div><button class="btn btn-accent btn-sm" id="addWl">+ Add</button></div>
+  <div class="content">
+    ${Object.keys(byDay).length===0? `<div class="empty">No work logged yet.</div>`:""}
+    ${Object.entries(byDay).map(([day,items])=>`
+      <div class="h3" style="margin:16px 0 8px;">${day.toUpperCase()}</div>
+      ${items.map(w=>`
+        <div class="card card-tight" style="margin-bottom:8px;">
+          <div class="row-between"><b class="small">${escapeHtml(jobName(w.jobId))}</b><span class="tiny muted">${fmtTime(w.start)}–${w.finish?fmtTime(w.finish):'now'}</span></div>
+          <div class="small" style="margin-top:3px;">${escapeHtml(w.task)}</div>
+          ${w.notes? `<div class="tiny muted" style="margin-top:3px;">${escapeHtml(w.notes)}</div>`:""}
+          ${w.photos? `<div class="tiny muted" style="margin-top:4px;">📷 ${w.photos} photo${w.photos>1?'s':''}</div>`:""}
+        </div>`).join("")}
+    `).join("")}
+  </div>`;
+}
+function screenWorklogAdd(){
+  const emp = currentEmployee();
+  const jobs = DB.jobs.filter(j=>j.assigned.includes(emp.id));
+  return `
+  <div class="topbar"><button class="backbtn" id="back">← Back</button><div class="h2">Add Work Entry</div><div style="width:40px"></div></div>
+  <div class="content">
+    <div class="field"><label>Job</label><select id="wlJob">${jobs.map(j=>`<option value="${j.id}">${escapeHtml(j.name)}</option>`).join("")}</select></div>
+    <div class="field"><label>What did you work on?</label>
+      <select id="wlTaskPreset">
+        <option value="">— choose a common task or write your own below —</option>
+        <option>Built stage decks</option><option>Installed stairs</option><option>Loaded truck</option>
+        <option>Unloaded equipment</option><option>Workshop fabrication</option><option>CAD drawings</option>
+        <option>Site preparation</option><option>Pack down</option><option>Maintenance</option>
+      </select>
+    </div>
+    <div class="field"><textarea id="wlTask" rows="2" placeholder="Task description"></textarea></div>
+    <div class="grid2">
+      <div class="field"><label>Start time</label><input type="time" id="wlStart"></div>
+      <div class="field"><label>Finish time</label><input type="time" id="wlFinish"></div>
+    </div>
+    <div class="field"><label>Notes (optional)</label><textarea id="wlNotes" rows="2" placeholder="e.g. Completed 6 units"></textarea></div>
+    <div class="field">
+      <label>Photos</label>
+      <button class="btn btn-ghost btn-block" id="wlPhotoBtn">📷 Add Photo</button>
+      <div id="wlPhotoPreview" class="row gap-8" style="margin-top:8px;"></div>
+    </div>
+    <button class="btn btn-accent btn-block btn-lg" id="wlSave">Save Entry</button>
+  </div>`;
+}
+
+function screenHistory(){
+  const emp = currentEmployee();
+  const list = DB.attendance.filter(a=>a.employeeId===emp.id).sort((a,b)=>new Date(b.timeIn)-new Date(a.timeIn));
+  return `
+  <div class="topbar"><div class="h2">Attendance History</div></div>
+  <div class="content">
+    ${list.map(a=>`
+      <div class="card" style="margin-bottom:10px;cursor:pointer;" data-emp-att="${a.id}">
+        <div class="row-between">
+          <b class="small">${fmtDate(a.timeIn)}</b>
+          ${attStatusPill(a.status)}
+        </div>
+        <div class="small muted" style="margin-top:4px;">${escapeHtml(jobName(a.jobId))}${a.category?` · ${escapeHtml(a.category)}`:""}</div>
+        <div class="row-between" style="margin-top:8px;">
+          <span class="small">In: <b>${fmtTime(a.timeIn)}</b></span>
+          <span class="small">Out: <b>${a.timeOut?fmtTime(a.timeOut):'—'}</b></span>
+          <span class="small">Net: <b>${a.netMin!=null?hm(a.netMin):'—'}</b></span>
+        </div>
+      </div>`).join("")}
+    ${list.length===0? `<div class="empty">No attendance records yet.</div>`:""}
+  </div>`;
+}
+
+function screenEmpAttDetail(){
+  const a = DB.attendance.find(x=>x.id===route.id);
+  const brks = DB.breaks.filter(b=>a.breakIds.includes(b.id));
+  const openReq = DB.correctionRequests.find(r=>r.attendanceId===a.id && r.status==="pending");
+  return `
+  <div class="topbar"><button class="backbtn" id="back">← Back</button><div class="h2">Shift Detail</div><div style="width:40px"></div></div>
+  <div class="content">
+    <div class="row-between" style="margin-bottom:14px;">
+      <div><div class="h2">${fmtDate(a.timeIn)}</div><div class="muted small">${escapeHtml(jobName(a.jobId))}${a.category?` · ${escapeHtml(a.category)}`:""}</div></div>
+      ${attStatusPill(a.status)}
+    </div>
+    <div class="card col gap-8" style="margin-bottom:16px;">
+      <div class="row-between small"><span class="muted">Clock In</span><b>${fmtTime(a.timeIn)}</b></div>
+      <div class="row-between small"><span class="muted">Clock Out</span><b>${a.timeOut?fmtTime(a.timeOut):'—'}</b></div>
+      <div class="row-between small"><span class="muted">Break</span><b>${hm((a.unpaidBreakMin||0)+(a.paidBreakMin||0))}</b></div>
+      <div class="row-between small"><span class="muted">Net hours</span><b style="color:var(--accent)">${a.netMin!=null?hm(a.netMin):'—'}</b></div>
+      <div class="row-between small"><span class="muted">Location</span><b>${escapeHtml(a.gpsIn.address||'—')}</b></div>
+    </div>
+    ${brks.length? `<div class="h3" style="margin-bottom:8px;">BREAKS</div>${brks.map(b=>`
+      <div class="card card-tight" style="margin-bottom:8px;"><div class="row-between small"><b>${escapeHtml(b.type)} ${b.paid?'(paid)':'(unpaid)'}</b><span>${fmtTime(b.start)} – ${b.end?fmtTime(b.end):'ongoing'}</span></div></div>`).join("")}`:""}
+    ${a.summary? `<div class="card col" style="margin:16px 0;"><div class="muted small" style="margin-bottom:4px;">Work summary</div><div class="small">${escapeHtml(a.summary)}</div></div>`:""}
+
+    ${openReq? `<div class="card" style="border-color:var(--warn);margin-top:10px;"><b class="small">Correction request pending</b><div class="small muted" style="margin-top:4px;">${openReq.requestedTimeIn?`Requested new clock-in: ${fmtTime(openReq.requestedTimeIn)}<br>`:""}${openReq.requestedTimeOut?`Requested new clock-out: ${fmtTime(openReq.requestedTimeOut)}<br>`:""}Reason: ${escapeHtml(openReq.reason)}</div><div class="tiny muted" style="margin-top:4px;">Awaiting admin review.</div></div>`
+    : (a.status==="approved"||a.status==="submitted"||a.status==="rejected") ? `<button class="btn btn-ghost btn-block" style="margin-top:10px;" id="reqCorrection">Request Correction</button>` : ""}
+  </div>`;
+}
+
+function modalRequestCorrection(attId){
+  const a = DB.attendance.find(x=>x.id===attId);
+  const wrap = document.createElement("div"); wrap.className="modal-bg";
+  wrap.innerHTML = `<div class="modal">
+    <div class="h2" style="margin-bottom:6px;">Request Correction</div>
+    <div class="muted small" style="margin-bottom:14px;">Forgot to clock in/out, or a time looks wrong? Tell your admin what it should be.</div>
+    <div class="field"><label>What needs correcting?</label>
+      <select id="reqType">
+        <option value="timeIn">Time In</option>
+        <option value="timeOut" selected>Time Out</option>
+        <option value="both">Both Time In &amp; Time Out</option>
+      </select>
+    </div>
+    <div class="field" id="reqTimeInField"><label>Correct Time In</label><input type="time" id="reqTimeIn" value="${a.timeIn? new Date(a.timeIn).toTimeString().slice(0,5):''}"></div>
+    <div class="field" id="reqTimeOutField"><label>Correct Time Out</label><input type="time" id="reqTimeOut" value="${a.timeOut? new Date(a.timeOut).toTimeString().slice(0,5):''}"></div>
+    <div class="field"><label>Reason</label><textarea id="reqReason" rows="3" placeholder="e.g. Forgot to clock out, left site at 4:30pm"></textarea></div>
+    <div class="tiny muted" style="margin-bottom:12px;">Attendance corrections for this week are due by <b>Thursday, ${fmtDateShort(thursdayOfWeek(startOfWeek(new Date(a.timeIn))))}</b>.</div>
+    <button class="btn btn-accent btn-block btn-lg" id="reqSend">Send to Admin</button>
+    <button class="btn btn-ghost btn-block" style="margin-top:8px;" id="reqCancel">Cancel</button>
+  </div>`;
+  document.body.appendChild(wrap);
+  function syncFields(){
+    const t = wrap.querySelector("#reqType").value;
+    wrap.querySelector("#reqTimeInField").style.display = (t==="timeIn"||t==="both") ? "" : "none";
+    wrap.querySelector("#reqTimeOutField").style.display = (t==="timeOut"||t==="both") ? "" : "none";
+  }
+  wrap.querySelector("#reqType").onchange = syncFields;
+  syncFields();
+  wrap.querySelector("#reqCancel").onclick=()=>wrap.remove();
+  wrap.querySelector("#reqSend").onclick=()=>{
+    const type = wrap.querySelector("#reqType").value;
+    const reason = wrap.querySelector("#reqReason").value;
+    const timeInVal = wrap.querySelector("#reqTimeIn").value;
+    const timeOutVal = wrap.querySelector("#reqTimeOut").value;
+    if(!reason){ toast("Please add a reason"); return; }
+    if((type==="timeIn"||type==="both") && !timeInVal){ toast("Enter the correct Time In"); return; }
+    if((type==="timeOut"||type==="both") && !timeOutVal){ toast("Enter the correct Time Out"); return; }
+    let requestedTimeIn = null, requestedTimeOut = null;
+    if(type==="timeIn"||type==="both"){
+      const [h,m] = timeInVal.split(":").map(Number);
+      const d = new Date(a.timeIn); d.setHours(h,m,0,0);
+      requestedTimeIn = d.toISOString();
+    }
+    if(type==="timeOut"||type==="both"){
+      const [h,m] = timeOutVal.split(":").map(Number);
+      const d = new Date(a.timeOut||a.timeIn); d.setHours(h,m,0,0);
+      requestedTimeOut = d.toISOString();
+    }
+    const emp = currentEmployee();
+    DB.correctionRequests.push({
+      id:uid("cr"), attendanceId:a.id, employeeId:emp.id, type,
+      originalTimeIn:a.timeIn, originalTimeOut:a.timeOut,
+      requestedTimeIn, requestedTimeOut,
+      reason, status:"pending", createdAt:nowISO()
+    });
+    const typeLabel = type==="both"?"Time In & Time Out":type==="timeIn"?"Time In":"Time Out";
+    const detail = `${typeLabel} correction requested.${requestedTimeIn?` New Time In: ${fmtTime(requestedTimeIn)}.`:""}${requestedTimeOut?` New Time Out: ${fmtTime(requestedTimeOut)}.`:""} Reason: ${reason}`;
+    audit(emp.name,"Requested correction",jobName(a.jobId),detail);
+    save(); wrap.remove(); toast("Correction request sent to admin"); go("emp-att-detail",{id:attId});
+  };
+}
+
+function screenTimesheet(){
+  const emp = currentEmployee();
+  const weekStart = startOfWeek();
+  const week = empRecordsForWeek(emp.id, weekStart).filter(a=>a.timeOut);
+  const totalNet = week.reduce((s,a)=>s+(a.netMin||0),0);
+  const draftCount = week.filter(a=>a.status==="draft").length;
+  const allApproved = week.length>0 && week.every(a=>a.status==="approved");
+  const anySubmitted = week.some(a=>a.status==="submitted");
+  const anyRejected = week.some(a=>a.status==="rejected");
+  let bannerStatus = '<span class="pill pill-muted">In progress</span>';
+  if(allApproved) bannerStatus = '<span class="pill pill-ok">All approved</span>';
+  else if(anyRejected) bannerStatus = '<span class="pill pill-danger">Needs correction — rejected</span>';
+  else if(anySubmitted) bannerStatus = '<span class="pill pill-warn">Submitted — awaiting approval</span>';
+  else if(draftCount>0) bannerStatus = '<span class="pill pill-muted">Draft — not yet submitted</span>';
+  const deadline = thursdayOfWeek(weekStart);
+  const pastDeadline = new Date() > deadline;
+  const needsAction = draftCount>0 || anyRejected;
+  return `
+  <div class="topbar"><div class="h2">My Timesheet</div></div>
+  <div class="content">
+    <div class="card" style="margin-bottom:16px;">
+      <div class="muted small">Week of ${fmtDateShort(weekStart)}</div>
+      <div class="flowbig" style="margin:6px 0;">${hm(totalNet)}</div>
+      <div class="small">${bannerStatus}</div>
+      <div class="tiny" style="margin-top:8px;color:${pastDeadline && needsAction ? 'var(--danger)':'var(--muted)'};">
+        ${pastDeadline && needsAction ? '⚠️ Past this week\'s deadline — ' : ''}Submissions and correction requests for this week are due by <b>Thursday, ${fmtDateShort(deadline)}</b>.
+      </div>
+      ${draftCount>0? `<button class="btn btn-accent btn-block" style="margin-top:14px;" id="submitTs">Submit ${draftCount} Day${draftCount>1?'s':''} for Approval</button>`:""}
+    </div>
+    <div class="row-between" style="margin-bottom:8px;"><div class="h3">ALL SHIFTS THIS WEEK</div>${week.length>1?`<span class="tiny muted">Bulk view — ${week.length} days</span>`:""}</div>
+    <table>
+      <tr><th>Date</th><th>Job</th><th>In</th><th>Out</th><th>Break</th><th>Total</th><th>Status</th></tr>
+      ${week.map(a=>`<tr data-emp-att="${a.id}" style="cursor:pointer;">
+        <td>${fmtDateShort(a.timeIn)}</td><td>${escapeHtml(jobName(a.jobId))}</td>
+        <td>${fmtTime(a.timeIn)}</td><td>${a.timeOut?fmtTime(a.timeOut):'—'}</td>
+        <td>${hm((a.unpaidBreakMin||0)+(a.paidBreakMin||0))}</td>
+        <td>${a.netMin!=null?hm(a.netMin):'—'}</td>
+        <td>${attStatusPill(a.status)}</td>
+      </tr>`).join("")}
+      ${week.length===0?`<tr><td colspan="7" class="muted" style="text-align:center;padding:20px;">No completed shifts this week yet</td></tr>`:""}
+    </table>
+    <div class="tiny muted" style="margin-top:14px;">Approved records are locked. If something looks wrong on an approved or submitted day, open it and tap "Request Correction". If you have more than one day to submit or correct, use this weekly list to see and act on all of them at once.</div>
+  </div>`;
+}
+
+function screenProfile(){
+  const emp = currentEmployee();
+  return `
+  <div class="topbar"><div class="h2">Profile</div></div>
+  <div class="content">
+    <div class="card row gap-12" style="margin-bottom:16px;">
+      <div class="avatar" style="width:52px;height:52px;font-size:18px;">${initials(emp.name)}</div>
+      <div><div class="h2">${escapeHtml(emp.name)}</div><div class="muted small">${escapeHtml(emp.role)} · ${escapeHtml(emp.department)}</div></div>
+    </div>
+    <div class="card col gap-10" style="margin-bottom:16px;">
+      <div class="row-between small"><span class="muted">Email</span><b>${escapeHtml(emp.email)}</b></div>
+      <div class="row-between small"><span class="muted">Pay category</span><b>${escapeHtml(emp.payCategory)}</b></div>
+      <div class="row-between small"><span class="muted">Status</span><b style="color:var(--ok)">Active</b></div>
+    </div>
+    <button class="btn btn-ghost btn-block" id="viewPrivacy" style="margin-bottom:10px;">Privacy &amp; Permissions</button>
+    <button class="btn btn-outline-danger btn-block" id="logoutBtn">Log Out</button>
+  </div>`;
+}
+
+function screenPrivacy(){
+  return `
+  <div class="topbar">${PRIVACY_FROM_LOGIN?'<div style="width:40px"></div>':'<button class="backbtn" id="back">← Back</button>'}<div class="h2">Privacy Notice</div><div style="width:40px"></div></div>
+  <div class="content">
+    <div class="card col gap-14">
+      <div><b>Photo permission</b><div class="small muted" style="margin-top:4px;">Time In, Time Out, breaks and lunch never require a photo. A photo is only ever requested if you choose to attach one to an optional Work Log entry, and it's picked from your device's gallery rather than a live camera capture.</div></div>
+      <div><b>Location permission</b><div class="small muted" style="margin-top:4px;">Captured only at the moment of Time In, Start Break, End Break and Time Out. Upstage Co does not track your location continuously in the background unless site-tracking is separately enabled and disclosed for a specific job.</div></div>
+      <div><b>Data retention</b><div class="small muted" style="margin-top:4px;">Attendance photos and location records are retained according to company policy, configurable by your admin, for payroll and compliance purposes.</div></div>
+      <div><b>Your data</b><div class="small muted" style="margin-top:4px;">You can view your own attendance history at any time. Only authorised admins can view company-wide records.</div></div>
+    </div>
+    <button class="btn btn-accent btn-block btn-lg" style="margin-top:18px;" id="ackBtn">I Understand &amp; Acknowledge</button>
+  </div>`;
+}
+
+/* ---------------- Screen event binding (employee) ---------------- */
+function bindScreen(){
+  const $ = id=>document.getElementById(id);
+  if($("back")) $("back").onclick = ()=> {
+    if(route.name==="privacy") go("profile");
+    else if(route.name==="emp-att-detail") go("history");
+    else go("emp-home");
+  };
+  document.querySelectorAll("[data-emp-att]").forEach(el=> el.onclick = ()=> go("emp-att-detail",{id:el.dataset.empAtt}));
+  if($("reqCorrection")) $("reqCorrection").onclick = ()=> modalRequestCorrection(route.id);
+  if($("submitTs")) $("submitTs").onclick = ()=>{
+    const emp = currentEmployee();
+    const week = empRecordsForWeek(emp.id, startOfWeek()).filter(a=>a.status==="draft");
+    week.forEach(a=> a.status="submitted");
+    audit(emp.name,"Submitted timesheet for approval","Weekly timesheet",`${week.length} day(s)`);
+    save(); toast("Timesheet submitted for approval"); go("timesheet");
+  };
+  if($("btnTimeIn")) $("btnTimeIn").onclick = ()=> go("job-select");
+  document.querySelectorAll("[data-job]").forEach(b=> b.onclick = ()=> doTimeIn(b.dataset.job));
+  if($("btnStartBreak")) $("btnStartBreak").onclick = doStartBreak;
+  if($("btnEndBreak")) $("btnEndBreak").onclick = doEndBreak;
+  if($("btnTimeOut")) $("btnTimeOut").onclick = doTimeOut;
+  if($("goWorklog")) $("goWorklog").onclick = ()=> go("worklog-add");
+  if($("goHistory")) $("goHistory").onclick = ()=> go("history");
+  if($("goSubmit")) $("goSubmit").onclick = ()=> go("timesheet");
+  if($("addWl")) $("addWl").onclick = ()=> go("worklog-add");
+  if($("viewPrivacy")) $("viewPrivacy").onclick = ()=> { PRIVACY_FROM_LOGIN=false; go("privacy"); };
+  if($("logoutBtn")) $("logoutBtn").onclick = ()=> { audit(currentEmployee().name,"Logged out","Employee session",""); DB.session=null; save(); go("login"); };
+  if($("ackBtn")) $("ackBtn").onclick = ()=> { toast("Acknowledged"); go(PRIVACY_FROM_LOGIN? "login" : "profile"); PRIVACY_FROM_LOGIN=false; };
+
+  if($("wlPhotoBtn")){
+    let photoTaken = false;
+    $("wlPhotoBtn").onclick = ()=> openGalleryPhoto((photo)=>{
+      photoTaken = true;
+      $("wlPhotoPreview").innerHTML = `<img src="${photo}" class="photo-thumb">`;
+    }, "Job Photo");
+  }
+  if($("wlTaskPreset")) $("wlTaskPreset").onchange = ()=>{ if($("wlTaskPreset").value) $("wlTask").value = $("wlTaskPreset").value; };
+  if($("wlSave")) $("wlSave").onclick = ()=>{
+    const emp = currentEmployee();
+    const jobId = $("wlJob").value, task = $("wlTask").value || $("wlTaskPreset").value;
+    if(!task){ toast("Add a task description"); return; }
+    const today = new Date();
+    const [sh,sm] = ($("wlStart").value||"08:00").split(":").map(Number);
+    const [fh,fm] = ($("wlFinish").value||"").split(":").map(Number);
+    const start = new Date(today); start.setHours(sh,sm,0,0);
+    const finish = $("wlFinish").value ? (()=>{const d=new Date(today); d.setHours(fh,fm,0,0); return d;})() : null;
+    DB.worklogs.push({id:uid("wl"), attendanceId:null, employeeId:emp.id, jobId, task, start:start.toISOString(), finish: finish?finish.toISOString():null, notes:$("wlNotes").value, photos: $("wlPhotoPreview").innerHTML? 1:0});
+    audit(emp.name,"Added work log entry",jobName(jobId),task);
+    save(); toast("Work entry saved"); go("worklog");
+  };
+
+  if(document.getElementById("att")) {} // reserved
+}
+
+/* =====================================================================
+   ADMIN
+   ===================================================================== */
+function renderAdminShell(){
+  const allTabs = [
+    ["admin-dashboard","📊","Dashboard"],
+    ["admin-employees","👥","Employees"],
+    ["admin-jobs","🧰","Jobs"],
+    ["admin-live","🟢","Live"],
+    ["admin-timesheets","🧾","Timesheets"],
+    ["admin-reports","📈","Reports"],
+    ["admin-payroll","💵","Payroll"],
+    ["admin-notifications","🔔","Alerts"],
+    ["admin-audit","📜","Audit Log"],
+    ["admin-xero","🔗","Xero"],
+    ["admin-settings","⚙️","Settings"],
+  ];
+  const tabs = allTabs.filter(([k])=>canAccess(k));
+  if(!canAccess(route.name) && route.name!=="admin-att-detail" && route.name!=="admin-employee-detail" && route.name!=="admin-job-detail" && route.name!=="privacy"){
+    route = {name: firstAllowedTab(DB.session.role)};
+  }
+  const body = ({
+    "admin-dashboard": screenAdminDash,
+    "admin-employees": screenAdminEmployees,
+    "admin-employee-detail": screenAdminEmployeeDetail,
+    "admin-jobs": screenAdminJobs,
+    "admin-job-detail": screenAdminJobDetail,
+    "admin-live": screenAdminLive,
+    "admin-att-detail": screenAdminAttDetail,
+    "admin-timesheets": screenAdminTimesheets,
+    "admin-reports": screenAdminReports,
+    "admin-payroll": screenAdminPayroll,
+    "admin-notifications": screenAdminNotifications,
+    "admin-audit": screenAdminAudit,
+    "admin-xero": screenAdminXero,
+    "admin-settings": screenAdminSettings,
+    "privacy": screenPrivacy,
+  })[route.name] || screenAdminDash;
+
+  if(isWide()){
+    return `<div class="layout">
+      <div class="sidebar">
+        <div class="row gap-8" style="padding:8px 10px 20px;"><div style="background:#000;border-radius:8px;padding:4px 8px;display:flex;align-items:center;"><img src="${LOGO_DATA_URL}" alt="Upstage Co" style="width:34px;height:auto;display:block;"></div><div><b>Upstage Co</b><div class="tiny muted">Attendance &amp; Break Log</div></div></div>
+        ${tabs.map(([k,i,l])=>`<button class="sidebtn ${route.name===k?'active':''}" data-nav="${k}">${i}&nbsp; ${l}</button>`).join("")}
+        <div style="flex:1;"></div>
+        <button class="sidebtn" id="logoutBtn">🚪 Log Out</button>
+      </div>
+      <div class="main scroll">${body()}</div>
+    </div>`;
+  }
+  return `
+    <div class="topbrand"><div style="background:#000;border-radius:6px;padding:3px 6px;display:flex;align-items:center;"><img src="${LOGO_DATA_URL}" alt="Upstage Co" style="width:22px;height:auto;display:block;"></div><b class="small">Upstage Co</b></div>
+    <div class="scroll" style="flex:1;">${body()}</div>
+    <div class="bottomnav" style="overflow-x:auto;justify-content:flex-start;">
+      ${tabs.map(([k,i,l])=>`<button class="navbtn ${route.name===k?'active':''}" data-nav="${k}" style="flex:0 0 auto;min-width:64px;"><span class="navico">${i}</span>${l}</button>`).join("")}
+    </div>`;
+}
+function bindAdminShell(){
+  document.querySelectorAll("[data-nav]").forEach(b=> b.onclick = ()=> go(b.dataset.nav));
+  const lo = document.getElementById("logoutBtn"); if(lo) lo.onclick = ()=>{ audit(DB.session.name,"Logged out",`${DB.session.role} session`,""); DB.session=null; save(); go("login"); };
+  bindAdminScreen();
+}
+
+function todayStats(){
+  const emps = DB.employees.filter(e=>e.status==="active" && e.permission==="Employee");
+  let working=0, onBreak=0, notClocked=0, clockedOut=0, late=0, totalMin=0;
+  emps.forEach(e=>{
+    const st = empStatus(e.id);
+    const todays = DB.attendance.filter(a=>a.employeeId===e.id && sameDay(a.timeIn,new Date()));
+    if(st==="working") working++;
+    else if(st==="break") onBreak++;
+    else if(todays.some(a=>a.timeOut)) clockedOut++;
+    else notClocked++;
+    todays.forEach(a=>{
+      const t = new Date(a.timeIn);
+      if(t.getHours()>8 || (t.getHours()===8 && t.getMinutes()>DB.settings.lateThresholdMin)) late++;
+      if(a.netMin) totalMin += a.netMin;
+      else if(!a.timeOut) totalMin += mins(new Date()-new Date(a.timeIn));
+    });
+  });
+  const missingOut = DB.attendance.filter(a=> !a.timeOut && !sameDay(a.timeIn,new Date())).length;
+  return {working,onBreak,notClocked,clockedOut,late,missingOut,totalHeadcount:emps.length,totalMin};
+}
+function activeJobsToday(){
+  return DB.jobs.filter(j=>j.status==="Active").map(j=>{
+    const todays = DB.attendance.filter(a=>a.jobId===j.id && sameDay(a.timeIn,new Date()));
+    const people = new Set(todays.map(a=>a.employeeId)).size;
+    const hrs = todays.reduce((s,a)=> s + (a.netMin!=null? a.netMin : (!a.timeOut? mins(new Date()-new Date(a.timeIn)) : 0)), 0);
+    return {job:j, people, hrs};
+  }).filter(x=>x.people>0);
+}
+
+function screenAdminDash(){
+  const s = todayStats();
+  const pendingApprovals = DB.attendance.filter(a=>a.status==="submitted").length;
+  const correctionReqs = DB.correctionRequests.filter(r=>r.status==="pending").length;
+  const recent = DB.auditLogs.slice(0,5);
+  const jobsToday = activeJobsToday();
+  return `
+  <div class="topbar"><div class="h2">Admin Dashboard</div><div class="pill pill-muted">${DB.settings.companyName}</div></div>
+  <div class="content">
+    <div class="h3" style="margin-bottom:10px;">TODAY</div>
+    <div class="flexwrap" style="margin-bottom:20px;">
+      <div class="kpi"><div class="num">👥 ${s.totalHeadcount}</div><div class="lab">Employees</div></div>
+      <div class="kpi"><div class="num" style="color:var(--ok)">🟢 ${s.working}</div><div class="lab">Working</div></div>
+      <div class="kpi"><div class="num" style="color:var(--danger)">🔴 ${s.notClocked}</div><div class="lab">Not working</div></div>
+      <div class="kpi"><div class="num" style="color:var(--warn)">🟡 ${s.onBreak}</div><div class="lab">On break</div></div>
+      <div class="kpi"><div class="num">⏱ ${hm(s.totalMin)}</div><div class="lab">Hours today</div></div>
+      <div class="kpi"><div class="num" style="color:var(--danger)">⚠️ ${s.missingOut}</div><div class="lab">Missing clock-out</div></div>
+      <div class="kpi"><div class="num" style="color:var(--danger)">🔴 ${s.late}</div><div class="lab">Late</div></div>
+    </div>
+
+    ${(pendingApprovals>0 || correctionReqs>0)? `<div class="card" style="margin-bottom:20px;border-color:var(--warn);">
+      <div class="row-between"><div>
+        ${pendingApprovals>0?`<div><b>${pendingApprovals}</b> timesheet ${pendingApprovals>1?'entries':'entry'} awaiting approval</div>`:""}
+        ${correctionReqs>0?`<div class="small muted" style="margin-top:2px;"><b>${correctionReqs}</b> correction ${correctionReqs>1?'requests':'request'} pending</div>`:""}
+      </div>
+      <button class="btn btn-warn btn-sm" data-nav="admin-timesheets">Review</button></div>
+    </div>`:""}
+
+    <div class="row-between" style="margin-bottom:10px;"><div class="h3">ACTIVE JOBS TODAY</div><a class="link small" data-nav="admin-jobs">View all</a></div>
+    <table style="margin-bottom:20px;">
+      <tr><th>Job</th><th>People</th><th>Hours today</th></tr>
+      ${jobsToday.map(x=>`<tr data-job2="${x.job.id}" style="cursor:pointer;"><td>${escapeHtml(x.job.name)}</td><td>${x.people}</td><td>${hm(x.hrs)}</td></tr>`).join("")}
+      ${jobsToday.length===0?`<tr><td colspan="3" class="muted" style="text-align:center;padding:16px;">No activity logged yet today</td></tr>`:""}
+    </table>
+
+    <div class="row-between" style="margin-bottom:10px;"><div class="h3">LIVE EMPLOYEE STATUS</div><a class="link small" data-nav="admin-live">View all</a></div>
+    <table>
+      <tr><th>Employee</th><th>Status</th><th>Job</th><th>Time in</th><th>Location</th></tr>
+      ${DB.employees.filter(e=>e.status==="active" && e.permission==="Employee").map(e=>{
+        const st=empStatus(e.id); const att=empOpenAttendance(e.id);
+        return `<tr>
+          <td>${escapeHtml(e.name)}</td>
+          <td>${st==='working'?'<span class="pill pill-ok">Working</span>':st==='break'?'<span class="pill pill-warn">Break</span>':'<span class="pill pill-muted">Off</span>'}</td>
+          <td>${att?escapeHtml(jobName(att.jobId)):'—'}</td>
+          <td>${att?fmtTime(att.timeIn):'—'}</td>
+          <td class="tiny">${att?escapeHtml((att.gpsIn.address||'').split(",").slice(0,2).join(",")):'—'}</td>
+        </tr>`;
+      }).join("")}
+    </table>
+
+    <div class="h3" style="margin:20px 0 10px;">RECENT ACTIVITY</div>
+    ${recent.map(a=>`<div class="card card-tight" style="margin-bottom:8px;">
+      <div class="row-between"><b class="small">${escapeHtml(a.actor)}</b><span class="tiny muted">${fmtTime(a.ts)}</span></div>
+      <div class="small muted">${escapeHtml(a.action)} — ${escapeHtml(a.target)}</div>
+    </div>`).join("")}
+  </div>`;
+}
+
+function visibleEmployeeList(){
+  const role = DB.session.role;
+  const all = DB.employees.filter(e=>e.permission==="Employee"||e.permission==="Manager");
+  if(role==="Manager") return all.filter(e=> e.manager===DB.session.name || e.id===DB.session.employeeId);
+  return all;
+}
+function screenAdminEmployees(){
+  const list = visibleEmployeeList();
+  const canAdd = DB.session.role!=="Manager";
+  return `
+  <div class="topbar"><div class="h2">Employees</div>${canAdd?'<button class="btn btn-accent btn-sm" id="addEmp">+ Add Employee</button>':''}</div>
+  <div class="content">
+    <table>
+      <tr><th>ID</th><th>Name</th><th>Role</th><th>Dept</th><th>Status</th><th></th></tr>
+      ${list.map(e=>`<tr style="cursor:pointer;" data-emp="${e.id}">
+        <td>${escapeHtml(e.empId||'—')}</td><td>${escapeHtml(e.name)}</td><td>${escapeHtml(e.role)}</td><td>${escapeHtml(e.department)}</td>
+        <td>${e.status==='active'?'<span class="pill pill-ok">Active</span>':'<span class="pill pill-danger">Disabled</span>'}</td>
+        <td><span class="link small">View →</span></td>
+      </tr>`).join("")}
+    </table>
+  </div>`;
+}
+function screenAdminEmployeeDetail(){
+  const e = DB.employees.find(x=>x.id===route.id);
+  const recs = DB.attendance.filter(a=>a.employeeId===e.id).sort((a,b)=>new Date(b.timeIn)-new Date(a.timeIn));
+  const weekMin = weeklyNetMinutes(e.id, startOfWeek());
+  const canManage = DB.session.role!=="Manager";
+  const canSeeRate = DB.session.role==="Admin"||DB.session.role==="Super Admin"||DB.session.role==="Payroll";
+  return `
+  <div class="topbar"><button class="backbtn" id="back">← Back</button><div class="h2">${escapeHtml(e.name)}</div><div style="width:40px"></div></div>
+  <div class="content">
+    <div class="card row gap-12" style="margin-bottom:16px;">
+      <div class="avatar">${initials(e.name)}</div>
+      <div><div class="h2">${escapeHtml(e.name)}</div><div class="muted small">${escapeHtml(e.role)} · ${escapeHtml(e.department)} · ${escapeHtml(e.employmentType||e.payCategory)}</div></div>
+    </div>
+    <div class="card col gap-8" style="margin-bottom:16px;">
+      <div class="row-between small"><span class="muted">Employee ID</span><b>${escapeHtml(e.empId||'—')}</b></div>
+      <div class="row-between small"><span class="muted">Position</span><b>${escapeHtml(e.role)}</b></div>
+      <div class="row-between small"><span class="muted">Department</span><b>${escapeHtml(e.department)}</b></div>
+      <div class="row-between small"><span class="muted">Employment type</span><b>${escapeHtml(e.employmentType||'—')}</b></div>
+      ${canSeeRate? `<div class="row-between small"><span class="muted">Hourly rate</span><b>${e.hourlyRate?'$'+e.hourlyRate.toFixed(2):'—'}</b></div>`:""}
+      <div class="row-between small"><span class="muted">Manager</span><b>${escapeHtml(e.manager||'—')}</b></div>
+      <div class="row-between small"><span class="muted">Default location</span><b>${escapeHtml(e.defaultLocation||'—')}</b></div>
+      <div class="row-between small"><span class="muted">Permission level</span><b>${escapeHtml(e.permission)}</b></div>
+    </div>
+    <div class="grid2" style="margin-bottom:16px;">
+      <div class="kpi"><div class="num">${hm(weekMin)}</div><div class="lab">Hours this week</div></div>
+      <div class="kpi"><div class="num">${statusPill(empStatus(e.id))}</div><div class="lab">Current status</div></div>
+    </div>
+    ${canManage? `<div class="flexwrap" style="margin-bottom:16px;">
+      <button class="btn btn-ghost btn-sm" id="resetPin">Reset PIN</button>
+      <button class="btn ${e.status==='active'?'btn-outline-danger':'btn-ok'} btn-sm" id="toggleActive">${e.status==='active'?'Disable Employee':'Re-enable Employee'}</button>
+      <button class="btn btn-ghost btn-sm" id="manualEntry">+ Manual Attendance Entry</button>
+    </div>`:""}
+    <div class="h3" style="margin-bottom:10px;">ATTENDANCE RECORDS</div>
+    ${recs.map(a=>`<div class="card card-tight" style="margin-bottom:8px;cursor:pointer;" data-att="${a.id}">
+      <div class="row-between"><b class="small">${fmtDate(a.timeIn)}</b>${attStatusPill(a.status)}</div>
+      <div class="small muted">${escapeHtml(jobName(a.jobId))} · ${fmtTime(a.timeIn)}–${a.timeOut?fmtTime(a.timeOut):'—'}</div>
+    </div>`).join("")}
+  </div>`;
+}
+
+function screenAdminAttDetail(){
+  const a = DB.attendance.find(x=>x.id===route.id);
+  const brks = DB.breaks.filter(b=>a.breakIds.includes(b.id));
+  const wl = DB.worklogs.filter(w=>w.attendanceId===a.id);
+  return `
+  <div class="topbar"><button class="backbtn" id="back">← Back</button><div class="h2">Attendance Record</div><div style="width:40px"></div></div>
+  <div class="content">
+    <div class="row-between" style="margin-bottom:14px;">
+      <div><div class="h2">${escapeHtml(empName(a.employeeId))}</div><div class="muted small">${fmtDate(a.timeIn)} · ${escapeHtml(jobName(a.jobId))}</div></div>
+      ${attStatusPill(a.status)}
+    </div>
+    <div class="grid2" style="margin-bottom:16px;">
+      <div class="card col" style="align-items:center;">
+        <div class="muted small" style="margin-bottom:6px;">Time In Photo</div>
+        ${a.photoIn && a.photoIn!=="PHOTO" ? `<img src="${a.photoIn}" class="photo-thumb" style="width:100%;height:120px;">` : `<div class="photo-thumb" style="width:100%;height:120px;display:flex;align-items:center;justify-content:center;">📷</div>`}
+        <div class="tiny muted" style="margin-top:6px;">${fmtTime(a.timeIn)}</div>
+      </div>
+      <div class="card col" style="align-items:center;">
+        <div class="muted small" style="margin-bottom:6px;">Time Out Photo</div>
+        ${a.photoOut && a.photoOut!=="PHOTO" ? `<img src="${a.photoOut}" class="photo-thumb" style="width:100%;height:120px;">` : `<div class="photo-thumb" style="width:100%;height:120px;display:flex;align-items:center;justify-content:center;">${a.timeOut?'📷':'—'}</div>`}
+        <div class="tiny muted" style="margin-top:6px;">${a.timeOut?fmtTime(a.timeOut):'Not yet clocked out'}</div>
+      </div>
+    </div>
+    <div class="card col gap-8" style="margin-bottom:16px;">
+      <div class="row-between small"><span class="muted">Location (in)</span><b>${escapeHtml(a.gpsIn.address||'—')}</b></div>
+      <div class="row-between small"><span class="muted">Coordinates</span><b>${a.gpsIn.lat?.toFixed(4)}, ${a.gpsIn.lng?.toFixed(4)}</b></div>
+      <div class="row-between small"><span class="muted">Geofence</span><b>${a.geofence==='inside'?`🟢 Inside ${a.geofenceName||''}`:'🟠 Outside approved zone'}</b></div>
+      ${a.gpsOut? `<div class="row-between small"><span class="muted">Location (out)</span><b>${escapeHtml(a.gpsOut.address)}</b></div>`:""}
+      <a class="link small" href="https://www.google.com/maps?q=${a.gpsIn.lat},${a.gpsIn.lng}" target="_blank">Open in Maps →</a>
+    </div>
+    <div class="card col gap-8" style="margin-bottom:16px;">
+      <div class="row-between small"><span class="muted">Gross</span><b>${a.grossMin!=null?hm(a.grossMin):'—'}</b></div>
+      <div class="row-between small"><span class="muted">Paid break</span><b>${hm(a.paidBreakMin||0)}</b></div>
+      <div class="row-between small"><span class="muted">Unpaid break</span><b>${hm(a.unpaidBreakMin||0)}</b></div>
+      <div class="row-between small"><span class="muted">Net paid hours</span><b style="color:var(--accent)">${a.netMin!=null?hm(a.netMin):'—'}</b></div>
+    </div>
+    ${brks.length? `<div class="h3" style="margin-bottom:8px;">BREAKS</div>${brks.map(b=>`
+      <div class="card card-tight" style="margin-bottom:8px;">
+        <div class="row-between small"><b>${escapeHtml(b.type)} ${b.paid?'(paid)':'(unpaid)'}</b><span>${fmtTime(b.start)} – ${b.end?fmtTime(b.end):'ongoing'}</span></div>
+      </div>`).join("")}`:""}
+    ${a.summary? `<div class="card col" style="margin-bottom:16px;"><div class="muted small" style="margin-bottom:4px;">Work summary</div><div class="small">${escapeHtml(a.summary)}</div></div>`:""}
+    ${wl.length? `<div class="h3" style="margin-bottom:8px;">JOB NOTES</div>${wl.map(w=>`<div class="card card-tight" style="margin-bottom:8px;"><b class="small">${escapeHtml(w.task)}</b>${w.notes?`<div class="tiny muted">${escapeHtml(w.notes)}</div>`:""}</div>`).join("")}`:""}
+
+    ${a.rejectReason? `<div class="card" style="border-color:var(--danger);margin-bottom:12px;"><b class="small">Rejection reason</b><div class="small muted" style="margin-top:4px;">${escapeHtml(a.rejectReason)}</div></div>`:""}
+    ${a.status==="submitted"? `<div class="grid2" style="margin-top:10px;">
+      <button class="btn btn-ok" id="approveBtn">✅ Approve</button>
+      <button class="btn btn-danger" id="rejectBtn">✖ Reject</button>
+    </div>
+    <button class="btn btn-ghost btn-block" style="margin-top:8px;" id="correctBtn">Ask Employee to Correct</button>`:""}
+    ${(a.status==="approved"||a.status==="corrected")? `<button class="btn btn-ghost btn-block" style="margin-top:10px;" id="editApproved">Edit (creates audit record)</button>`:""}
+  </div>`;
+}
+
+function screenAdminJobs(){
+  const canManageJobs = DB.session.role==="Manager" || DB.session.role==="Super Admin";
+  return `
+  <div class="topbar"><div class="h2">Jobs</div>${canManageJobs?`<button class="btn btn-accent btn-sm" id="addJob">+ New Job</button>`:""}</div>
+  <div class="content">
+    ${DB.jobs.map(j=>`<div class="card" style="margin-bottom:10px;cursor:pointer;" data-job2="${j.id}">
+      <div class="row-between"><b>${escapeHtml(j.name)}</b>
+        <span class="pill ${j.status==='Active'?'pill-ok':j.status==='Upcoming'?'pill-warn':'pill-muted'}">${j.status}</span>
+      </div>
+      <div class="tiny muted" style="margin-top:4px;">#${j.number} · ${escapeHtml(j.client)} · ${escapeHtml(j.venue)}, ${escapeHtml(j.location)}</div>
+      <div class="tiny muted" style="margin-top:2px;">${j.assigned.length} employees assigned</div>
+    </div>`).join("")}
+  </div>`;
+}
+function screenAdminJobDetail(){
+  const j = DB.jobs.find(x=>x.id===route.id);
+  if(!j.changeLog) j.changeLog = [];
+  const logs = DB.worklogs.filter(w=>w.jobId===j.id);
+  const jobMins = DB.attendance.filter(a=>a.jobId===j.id).reduce((s,a)=>s+(a.netMin||0),0);
+  const canManageJobs = (DB.session.role==="Manager" || DB.session.role==="Super Admin") && j.status!=="Completed";
+  return `
+  <div class="topbar"><button class="backbtn" id="back">← Back</button><div class="h2">Job Detail</div><div style="width:40px"></div></div>
+  <div class="content">
+    <div class="card" style="margin-bottom:16px;">
+      <div class="row-between"><div class="h2">${escapeHtml(j.name)}</div><span class="pill ${j.status==='Active'?'pill-ok':j.status==='Upcoming'?'pill-warn':'pill-muted'}">${j.status}</span></div>
+      <div class="muted small" style="margin-top:4px;">JOB #${j.number}</div>
+      <div class="divider"></div>
+      <div class="col gap-8 small">
+        <div class="row-between"><span class="muted">Client</span><b>${escapeHtml(j.client)}</b></div>
+        <div class="row-between"><span class="muted">Venue</span><b>${escapeHtml(j.venue)}</b></div>
+        <div class="row-between"><span class="muted">Location</span><b>${escapeHtml(j.location)}</b></div>
+        <div class="row-between"><span class="muted">Dates</span><b>${j.start} → ${j.end||'ongoing'}</b></div>
+        <div class="row-between"><span class="muted">Job manager</span><b>${escapeHtml(j.manager)}</b></div>
+        <div class="row-between"><span class="muted">Total hours logged</span><b style="color:var(--accent)">${hm(jobMins)}</b></div>
+      </div>
+      ${canManageJobs?`<button class="btn btn-ghost btn-block" style="margin-top:14px;" id="editJob">Edit Job Details</button>`:""}
+    </div>
+    <div class="row-between" style="margin-bottom:8px;"><div class="h3">ASSIGNED EMPLOYEES</div>${canManageJobs?`<a class="link small" id="addJobEmp">+ Add Employee</a>`:""}</div>
+    <div class="flexwrap" style="margin-bottom:16px;">
+      ${j.assigned.map(id=>`<span class="pill pill-muted" style="display:inline-flex;align-items:center;gap:6px;">${escapeHtml(empName(id))}${canManageJobs?`<b data-remove-emp="${id}" style="cursor:pointer;color:var(--danger);margin-left:2px;">✕</b>`:""}</span>`).join("")}
+      ${j.assigned.length===0?`<div class="tiny muted">No employees assigned yet.</div>`:""}
+    </div>
+    <div class="h3" style="margin-bottom:8px;">JOB NOTES / WORK LOGS</div>
+    ${logs.map(w=>`<div class="card card-tight" style="margin-bottom:8px;">
+      <div class="row-between"><b class="small">${escapeHtml(empName(w.employeeId))}</b><span class="tiny muted">${fmtDate(w.start)}</span></div>
+      <div class="small">${escapeHtml(w.task)}</div>
+    </div>`).join("")}
+    ${logs.length===0? `<div class="empty small">No work logged for this job yet.</div>`:""}
+
+    <div class="h3" style="margin:20px 0 8px;">JOB CHANGE LOG</div>
+    ${j.changeLog.slice().reverse().map(c=>`<div class="card card-tight" style="margin-bottom:8px;">
+      <div class="row-between"><b class="small">${escapeHtml(c.actor)}</b><span class="tiny muted">${fmtDate(c.ts)} ${fmtTime(c.ts)}</span></div>
+      <div class="small" style="margin-top:2px;">${escapeHtml(c.detail)}</div>
+    </div>`).join("")}
+    ${j.changeLog.length===0? `<div class="empty small">No changes logged for this job yet.</div>`:""}
+  </div>`;
+}
+
+function screenAdminLive(){
+  return `
+  <div class="topbar"><div class="h2">Live Attendance</div></div>
+  <div class="content">
+    <table>
+      <tr><th>Employee</th><th>Status</th><th>Job</th><th>Since</th><th>Location</th><th></th></tr>
+      ${DB.employees.filter(e=>e.status==="active").map(e=>{
+        const st=empStatus(e.id); const att=empOpenAttendance(e.id);
+        return `<tr>
+          <td>${escapeHtml(e.name)}</td>
+          <td>${st==='working'?'<span class="pill pill-ok">Working</span>':st==='break'?'<span class="pill pill-warn">Break</span>':'<span class="pill pill-muted">Off</span>'}</td>
+          <td>${att?escapeHtml(jobName(att.jobId)):'—'}</td>
+          <td>${att?fmtTime(att.timeIn):'—'}</td>
+          <td class="tiny">${att? (att.geofence==='inside'?'🟢 ':'🟠 ')+escapeHtml((att.gpsIn.address||'').split(",")[0]):'—'}</td>
+          <td>${att?`<span class="link small" data-att="${att.id}">View →</span>`:''}</td>
+        </tr>`;
+      }).join("")}
+    </table>
+    <div class="tiny muted" style="margin-top:16px;">A full build renders these coordinates on an interactive map (e.g. Google Maps / Mapbox SDK) with pins per employee.</div>
+  </div>`;
+}
+
+function screenAdminTimesheets(){
+  const pending = DB.attendance.filter(a=>a.status==="submitted");
+  const rejected = DB.attendance.filter(a=>a.status==="rejected");
+  const approved = DB.attendance.filter(a=>a.status==="approved"||a.status==="corrected").slice(0,15);
+  const corrections = DB.correctionRequests.filter(r=>r.status==="pending");
+  return `
+  <div class="topbar"><div class="h2">Timesheet Approval</div></div>
+  <div class="content">
+    ${corrections.length>0? `<div class="h3" style="margin-bottom:10px;">CORRECTION REQUESTS (${corrections.length})</div>
+    ${corrections.map(r=>{
+      const a = DB.attendance.find(x=>x.id===r.attendanceId);
+      const empN = empName(r.employeeId);
+      const typeLabel = r.type==="both" ? "Time In & Time Out" : r.type==="timeIn" ? "Time In" : "Time Out";
+      const relatedLogs = DB.auditLogs.filter(l=> l.actor===empN && fmtDate(l.ts)===fmtDate(a.timeIn)).slice(0,5);
+      return `<div class="card" style="margin-bottom:10px;border-color:var(--warn);">
+        <div class="row-between"><b class="small">${escapeHtml(empN)}</b><span class="tiny muted">${fmtDate(a.timeIn)}</span></div>
+        <div class="tiny muted" style="margin-top:2px;">Correction type: <b>${typeLabel}</b></div>
+        ${r.requestedTimeIn? `<div class="small muted" style="margin-top:6px;">Time In — original: <b>${fmtTime(r.originalTimeIn)}</b> → requested: <b>${fmtTime(r.requestedTimeIn)}</b></div>`:""}
+        ${r.requestedTimeOut? `<div class="small muted" style="margin-top:4px;">Time Out — original: <b>${fmtTime(r.originalTimeOut)}</b> → requested: <b>${fmtTime(r.requestedTimeOut)}</b></div>`:""}
+        <div class="small" style="margin-top:6px;">"${escapeHtml(r.reason)}"</div>
+        ${relatedLogs.length? `<div class="tiny muted" style="margin-top:10px;padding-top:8px;border-top:1px solid var(--line);"><b>Related activity that day:</b><br>${relatedLogs.map(l=>`${fmtTime(l.ts)} — ${escapeHtml(l.action)}${l.detail?`: ${escapeHtml(l.detail)}`:""}`).join("<br>")}</div>`:""}
+        <div class="grid2" style="margin-top:10px;">
+          <button class="btn btn-ok btn-sm" data-cr-approve="${r.id}">Approve Correction</button>
+          <button class="btn btn-danger btn-sm" data-cr-reject="${r.id}">Reject</button>
+        </div>
+      </div>`;
+    }).join("")}`:""}
+
+    <div class="h3" style="margin-bottom:10px;">SUBMITTED — AWAITING APPROVAL (${pending.length})</div>
+    ${pending.map(a=>`<div class="card" style="margin-bottom:10px;">
+      <div class="row-between"><b class="small">${escapeHtml(empName(a.employeeId))}</b><span class="tiny muted">${fmtDate(a.timeIn)}</span></div>
+      <div class="small muted">${escapeHtml(jobName(a.jobId))}${a.category?` · ${escapeHtml(a.category)}`:""} · ${fmtTime(a.timeIn)}–${fmtTime(a.timeOut)} · Net ${hm(a.netMin)}</div>
+      <div class="grid3" style="margin-top:10px;">
+        <button class="btn btn-ok btn-sm" data-approve="${a.id}">Approve</button>
+        <button class="btn btn-danger btn-sm" data-reject="${a.id}">Reject</button>
+        <button class="btn btn-ghost btn-sm" data-att="${a.id}">Details</button>
+      </div>
+    </div>`).join("")}
+    ${pending.length===0? `<div class="empty small">Nothing waiting for approval.</div>`:""}
+
+    ${rejected.length>0? `<div class="h3" style="margin:20px 0 10px;">REJECTED — WITH EMPLOYEE</div>
+    ${rejected.map(a=>`<div class="card card-tight" style="margin-bottom:8px;border-color:var(--danger);">
+      <div class="row-between small"><b>${escapeHtml(empName(a.employeeId))}</b><span class="pill pill-danger">Rejected</span></div>
+      <div class="tiny muted">${fmtDate(a.timeIn)} · ${escapeHtml(jobName(a.jobId))} · ${a.rejectReason?escapeHtml(a.rejectReason):''}</div>
+    </div>`).join("")}`:""}
+
+    <div class="h3" style="margin:20px 0 10px;">RECENTLY APPROVED</div>
+    ${approved.map(a=>`<div class="card card-tight" style="margin-bottom:8px;">
+      <div class="row-between small"><b>${escapeHtml(empName(a.employeeId))}</b>${attStatusPill(a.status)}</div>
+      <div class="tiny muted">${fmtDate(a.timeIn)} · ${escapeHtml(jobName(a.jobId))} · ${hm(a.netMin)}</div>
+    </div>`).join("")}
+  </div>`;
+}
+
+function screenAdminReports(){
+  const empOpts = DB.employees.filter(e=>e.permission==="Employee"||e.permission==="Manager").map(e=>`<option value="${e.id}">${escapeHtml(e.name)}</option>`).join("");
+  const jobOpts = DB.jobs.map(j=>`<option value="${j.id}">${escapeHtml(j.name)}</option>`).join("");
+  const deptOpts = [...new Set(DB.employees.map(e=>e.department))].map(d=>`<option value="${d}">${escapeHtml(d)}</option>`).join("");
+  const reportTypes = [
+    ["attendance","Attendance"],["job-labour","Job Labour"],["department","Department"],
+    ["late","Late Arrivals"],["missing","Missing Clock Out"],["overtime","Overtime"],["location","Location Exceptions"]
+  ];
+  return `
+  <div class="topbar"><div class="h2">Reports</div></div>
+  <div class="content">
+    <div class="field">
+      <label>Report type</label>
+      <select id="repType">${reportTypes.map(([k,l])=>`<option value="${k}">${l}</option>`).join("")}</select>
+    </div>
+    <div class="card col gap-12" style="margin-bottom:16px;">
+      <div class="grid2">
+        <div><label>Employee</label><select id="repEmp"><option value="">All</option>${empOpts}</select></div>
+        <div><label>Job</label><select id="repJob"><option value="">All</option>${jobOpts}</select></div>
+      </div>
+      <div class="grid2">
+        <div><label>Department</label><select id="repDept"><option value="">All</option>${deptOpts}</select></div>
+        <div><label>Status</label><select id="repStatus"><option value="">All</option><option value="draft">Draft</option><option value="submitted">Submitted</option><option value="approved">Approved</option><option value="rejected">Rejected</option><option value="corrected">Corrected</option><option value="open">Open</option></select></div>
+      </div>
+      <div class="grid2">
+        <div><label>From</label><input type="date" id="repFrom"></div>
+        <div><label>To</label><input type="date" id="repTo"></div>
+      </div>
+      <button class="btn btn-accent btn-block" id="runReport">Run Report</button>
+    </div>
+    <div id="reportResults"></div>
+  </div>`;
+}
+
+function payrollRows(fromDate, toDate){
+  const from = fromDate? new Date(fromDate) : startOfWeek();
+  const to = toDate? new Date(toDate+"T23:59:59") : new Date();
+  const emps = DB.employees.filter(e=>e.permission==="Employee"||e.permission==="Manager");
+  const otThreshold = DB.settings.overtimeThresholdHrs*60;
+  return emps.map(e=>{
+    const recs = DB.attendance.filter(a=>a.employeeId===e.id && (a.status==="approved"||a.status==="corrected") && new Date(a.timeIn)>=from && new Date(a.timeIn)<=to);
+    let regular=0, ot=0;
+    recs.forEach(a=>{
+      const g = a.grossMin||0;
+      if(g>otThreshold){ regular += otThreshold; ot += g-otThreshold; }
+      else regular += g;
+    });
+    // convert gross-based regular/ot roughly to net-adjusted using unpaid break ratio
+    const totalNet = recs.reduce((s,a)=>s+(a.netMin||0),0);
+    const totalGross = recs.reduce((s,a)=>s+(a.grossMin||0),0) || 1;
+    const scale = totalGross? totalNet/totalGross : 1;
+    return {emp:e, regular: regular*scale/60, ot: ot*scale/60, total: totalNet/60, shifts: recs.length};
+  }).filter(r=>r.shifts>0);
+}
+function screenAdminPayroll(){
+  return `
+  <div class="topbar"><div class="h2">Payroll Export</div></div>
+  <div class="content">
+    <div class="card col gap-12" style="margin-bottom:16px;">
+      <div class="grid2">
+        <div><label>From</label><input type="date" id="payFrom" value="${startOfWeek().toISOString().slice(0,10)}"></div>
+        <div><label>To</label><input type="date" id="payTo" value="${new Date().toISOString().slice(0,10)}"></div>
+      </div>
+      <button class="btn btn-accent btn-block" id="runPayroll">Generate Payroll Summary</button>
+    </div>
+    <div class="tiny muted" style="margin-bottom:14px;">Only <b>approved</b> and <b>corrected</b> timesheets are included — draft, submitted, rejected and open shifts are excluded until approved.</div>
+    <div id="payrollResults"></div>
+  </div>`;
+}
+
+function screenAdminNotifications(){
+  const notifs = buildNotifications();
+  return `
+  <div class="topbar"><div class="h2">Alerts &amp; Notifications</div></div>
+  <div class="content">
+    ${notifs.length===0? `<div class="empty">No active alerts. Everything looks on track.</div>`:""}
+    ${notifs.map(n=>`<div class="card card-tight" style="margin-bottom:8px;border-color:${n.color};">
+      <div class="row-between"><b class="small">${n.icon} ${escapeHtml(n.title)}</b><span class="tiny muted">${escapeHtml(n.time)}</span></div>
+      <div class="small muted" style="margin-top:3px;">${escapeHtml(n.detail)}</div>
+    </div>`).join("")}
+    <div class="h3" style="margin:20px 0 10px;">NOTIFICATION SETTINGS</div>
+    <a class="link small" data-nav="admin-settings">Configure which alerts are enabled →</a>
+  </div>`;
+}
+function buildNotifications(){
+  const list = [];
+  const s = DB.settings.notifications;
+  const otThreshold = DB.settings.overtimeThresholdHrs*60;
+  DB.attendance.forEach(a=>{
+    const emp = DB.employees.find(e=>e.id===a.employeeId); if(!emp || emp.permission!=="Employee" && emp.permission!=="Manager") return;
+    if(s.forgotTimeOut && !a.timeOut && !sameDay(a.timeIn,new Date())){
+      list.push({icon:"⚠️", color:"var(--danger)", title:"Missing Clock Out", detail:`${emp.name} has not clocked out. Last recorded: ${fmtTime(a.timeIn)} on ${fmtDate(a.timeIn)}.`, time:fmtDateShort(a.timeIn)});
+    }
+    if(a.grossMin && a.grossMin>otThreshold){
+      list.push({icon:"⏱", color:"var(--warn)", title:"Overtime", detail:`${emp.name} worked ${hm(a.grossMin)} on ${fmtDate(a.timeIn)} — ${hm(a.grossMin-otThreshold)} over threshold.`, time:fmtDateShort(a.timeIn)});
+    }
+    if(sameDay(a.timeIn,new Date())){
+      const t = new Date(a.timeIn);
+      if(t.getHours()>8 || (t.getHours()===8 && t.getMinutes()>DB.settings.lateThresholdMin)){
+        list.push({icon:"🔴", color:"var(--danger)", title:"Late Arrival", detail:`${emp.name} clocked in at ${fmtTime(a.timeIn)} today.`, time:"Today"});
+      }
+    }
+    if(s.timesheetApproved && a.status==="submitted"){
+      list.push({icon:"🔔", color:"var(--warn)", title:"Timesheet Awaiting Approval", detail:`${emp.name}'s shift on ${fmtDate(a.timeIn)} is submitted and awaiting your review.`, time:fmtDateShort(a.timeIn)});
+    }
+    if(s.timesheetRejected && a.status==="rejected"){
+      list.push({icon:"✖", color:"var(--danger)", title:"Timesheet Rejected", detail:`${emp.name}'s shift on ${fmtDate(a.timeIn)} was rejected: ${a.rejectReason||''}`, time:fmtDateShort(a.timeIn)});
+    }
+  });
+  if(s.xeroSyncFailure && !DB.settings.xero.connected){
+    // informational only, not a failure — omit unless actually attempted
+  }
+  return list.sort((a,b)=> (a.title<b.title?1:-1));
+}
+
+function screenAdminAudit(){
+  return `
+  <div class="topbar"><div class="h2">Audit Log</div></div>
+  <div class="content">
+    ${DB.auditLogs.map(a=>`<div class="card card-tight" style="margin-bottom:8px;">
+      <div class="row-between"><b class="small">${escapeHtml(a.actor)}</b><span class="tiny muted">${new Date(a.ts).toLocaleString()}</span></div>
+      <div class="small">${escapeHtml(a.action)} <span class="muted">— ${escapeHtml(a.target)}</span></div>
+      ${a.detail? `<div class="tiny muted" style="margin-top:2px;">${escapeHtml(a.detail)}</div>`:""}
+    </div>`).join("")}
+  </div>`;
+}
+
+function screenAdminXero(){
+  const x = DB.settings.xero;
+  return `
+  <div class="topbar"><div class="h2">Xero Integration</div></div>
+  <div class="content">
+    <div class="card" style="margin-bottom:16px;">
+      <div class="row-between">
+        <div><div class="muted small">Connection</div><div class="h2">${x.connected? '🟢 Connected':'⚪ Not Connected'}</div></div>
+        <button class="btn ${x.connected?'btn-outline-danger':'btn-accent'} btn-sm" id="xeroToggle">${x.connected?'Disconnect':'Connect to Xero'}</button>
+      </div>
+      ${x.connected? `<div class="small muted" style="margin-top:8px;">Organisation: ${escapeHtml(x.tenant||'Upstage Co Pty Ltd')}</div>`:""}
+      <div class="small muted" style="margin-top:4px;">Last sync: ${x.lastSync? new Date(x.lastSync).toLocaleString() : 'Never'}</div>
+    </div>
+    <div class="card col gap-10" style="margin-bottom:16px;">
+      <div class="h3">EMPLOYEE MAPPING</div>
+      ${DB.employees.map(e=>`<div class="row-between small"><span>${escapeHtml(e.name)}</span><span class="muted">${x.connected? 'Mapped ✓' : 'Not connected'}</span></div>`).join("")}
+    </div>
+    <button class="btn btn-ghost btn-block" style="margin-bottom:10px;" ${x.connected?'':'disabled'} id="syncBtn">Sync Approved Timesheets</button>
+    <button class="btn btn-ghost btn-block" style="margin-bottom:16px;" id="syncHistory">View Sync History</button>
+    <div class="card" style="border-color:var(--warn);">
+      <b class="small">How this integration actually works</b>
+      <div class="small muted" style="margin-top:6px;">
+        This screen is the real UI/config surface for a Xero connection. Actually connecting requires a registered
+        Xero developer app (Client ID/Secret) and completing Xero's OAuth 2.0 consent flow on a real backend — that
+        can't run inside this prototype. Once connected, approved timesheets map to Xero's
+        <b>Timesheets</b> API by Xero employee ID and pay calendar, split into ordinary/overtime/leave earnings
+        lines per your pay categories. Xero does not accept raw GPS/photo data — only hours per earnings line —
+        so photos and location stay in this app as your compliance/audit record.
+      </div>
+    </div>
+  </div>`;
+}
+
+function screenAdminSettings(){
+  const s = DB.settings;
+  return `
+  <div class="topbar"><div class="h2">Company Settings</div></div>
+  <div class="content">
+    <div class="h3" style="margin-bottom:8px;">COMPANY</div>
+    <div class="card col gap-10" style="margin-bottom:16px;">
+      <div class="row-between small"><span class="muted">Name</span><b>${escapeHtml(s.companyName)}</b></div>
+      <div class="row-between small"><span class="muted">Timezone</span><b>${s.timezone}</b></div>
+      <div class="row-between small"><span class="muted">Work week starts</span><b>${s.workWeekStart}</b></div>
+      <div class="row-between small"><span class="muted">Standard hours/day</span><b>${s.standardHours}h</b></div>
+    </div>
+
+    <div class="h3" style="margin-bottom:8px;">ATTENDANCE RULES</div>
+    <div class="card col gap-12" style="margin-bottom:16px;">
+      <label class="row-between small" style="margin:0;"><span>Require photo</span><input type="checkbox" id="reqPhoto" ${s.requirePhoto?'checked':''}></label>
+      <label class="row-between small" style="margin:0;"><span>Require GPS</span><input type="checkbox" id="reqGps" ${s.requireGPS?'checked':''}></label>
+      <label class="row-between small" style="margin:0;"><span>Enforce geofence (block clock-in outside zone)</span><input type="checkbox" id="reqGeo" ${s.geofenceEnforced?'checked':''}></label>
+      <label class="row-between small" style="margin:0;"><span>Allow gallery photo upload</span><input type="checkbox" id="reqGallery" ${s.galleryUploadAllowed?'checked':''}></label>
+      <div class="row-between small"><span class="muted">Late threshold</span><b>${s.lateThresholdMin} min</b></div>
+      <div class="row-between small"><span class="muted">Overtime after</span><b>${s.overtimeThresholdHrs}h/day</b></div>
+      <div class="row-between small"><span class="muted">Auto clock-out after</span><b>${s.autoClockOutHrs}h</b></div>
+    </div>
+
+    <div class="h3" style="margin-bottom:8px;">BREAK RULES</div>
+    <div class="card col gap-10" style="margin-bottom:16px;">
+      ${s.breakRules.map(r=>`<div class="row-between small"><span>${escapeHtml(r.name)}</span><b>${r.minutes} min · ${r.paid?'Paid':'Unpaid'}</b></div>`).join("")}
+    </div>
+
+    <div class="h3" style="margin-bottom:8px;">GEOFENCES</div>
+    <div class="card col gap-10" style="margin-bottom:16px;">
+      ${s.geofences.map(g=>`<div class="row-between small"><span>${escapeHtml(g.name)}</span><b>${g.radiusM}m radius</b></div>`).join("")}
+    </div>
+
+    <div class="h3" style="margin-bottom:8px;">NOTIFICATIONS</div>
+    <div class="card col" style="margin-bottom:16px;padding:4px 16px;">
+      ${Object.entries(NOTIFICATION_LABELS).map(([k,label],i)=>`<label class="row-between small" style="margin:0;padding:12px 0;${i>0?'border-top:1px solid var(--line);':''}"><span style="padding-right:16px;">${label}</span><input type="checkbox" data-notif="${k}" style="flex-shrink:0;" ${s.notifications[k]?'checked':''}></label>`).join("")}
+    </div>
+    <button class="btn btn-ghost btn-block" id="viewPrivacyAdmin">View Employee Privacy Notice</button>
+  </div>`;
+}
+
+/* ---------------- Admin bindings ---------------- */
+function bindAdminScreen(){
+  const $ = id=>document.getElementById(id);
+  if($("back")) $("back").onclick = ()=> go(route.name==="admin-att-detail"||route.name==="admin-employee-detail" ? "admin-employees" : "admin-dashboard");
+
+  document.querySelectorAll("[data-nav]").forEach(b=> b.onclick = ()=> go(b.dataset.nav));
+  document.querySelectorAll("[data-emp]").forEach(tr=> tr.onclick = ()=> go("admin-employee-detail",{id:tr.dataset.emp}));
+  document.querySelectorAll("[data-job2]").forEach(c=> c.onclick = ()=> go("admin-job-detail",{id:c.dataset.job2}));
+  document.querySelectorAll("[data-att]").forEach(el=> el.onclick = ()=> go("admin-att-detail",{id:el.dataset.att}));
+
+  if($("addEmp")) $("addEmp").onclick = ()=> modalAddEmployee();
+  if($("addJob")) $("addJob").onclick = ()=> modalAddJob();
+  if($("editJob")) $("editJob").onclick = ()=> modalEditJob(route.id);
+  if($("addJobEmp")) $("addJobEmp").onclick = ()=> modalAssignEmployeeToJob(route.id);
+  document.querySelectorAll("[data-remove-emp]").forEach(b=> b.onclick = ()=>{
+    const j = DB.jobs.find(x=>x.id===route.id);
+    const empId = b.dataset.removeEmp;
+    const name = empName(empId);
+    j.assigned = j.assigned.filter(id=>id!==empId);
+    if(!j.changeLog) j.changeLog=[];
+    const detail = `Removed ${name} from job.`;
+    j.changeLog.push({actor:DB.session.name, ts:nowISO(), detail});
+    audit(DB.session.name,"Removed employee from job",j.name,detail);
+    save(); toast("Employee removed from job"); go("admin-job-detail",{id:j.id});
+  });
+  if($("resetPin")) $("resetPin").onclick = ()=>{ const e=DB.employees.find(x=>x.id===route.id); audit(DB.session.name,"Reset PIN",e.name,"PIN reset to default 1111"); toast("PIN reset — employee notified"); };
+  if($("toggleActive")) $("toggleActive").onclick = ()=>{ const e=DB.employees.find(x=>x.id===route.id); e.status = e.status==='active'?'disabled':'active'; audit(DB.session.name, e.status==='active'?"Re-enabled employee":"Disabled employee", e.name,""); save(); go("admin-employee-detail",{id:e.id}); };
+  if($("manualEntry")) $("manualEntry").onclick = ()=> modalManualEntry(route.id);
+
+  if($("approveBtn")) $("approveBtn").onclick = ()=> setAttStatus(route.id,"approved");
+  if($("rejectBtn")) $("rejectBtn").onclick = ()=> setAttStatus(route.id,"rejected-needs-fix");
+  if($("correctBtn")) $("correctBtn").onclick = ()=> { toast("Correction request sent to employee"); audit(DB.session.name,"Requested correction",empName(DB.attendance.find(a=>a.id===route.id).employeeId),""); };
+  if($("editApproved")) $("editApproved").onclick = ()=> modalEditApproved(route.id);
+
+  document.querySelectorAll("[data-approve]").forEach(b=> b.onclick = ()=> { setAttStatus(b.dataset.approve,"approved"); });
+  document.querySelectorAll("[data-reject]").forEach(b=> b.onclick = ()=> { setAttStatus(b.dataset.reject,"rejected"); });
+  document.querySelectorAll("[data-cr-approve]").forEach(b=> b.onclick = ()=>{
+    const r = DB.correctionRequests.find(x=>x.id===b.dataset.crApprove);
+    const a = DB.attendance.find(x=>x.id===r.attendanceId);
+    const origIn = fmtTime(a.timeIn), origOut = fmtTime(a.timeOut);
+    if(r.requestedTimeIn) a.timeIn = r.requestedTimeIn;
+    if(r.requestedTimeOut) a.timeOut = r.requestedTimeOut;
+    if(a.timeOut){
+      a.grossMin = mins(new Date(a.timeOut)-new Date(a.timeIn));
+      a.netMin = a.grossMin - (a.unpaidBreakMin||0);
+    }
+    a.status = "corrected"; r.status="approved";
+    const detail = `${r.requestedTimeIn?`Time In: ${origIn} → ${fmtTime(a.timeIn)}. `:""}${r.requestedTimeOut?`Time Out: ${origOut} → ${fmtTime(a.timeOut)}. `:""}Reason: ${r.reason}`;
+    audit(DB.session.name,"Approved correction request", empName(r.employeeId), detail);
+    save(); toast("Correction approved"); go("admin-timesheets");
+  });
+  document.querySelectorAll("[data-cr-reject]").forEach(b=> b.onclick = ()=>{
+    const r = DB.correctionRequests.find(x=>x.id===b.dataset.crReject);
+    r.status="rejected";
+    audit(DB.session.name,"Rejected correction request", empName(r.employeeId), r.reason);
+    save(); toast("Correction request rejected"); go("admin-timesheets");
+  });
+
+  if($("xeroToggle")) $("xeroToggle").onclick = ()=>{
+    const x = DB.settings.xero;
+    if(x.connected){ x.connected=false; x.tenant=null; audit(DB.session.name,"Disconnected Xero","Xero Integration",""); }
+    else { x.connected=true; x.tenant="Upstage Co Pty Ltd"; x.lastSync=null; audit(DB.session.name,"Connected Xero (demo)","Xero Integration","Simulated OAuth — no real Xero credentials used"); toast("Connected (demo simulation — see note below)"); }
+    save(); go("admin-xero");
+  };
+  if($("syncBtn")) $("syncBtn").onclick = ()=>{
+    const approvedCount = DB.attendance.filter(a=>a.status==="approved").length;
+    DB.settings.xero.lastSync = nowISO();
+    audit(DB.session.name,"Synced timesheets to Xero (demo)","Xero Integration",`${approvedCount} approved records`);
+    save(); toast(`Synced ${approvedCount} approved timesheets (simulated)`); go("admin-xero");
+  };
+  if($("syncHistory")) $("syncHistory").onclick = ()=> go("admin-audit");
+  if($("viewPrivacyAdmin")) $("viewPrivacyAdmin").onclick = ()=> { PRIVACY_FROM_LOGIN=false; go("privacy"); };
+  if($("ackBtn")) $("ackBtn").onclick = ()=> go("admin-settings");
+
+  document.querySelectorAll("[data-notif]").forEach(cb=> cb.onchange = ()=>{ DB.settings.notifications[cb.dataset.notif]=cb.checked; save(); });
+  if($("reqPhoto")) $("reqPhoto").onchange = ()=>{ DB.settings.requirePhoto=$("reqPhoto").checked; save(); };
+  if($("reqGps")) $("reqGps").onchange = ()=>{ DB.settings.requireGPS=$("reqGps").checked; save(); };
+  if($("reqGeo")) $("reqGeo").onchange = ()=>{ DB.settings.geofenceEnforced=$("reqGeo").checked; save(); toast("Geofence enforcement " + ($("reqGeo").checked?"enabled":"disabled")); };
+  if($("reqGallery")) $("reqGallery").onchange = ()=>{ DB.settings.galleryUploadAllowed=$("reqGallery").checked; save(); };
+
+  if($("runReport")) $("runReport").onclick = runReport;
+  if($("runPayroll")) $("runPayroll").onclick = ()=>{
+    const from = $("payFrom").value, to = $("payTo").value;
+    const rows = payrollRows(from, to);
+    window.__payrollRows = rows;
+    document.getElementById("payrollResults").innerHTML = `
+      <table>
+        <tr><th>Employee ID</th><th>Employee</th><th>Regular</th><th>OT</th><th>Total</th></tr>
+        ${rows.map(r=>`<tr><td>${escapeHtml(r.emp.empId)}</td><td>${escapeHtml(r.emp.name)}</td><td>${r.regular.toFixed(2)}</td><td>${r.ot.toFixed(2)}</td><td><b>${r.total.toFixed(2)}</b></td></tr>`).join("")}
+        ${rows.length===0? `<tr><td colspan="5" class="muted" style="text-align:center;padding:16px;">No approved timesheets in this range</td></tr>`:""}
+      </table>
+      <button class="btn btn-ghost btn-block" style="margin-top:14px;" id="payExport">Export Payroll CSV</button>
+    `;
+    document.getElementById("payExport").onclick = ()=>{
+      const lines = ["Employee ID,Employee,Regular,OT,Total", ...rows.map(r=>`"${r.emp.empId}","${r.emp.name}",${r.regular.toFixed(2)},${r.ot.toFixed(2)},${r.total.toFixed(2)}`)];
+      const blob = new Blob([lines.join("\n")], {type:"text/csv"});
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a"); link.href=url; link.download="upstage_payroll_export.csv"; link.click();
+      audit(DB.session.name,"Exported payroll","Payroll",`${rows.length} employees, ${from} to ${to}`); save();
+      toast("Payroll CSV exported");
+    };
+  };
+}
+
+function setAttStatus(attId, status){
+  if(status==="rejected"){ modalReject(attId); return; }
+  const a = DB.attendance.find(x=>x.id===attId);
+  a.status = status;
+  audit(DB.session.name,"Approved timesheet", empName(a.employeeId), fmtDate(a.timeIn));
+  save(); toast("Approved"); go(route.name);
+}
+function modalReject(attId){
+  const a = DB.attendance.find(x=>x.id===attId);
+  const wrap = document.createElement("div"); wrap.className="modal-bg";
+  wrap.innerHTML = `<div class="modal">
+    <div class="h2" style="margin-bottom:14px;">Reject Timesheet Day</div>
+    <div class="field"><label>Reason (sent to employee, required)</label><textarea id="rejReason" rows="3" placeholder="e.g. Clock-out time looks incorrect, please confirm"></textarea></div>
+    <button class="btn btn-danger btn-block btn-lg" id="rejGo">Reject &amp; Notify Employee</button>
+    <button class="btn btn-ghost btn-block" style="margin-top:8px;" id="rejCancel">Cancel</button>
+  </div>`;
+  document.body.appendChild(wrap);
+  wrap.querySelector("#rejCancel").onclick=()=>wrap.remove();
+  wrap.querySelector("#rejGo").onclick=()=>{
+    const reason = wrap.querySelector("#rejReason").value;
+    if(!reason){ toast("A reason is required"); return; }
+    a.status="rejected"; a.rejectReason=reason;
+    audit(DB.session.name,"Rejected timesheet", empName(a.employeeId), `${fmtDate(a.timeIn)}. Reason: ${reason}`);
+    save(); wrap.remove(); toast("Rejected — employee notified"); go(route.name);
+  };
+}
+function modalEditApproved(attId){
+  const a = DB.attendance.find(x=>x.id===attId);
+  const wrap = document.createElement("div"); wrap.className="modal-bg";
+  wrap.innerHTML = `<div class="modal">
+    <div class="h2" style="margin-bottom:14px;">Edit Approved Record</div>
+    <div class="field"><label>Time Out</label><input type="time" id="editOut" value="${new Date(a.timeOut).toTimeString().slice(0,5)}"></div>
+    <div class="field"><label>Reason for change (required)</label><textarea id="editReason" rows="2" placeholder="e.g. Employee forgot to clock out"></textarea></div>
+    <button class="btn btn-accent btn-block btn-lg" id="editSave">Save &amp; Log Audit Record</button>
+    <button class="btn btn-ghost btn-block" style="margin-top:8px;" id="editCancel">Cancel</button>
+  </div>`;
+  document.body.appendChild(wrap);
+  wrap.querySelector("#editCancel").onclick=()=>wrap.remove();
+  wrap.querySelector("#editSave").onclick=()=>{
+    const reason = wrap.querySelector("#editReason").value;
+    if(!reason){ toast("A reason is required for audit purposes"); return; }
+    const [h,m] = wrap.querySelector("#editOut").value.split(":").map(Number);
+    const oldOut = fmtTime(a.timeOut);
+    const d = new Date(a.timeOut); d.setHours(h,m,0,0);
+    a.timeOut = d.toISOString();
+    a.grossMin = mins(new Date(a.timeOut)-new Date(a.timeIn));
+    a.netMin = a.grossMin - (a.unpaidBreakMin||0);
+    a.status = "corrected";
+    audit(DB.session.name,"Changed Time Out", empName(a.employeeId), `Original: ${oldOut} → New: ${fmtTime(a.timeOut)}. Reason: ${reason}`);
+    save(); wrap.remove(); toast("Updated — audit record created"); go("admin-att-detail",{id:attId});
+  };
+}
+function modalManualEntry(empId){
+  const e = DB.employees.find(x=>x.id===empId);
+  const jobs = DB.jobs;
+  const wrap = document.createElement("div"); wrap.className="modal-bg";
+  wrap.innerHTML = `<div class="modal">
+    <div class="h2" style="margin-bottom:14px;">Manual Attendance Entry</div>
+    <div class="field"><label>Job</label><select id="meJob">${jobs.map(j=>`<option value="${j.id}">${escapeHtml(j.name)}</option>`).join("")}</select></div>
+    <div class="grid2">
+      <div class="field"><label>Date</label><input type="date" id="meDate" value="${new Date().toISOString().slice(0,10)}"></div>
+      <div class="field"></div>
+    </div>
+    <div class="grid2">
+      <div class="field"><label>Time In</label><input type="time" id="meIn" value="08:00"></div>
+      <div class="field"><label>Time Out</label><input type="time" id="meOut" value="16:30"></div>
+    </div>
+    <div class="field"><label>Reason (required — will be recorded in audit log)</label><textarea id="meReason" rows="2" placeholder="e.g. Phone died on site, entered manually from supervisor confirmation"></textarea></div>
+    <button class="btn btn-accent btn-block btn-lg" id="meSave">Save Manual Entry</button>
+    <button class="btn btn-ghost btn-block" style="margin-top:8px;" id="meCancel">Cancel</button>
+  </div>`;
+  document.body.appendChild(wrap);
+  wrap.querySelector("#meCancel").onclick=()=>wrap.remove();
+  wrap.querySelector("#meSave").onclick=()=>{
+    const reason = wrap.querySelector("#meReason").value;
+    if(!reason){ toast("Reason is required"); return; }
+    const date = wrap.querySelector("#meDate").value;
+    const [ih,im] = wrap.querySelector("#meIn").value.split(":").map(Number);
+    const [oh,om] = wrap.querySelector("#meOut").value.split(":").map(Number);
+    const ti = new Date(date); ti.setHours(ih,im,0,0);
+    const to = new Date(date); to.setHours(oh,om,0,0);
+    const gross = mins(to-ti);
+    DB.attendance.push({id:uid("att"), employeeId:empId, jobId:wrap.querySelector("#meJob").value, timeIn:ti.toISOString(), timeOut:to.toISOString(),
+      photoIn:null, photoOut:null, gpsIn:{lat:0,lng:0,address:"Manual entry — no GPS captured"}, gpsOut:null, geofence:"n/a",
+      breakIds:[], grossMin:gross, unpaidBreakMin:0, paidBreakMin:0, netMin:gross, status:"submitted", source:"admin-manual", summary:reason});
+    audit(DB.session.name,"Added manual attendance entry", e.name, `${date} ${wrap.querySelector("#meIn").value}-${wrap.querySelector("#meOut").value}. Reason: ${reason}`);
+    save(); wrap.remove(); toast("Manual entry saved — pending approval"); go("admin-employee-detail",{id:empId});
+  };
+}
+function modalAddEmployee(){
+  const wrap = document.createElement("div"); wrap.className="modal-bg";
+  wrap.innerHTML = `<div class="modal">
+    <div class="h2" style="margin-bottom:14px;">Add Employee</div>
+    <div class="field"><label>Full name</label><input id="neName" placeholder="e.g. Sam Delacroix"></div>
+    <div class="field"><label>Position</label><input id="neRole" placeholder="e.g. Rigger"></div>
+    <div class="field"><label>Department</label><input id="neDept" placeholder="e.g. Production"></div>
+    <div class="field"><label>Email</label><input id="neEmail" placeholder="name@upstage.co"></div>
+    <div class="grid2">
+      <div class="field"><label>Employment type</label><select id="nePay"><option>Casual</option><option>Full Time</option><option>Part Time</option></select></div>
+      <div class="field"><label>Hourly rate</label><input id="neRate" type="number" step="0.5" placeholder="34.50"></div>
+    </div>
+    <div class="grid2">
+      <div class="field"><label>Manager</label><input id="neManager" placeholder="e.g. Julia Santos"></div>
+      <div class="field"><label>Default location</label><input id="neLoc" placeholder="e.g. Upstage Workshop"></div>
+    </div>
+    <div class="field"><label>Permission level</label><select id="nePerm"><option>Employee</option><option>Manager</option><option>Payroll</option><option>Admin</option></select></div>
+    <button class="btn btn-accent btn-block btn-lg" id="neSave">Create Employee</button>
+    <button class="btn btn-ghost btn-block" style="margin-top:8px;" id="neCancel">Cancel</button>
+  </div>`;
+  document.body.appendChild(wrap);
+  wrap.querySelector("#neCancel").onclick=()=>wrap.remove();
+  wrap.querySelector("#neSave").onclick=()=>{
+    const name = wrap.querySelector("#neName").value;
+    if(!name){ toast("Name is required"); return; }
+    const nextNum = DB.employees.filter(e=>e.empId&&e.empId.startsWith("EMP-")).length+1;
+    const emp = {id:uid("emp"), empId:"EMP-"+String(nextNum).padStart(3,'0'), name, role:wrap.querySelector("#neRole").value||"Crew", pin:"1111", status:"active",
+      email:wrap.querySelector("#neEmail").value, department:wrap.querySelector("#neDept").value||"Production",
+      employmentType:wrap.querySelector("#nePay").value, payCategory:wrap.querySelector("#nePay").value,
+      hourlyRate: parseFloat(wrap.querySelector("#neRate").value)||null, manager:wrap.querySelector("#neManager").value||"—",
+      defaultLocation:wrap.querySelector("#neLoc").value||"—", permission:wrap.querySelector("#nePerm").value};
+    DB.employees.push(emp);
+    audit(DB.session.name,"Created employee",name,`Default PIN 1111 issued`);
+    save(); wrap.remove(); toast("Employee created"); go("admin-employees");
+  };
+}
+function modalAddJob(){
+  const wrap = document.createElement("div"); wrap.className="modal-bg";
+  wrap.innerHTML = `<div class="modal">
+    <div class="h2" style="margin-bottom:14px;">New Job</div>
+    <div class="field"><label>Job number</label><input id="njNum" placeholder="2026-004"></div>
+    <div class="field"><label>Job name</label><input id="njName" placeholder="e.g. Corporate Gala Setup"></div>
+    <div class="field"><label>Client</label><input id="njClient"></div>
+    <div class="field"><label>Venue</label><input id="njVenue"></div>
+    <div class="field"><label>Location</label><input id="njLoc"></div>
+    <div class="grid2">
+      <div class="field"><label>Start date</label><input type="date" id="njStart"></div>
+      <div class="field"><label>End date</label><input type="date" id="njEnd"></div>
+    </div>
+    <div class="field"><label>Job manager</label><input id="njMgr"></div>
+    <button class="btn btn-accent btn-block btn-lg" id="njSave">Create Job</button>
+    <button class="btn btn-ghost btn-block" style="margin-top:8px;" id="njCancel">Cancel</button>
+  </div>`;
+  document.body.appendChild(wrap);
+  wrap.querySelector("#njCancel").onclick=()=>wrap.remove();
+  wrap.querySelector("#njSave").onclick=()=>{
+    const name = wrap.querySelector("#njName").value;
+    if(!name){ toast("Job name is required"); return; }
+    const job = {id:uid("job"), number:wrap.querySelector("#njNum").value||"—", name, client:wrap.querySelector("#njClient").value,
+      venue:wrap.querySelector("#njVenue").value, location:wrap.querySelector("#njLoc").value, start:wrap.querySelector("#njStart").value,
+      end:wrap.querySelector("#njEnd").value, manager:wrap.querySelector("#njMgr").value, status:"Upcoming", notes:"", assigned:[],
+      changeLog:[{actor:DB.session.name, ts:nowISO(), detail:"Job created."}]};
+    DB.jobs.push(job);
+    audit(DB.session.name,"Created job",name,`#${job.number}`);
+    save(); wrap.remove(); toast("Job created"); go("admin-jobs");
+  };
+}
+function modalEditJob(jobId){
+  const j = DB.jobs.find(x=>x.id===jobId);
+  const wrap = document.createElement("div"); wrap.className="modal-bg";
+  wrap.innerHTML = `<div class="modal">
+    <div class="h2" style="margin-bottom:14px;">Edit Job Details</div>
+    <div class="field"><label>Job number</label><input id="ejNum" value="${escapeHtml(j.number)}"></div>
+    <div class="field"><label>Job name</label><input id="ejName" value="${escapeHtml(j.name)}"></div>
+    <div class="field"><label>Client</label><input id="ejClient" value="${escapeHtml(j.client)}"></div>
+    <div class="field"><label>Venue</label><input id="ejVenue" value="${escapeHtml(j.venue)}"></div>
+    <div class="field"><label>Location</label><input id="ejLoc" value="${escapeHtml(j.location)}"></div>
+    <div class="grid2">
+      <div class="field"><label>Start date</label><input type="date" id="ejStart" value="${j.start||''}"></div>
+      <div class="field"><label>End date</label><input type="date" id="ejEnd" value="${j.end||''}"></div>
+    </div>
+    <div class="field"><label>Job manager</label><input id="ejMgr" value="${escapeHtml(j.manager)}"></div>
+    <div class="field"><label>Status</label><select id="ejStatus"><option ${j.status==='Upcoming'?'selected':''}>Upcoming</option><option ${j.status==='Active'?'selected':''}>Active</option><option ${j.status==='Completed'?'selected':''}>Completed</option></select></div>
+    <button class="btn btn-accent btn-block btn-lg" id="ejSave">Save Changes</button>
+    <button class="btn btn-ghost btn-block" style="margin-top:8px;" id="ejCancel">Cancel</button>
+  </div>`;
+  document.body.appendChild(wrap);
+  wrap.querySelector("#ejCancel").onclick=()=>wrap.remove();
+  wrap.querySelector("#ejSave").onclick=()=>{
+    const name = wrap.querySelector("#ejName").value;
+    if(!name){ toast("Job name is required"); return; }
+    const before = {number:j.number, name:j.name, client:j.client, venue:j.venue, location:j.location, start:j.start, end:j.end, manager:j.manager, status:j.status};
+    j.number = wrap.querySelector("#ejNum").value||j.number;
+    j.name = name;
+    j.client = wrap.querySelector("#ejClient").value;
+    j.venue = wrap.querySelector("#ejVenue").value;
+    j.location = wrap.querySelector("#ejLoc").value;
+    j.start = wrap.querySelector("#ejStart").value;
+    j.end = wrap.querySelector("#ejEnd").value;
+    j.manager = wrap.querySelector("#ejMgr").value;
+    j.status = wrap.querySelector("#ejStatus").value;
+    const changed = Object.keys(before).filter(k=> String(before[k]||"")!==String(j[k]||""));
+    if(!j.changeLog) j.changeLog=[];
+    const detail = changed.length? `Updated ${changed.map(k=>`${k} ("${before[k]||'—'}" → "${j[k]||'—'}")`).join(", ")}.` : "Saved with no field changes.";
+    j.changeLog.push({actor:DB.session.name, ts:nowISO(), detail});
+    audit(DB.session.name,"Edited job",j.name,detail);
+    save(); wrap.remove(); toast("Job updated"); go("admin-job-detail",{id:j.id});
+  };
+}
+function modalAssignEmployeeToJob(jobId){
+  const j = DB.jobs.find(x=>x.id===jobId);
+  const available = DB.employees.filter(e=>e.status==="active" && !j.assigned.includes(e.id));
+  const wrap = document.createElement("div"); wrap.className="modal-bg";
+  wrap.innerHTML = `<div class="modal">
+    <div class="h2" style="margin-bottom:14px;">Add Employee to Job</div>
+    ${available.length? `
+    <div class="field"><label>Employee</label><select id="ajEmp">${available.map(e=>`<option value="${e.id}">${escapeHtml(e.name)} — ${escapeHtml(e.role)}</option>`).join("")}</select></div>
+    <button class="btn btn-accent btn-block btn-lg" id="ajSave">Add to Job</button>
+    ` : `<div class="empty small">All active employees are already assigned to this job.</div>`}
+    <button class="btn btn-ghost btn-block" style="margin-top:8px;" id="ajCancel">Cancel</button>
+  </div>`;
+  document.body.appendChild(wrap);
+  wrap.querySelector("#ajCancel").onclick=()=>wrap.remove();
+  if(wrap.querySelector("#ajSave")){
+    wrap.querySelector("#ajSave").onclick=()=>{
+      const empId = wrap.querySelector("#ajEmp").value;
+      j.assigned.push(empId);
+      if(!j.changeLog) j.changeLog=[];
+      const detail = `Added ${empName(empId)} to job.`;
+      j.changeLog.push({actor:DB.session.name, ts:nowISO(), detail});
+      audit(DB.session.name,"Added employee to job",j.name,detail);
+      save(); wrap.remove(); toast("Employee added to job"); go("admin-job-detail",{id:j.id});
+    };
+  }
+}
+
+function baseFilteredAttendance(){
+  const $ = id=>document.getElementById(id);
+  const empId = $("repEmp").value, jobId = $("repJob").value, status=$("repStatus").value, dept=$("repDept").value;
+  const from = $("repFrom").value ? new Date($("repFrom").value) : null;
+  const to = $("repTo").value ? new Date($("repTo").value+"T23:59:59") : null;
+  let rows = DB.attendance.filter(a=> DB.employees.find(e=>e.id===a.employeeId)?.permission==="Employee" || DB.employees.find(e=>e.id===a.employeeId)?.permission==="Manager");
+  if(empId) rows = rows.filter(a=>a.employeeId===empId);
+  if(jobId) rows = rows.filter(a=>a.jobId===jobId);
+  if(status) rows = rows.filter(a=>a.status===status);
+  if(dept) rows = rows.filter(a=> DB.employees.find(e=>e.id===a.employeeId)?.department===dept);
+  if(from) rows = rows.filter(a=>new Date(a.timeIn)>=from);
+  if(to) rows = rows.filter(a=>new Date(a.timeIn)<=to);
+  rows.sort((a,b)=>new Date(b.timeIn)-new Date(a.timeIn));
+  return rows;
+}
+function runReport(){
+  const type = document.getElementById("repType").value;
+  const rows = baseFilteredAttendance();
+  const el = document.getElementById("reportResults");
+  const overtimeThreshold = DB.settings.overtimeThresholdHrs*60;
+
+  let header, tableRows, csvRows, title;
+
+  if(type==="attendance"){
+    title = `${rows.length} RECORDS · ${hm(rows.reduce((s,a)=>s+(a.netMin||0),0))} TOTAL`;
+    header = ["Date","Employee","Job","In","Out","Net","Status"];
+    tableRows = rows.map(a=>[fmtDateShort(a.timeIn), empName(a.employeeId), jobName(a.jobId), fmtTime(a.timeIn), a.timeOut?fmtTime(a.timeOut):'—', a.netMin!=null?hm(a.netMin):'—', a.status]);
+  } else if(type==="job-labour"){
+    const byJob = {};
+    rows.forEach(a=>{ const k=a.jobId; byJob[k]=byJob[k]||{}; byJob[k][a.employeeId]=(byJob[k][a.employeeId]||0)+(a.netMin||0); });
+    const flat = [];
+    Object.entries(byJob).forEach(([jobId,emps])=> Object.entries(emps).forEach(([empId,mins])=> flat.push({jobId,empId,mins})));
+    flat.sort((a,b)=> jobName(a.jobId).localeCompare(jobName(b.jobId)));
+    const rate = id => DB.employees.find(e=>e.id===id)?.hourlyRate || 0;
+    title = `${flat.length} JOB/EMPLOYEE LINES · ${hm(flat.reduce((s,f)=>s+f.mins,0))} TOTAL`;
+    header = ["Job","Employee","Hours","Labour Cost"];
+    tableRows = flat.map(f=>[jobName(f.jobId), empName(f.empId), hm(f.mins), "$"+((f.mins/60)*rate(f.empId)).toFixed(2)]);
+  } else if(type==="department"){
+    const byDept = {};
+    rows.forEach(a=>{ const d = DB.employees.find(e=>e.id===a.employeeId)?.department||"—"; byDept[d]=(byDept[d]||0)+(a.netMin||0); });
+    title = `${Object.keys(byDept).length} DEPARTMENTS`;
+    header = ["Department","Total Hours"];
+    tableRows = Object.entries(byDept).map(([d,m])=>[d, hm(m)]);
+  } else if(type==="late"){
+    const late = rows.filter(a=>{ const t=new Date(a.timeIn); return t.getHours()>8 || (t.getHours()===8 && t.getMinutes()>DB.settings.lateThresholdMin); });
+    title = `${late.length} LATE ARRIVALS`;
+    header = ["Date","Employee","Job","Clock In","Minutes Late"];
+    tableRows = late.map(a=>{ const t=new Date(a.timeIn); const lateMin = Math.max(0,(t.getHours()-8)*60+t.getMinutes()); return [fmtDateShort(a.timeIn), empName(a.employeeId), jobName(a.jobId), fmtTime(a.timeIn), lateMin+" min"]; });
+  } else if(type==="missing"){
+    const missing = rows.filter(a=>!a.timeOut && !sameDay(a.timeIn,new Date()));
+    title = `${missing.length} MISSING CLOCK-OUTS`;
+    header = ["Date","Employee","Job","Clock In"];
+    tableRows = missing.map(a=>[fmtDateShort(a.timeIn), empName(a.employeeId), jobName(a.jobId), fmtTime(a.timeIn)]);
+  } else if(type==="overtime"){
+    const ot = rows.filter(a=>a.grossMin && a.grossMin>overtimeThreshold);
+    title = `${ot.length} OVERTIME SHIFTS · Threshold ${DB.settings.overtimeThresholdHrs}h/day`;
+    header = ["Date","Employee","Job","Total Hours","Overtime"];
+    tableRows = ot.map(a=>[fmtDateShort(a.timeIn), empName(a.employeeId), jobName(a.jobId), hm(a.grossMin), hm(a.grossMin-overtimeThreshold)]);
+  } else if(type==="location"){
+    const exceptions = rows.filter(a=>a.geofence==="outside");
+    title = `${exceptions.length} LOCATION EXCEPTIONS`;
+    header = ["Date","Employee","Job","Clock In","Location"];
+    tableRows = exceptions.map(a=>[fmtDateShort(a.timeIn), empName(a.employeeId), jobName(a.jobId), fmtTime(a.timeIn), a.gpsIn.address||'—']);
+  }
+
+  window.__lastReportHeader = header; window.__lastReportRows = tableRows;
+  el.innerHTML = `
+    <div class="row-between" style="margin:16px 0 10px;"><div class="h3">${title}</div>
+      <div class="row gap-8">
+        <button class="btn btn-ghost btn-sm" id="expCsv">Export CSV</button>
+        <button class="btn btn-ghost btn-sm" id="expPdf">Export PDF</button>
+      </div>
+    </div>
+    <table>
+      <tr>${header.map(h=>`<th>${h}</th>`).join("")}</tr>
+      ${tableRows.map(r=>`<tr>${r.map(v=>`<td>${escapeHtml(String(v))}</td>`).join("")}</tr>`).join("")}
+      ${tableRows.length===0? `<tr><td colspan="${header.length}" class="muted" style="text-align:center;padding:16px;">No matching records</td></tr>`:""}
+    </table>`;
+  document.getElementById("expCsv").onclick = exportCSV;
+  document.getElementById("expPdf").onclick = ()=> toast("A production build renders this via a PDF service (e.g. server-side Puppeteer or a PDF library) — CSV export is fully functional now.");
+}
+function exportCSV(){
+  const header = window.__lastReportHeader||[]; const rows = window.__lastReportRows||[];
+  const lines = [header.join(","), ...rows.map(r=> r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(","))];
+  const blob = new Blob([lines.join("\n")], {type:"text/csv"});
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a"); link.href=url; link.download="upstage_report.csv"; link.click();
+  audit(DB.session.name,"Exported report","Reports",`${rows.length} rows`); save();
+}
+
+/* ---------------- boot ---------------- */
+window.addEventListener("resize", render);
+render();
+setInterval(()=>{
+  const el = document.getElementById("statusTimer");
+  if(!el) return;
+  const since = el.dataset.since;
+  if(!since) return;
+  const secs = Math.floor((Date.now()-new Date(since).getTime())/1000);
+  el.textContent = hmsLive(secs);
+}, 1000);
+</script>
+</body>
+</html>
