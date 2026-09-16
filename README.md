@@ -1,117 +1,60 @@
-# Upstage Track — Working Prototype
+# Upstage Track
 
-## What this actually is
+**Time · Attendance · Job Tracking** — a lightweight, single-file web app for Upstage Co employees to clock in/out, track breaks and lunch, log work against jobs, and give admins a way to review, correct, and export attendance.
 
-A **fully functional, click-through web app** (`index.html`) covering the entire employee
-and admin workflow you specified, running against a simulated cloud database
-(your browser's local storage standing in for a real backend). Open the file in
-any phone or desktop browser — no install, no server required.
+Live demo accounts are seeded in the app itself — just open it and pick a name from the login dropdown to try it out.
 
-**Real, working features in this build:**
-- Live camera capture (`getUserMedia`) for Time In / Time Out selfies and job photos
-- Real GPS capture (`navigator.geolocation`) at every attendance event, with reverse
-  geocoding to a readable address (falls back to raw coordinates if offline)
-- Geofence distance-check logic (Upstage Workshop / Accor Stadium zones included)
-- Break rules engine — Morning Tea (Smoko) 20 min **paid**, Lunch 30 min **unpaid**,
-  configurable — with automatic gross/net hours calculation
-- Full employee flow: Login → Select Job → Time In (photo+GPS) → Work → Start/End
-  Break → Time Out (photo+GPS) → Work Summary → Timesheet
-- Full admin flow: Live dashboard, employee management (create/disable/reset PIN),
-  job management, attendance record detail (photo+time+location+job in one screen),
-  manual entry with mandatory reason, timesheet approve/reject, edit-after-approval
-  with forced audit trail, filterable reports with **working CSV export**, audit log,
-  company/attendance/break/notification settings, Xero integration screen
-- Demo data for Upstage Co and all 7 employees / 5 jobs you specified
+---
 
-## What is deliberately simulated (and why)
+## Features
 
-Some things in your spec need infrastructure this environment cannot provide —
-a real cloud server, an Apple/Google developer account, or a live third-party
-API credential. Rather than fake these silently, here's exactly what's simulated
-and what a production build needs:
+- **PIN login** with role-based access: Employee, Manager, Payroll, and Super Admin.
+- **Geolocation-verified Time In / Time Out** — GPS is required for both actions; the app checks the location against configured job-site geofences (currently covering Cebu City, Lapu-Lapu City, Manila, and Sydney, Australia).
+- **Break & lunch tracking** with a live running counter next to the employee's status, showing elapsed time since they went on break or lunch.
+- **Work log entries** with an optional photo, chosen from the employee's device gallery (not a live camera capture).
+- **Correction requests** — employees can request a fix to their Time In, Time Out, or both, with a reason. Admins review each request alongside the original vs. requested times and related audit-log activity from that day.
+- **Weekly timesheet view** showing every shift for the week at once, with a submission/correction deadline every Thursday.
+- **Jobs management** — Managers and Super Admins can create jobs, edit details on open/active jobs, and assign or remove employees, with every change recorded in a per-job change log.
+- **Admin dashboard** — who's currently clocked in/on break, weekly summaries, and audit logging across the app.
+- **Excel/CSV export** for payroll and reporting.
 
-| Area | In this prototype | What production needs |
-|---|---|---|
-| Backend/database | Browser local storage | A real cloud DB (e.g. Postgres via Supabase/Firebase/AWS) + API layer |
-| Native iOS/Android app | Mobile-web app (installable to home screen, works offline-first) | Wrap in React Native / Flutter, or ship as a PWA; needs Apple Developer ($99/yr) + Google Play ($25 one-off) accounts to publish |
-| Xero integration | UI/config screens only, "Connect" is simulated | Real Xero OAuth 2.0 app (Client ID/Secret from developer.xero.com), server-side token exchange, calls to Xero's Timesheets API |
-| Push notifications | Not implemented (needs a backend + APNs/FCM) | Firebase Cloud Messaging / Apple Push Notification service |
-| Background geofence tracking | Not implemented (spec says off by default anyway) | Native background location APIs, iOS/Android permission flows |
-| Server-authoritative timestamp | Uses device clock | A real backend stamps the time on arrival, not the device |
-| PDF export | Placeholder message | Server-side rendering (e.g. Puppeteer) or a PDF library |
-| Multi-user real-time sync | Single-browser only | A real backend + websockets/polling so admin sees live updates across devices |
+## Tech stack
 
-**Nothing here is faked to look real** — the Xero and PDF screens explicitly tell
-you, in the UI, what's simulated versus what needs real credentials.
+Plain HTML, CSS, and JavaScript — no build step, no framework, no external dependencies. Data is currently stored in the browser's `localStorage`.
 
-## Test accounts (PIN-based, no email needed for demo)
+## ⚠️ Current limitation: local-only data
 
-- **Employee role** (PIN `1111`): Alex Rivera, Shadelle Nguyen, Chris Doyle, Bodhi Marsh, Joel Kaine
-- **Manager role** (PIN `1111`): Julia Santos — sees Dashboard, Employees (her team), Jobs, Live, Timesheets, Reports, Alerts. No Settings/Xero/Audit/Payroll.
-- **Payroll role** (PIN `1111`): Will Foster — sees Dashboard, Reports, Payroll export, Alerts only.
-- **Super Admin** (PIN `9999`): Rosa Alvear — full access to every screen.
+This app stores all data in `localStorage`, which is tied to a single browser on a single device. That means:
 
-Each account routes straight to the right interface for its permission level — Employee-level
-accounts land on the clock in/out home screen; everyone else lands in the admin console with
-sidebar/tabs filtered to what their role is allowed to see.
+- Two employees opening the site on their own phones will each see their **own separate, empty copy** of the app — not shared team data.
+- Clearing browser data, using a private/incognito window, or switching devices will reset or hide that device's records.
 
-## What's new in this pass
+This is fine for solo testing and demoing the UI, but **it is not yet ready for multiple employees to use at once for real attendance tracking.** Before rolling this out to a team, the storage layer needs to be swapped for a real shared backend (e.g. Supabase or Firebase) so that every device reads and writes the same data.
 
-- **Device + GPS accuracy capture** at every Clock In/Out, shown on the confirmation screen and in the record detail
-- **Task categories** at clock-in — Warehouse/Prep, Site/Bump In, Pack Down, Workshop, Office/Admin — so hours roll up by activity type, not just by job
-- **Employee record fields expanded**: Employee ID, Position, Department, Employment type, Hourly rate (visible to Admin/Super Admin/Payroll only), Manager, Default location, Permission level
-- **Roles & permissions**: Employee, Manager, Payroll, Admin, Super Admin, each with a distinct set of visible admin tabs
-- **Real Draft → Submitted → Approved / Rejected / Corrected timesheet pipeline**: employees explicitly submit completed shifts; admins approve or reject with a required reason; editing an approved record marks it "Corrected" instead of silently staying "Approved"
-- **Employee-initiated correction requests**: an employee can request a fix to a submitted or approved shift (e.g. forgot to clock out); admins see a dedicated Correction Requests queue and can approve (auto-applies the new time, logs original vs. corrected) or reject
-- **Expanded Reports** with a report-type selector: Attendance, Job Labour (with $ cost using each employee's hourly rate), Department, Late Arrivals, Missing Clock Out, Overtime, Location Exceptions — all still filterable and CSV-exportable
-- **Payroll Export screen**: Employee ID / Employee / Regular / OT / Total, restricted to Payroll/Admin/Super Admin, CSV export, and it only ever includes Approved/Corrected timesheets
-- **Notifications/Alerts screen**: auto-generated from real data — missing clock-outs, overtime, late arrivals, timesheets awaiting approval, rejected timesheets
+## Getting started (view it locally)
 
-## What's still simulated (unchanged from before)
+1. Download `index.html` (or clone this repo).
+2. Open the file directly in any modern browser — no server or install required.
+3. Log in with any name from the demo account dropdown and a PIN (shown next to each role group on the login screen).
 
-See the table below — the backend, native app wrapper, Xero OAuth, and push notifications
-still require real infrastructure this environment can't provide. Nothing new in this pass
-changes that list.
+## Deploying as a live website
 
-## Test data
+The simplest free option is **GitHub Pages**:
 
-Company: **Upstage Co**. Jobs: ATEEZ Tour, Foo Fighters Australia, Workshop, Accor
-Stadium — Rigging, General Office. Several days of attendance, breaks, and work logs
-are pre-loaded so History/Timesheet/Reports/Audit Log all have content immediately.
+1. Make sure the app file is named `index.html` and is committed to this repository's `main` branch.
+2. Go to this repo's **Settings → Pages**.
+3. Under "Build and deployment," set Source to **Deploy from a branch**, branch **main**, folder **/ (root)**, then Save.
+4. After a minute or two, GitHub will show your live URL (e.g. `https://yourusername.github.io/your-repo-name/`).
 
-## Try the full workflow end to end
+Every time you push a change to `index.html`, GitHub Pages redeploys automatically within about a minute.
 
-1. Log in as an employee → tap **TIME IN** → pick a job → take a live selfie → watch
-   GPS get captured and reverse-geocoded.
-2. Tap **START BREAK** (choose Morning Tea or Lunch) → **END BREAK**.
-3. Tap **TIME OUT** → selfie → write a work summary → see hours calculated.
-4. Log out, log in as admin (Julia Santos) → **Timesheets** tab → open the new
-   pending entry → see photo + time + location + job in one screen → **Approve**.
-5. **Reports** tab → filter by employee/job/date → **Export CSV** (downloads a real file).
-6. **Xero** tab → read the integration note explaining what's real vs simulated.
+## Roadmap
 
-## Database schema (conceptual — this is what a real backend would implement)
+- [ ] Replace `localStorage` with a shared backend (Supabase/Firebase) so data syncs across employees and devices.
+- [ ] Decide the future purpose of the "Require GPS" setting toggle (GPS is currently always required for Time In/Out regardless of this toggle).
+- [ ] Evaluate a data sync with [Current RMS](https://current-rms.com) (jobs/crew) via its Open API, if useful for the team's existing workflow.
+- [ ] Custom domain once the app is validated with the team.
 
-`Employees`, `Admins`, `Jobs`, `JobAssignments`, `Attendance`, `Breaks`, `WorkLogs`,
-`Photos` (as blob storage references, not embedded), `Locations`, `Timesheets`,
-`TimesheetApprovals`, `XeroMappings`, `XeroSyncLogs`, `Notifications`, `AuditLogs`,
-`CompanySettings` — each with a unique ID, foreign keys as described in your spec,
-and row-level access rules so employees only ever see their own records.
+## License
 
-## Credentials/config a real deployment would need from you
-
-- A Xero developer app (Client ID + Secret) and your company's Xero organisation connected via OAuth
-- A cloud database + hosting account (e.g. Supabase, Firebase, or AWS)
-- Apple Developer Program and Google Play Console accounts, if publishing as native apps
-- A maps/geocoding API key (Google Maps or Mapbox) for production-grade reverse geocoding and map display
-- Push notification setup (Firebase Cloud Messaging covers both platforms)
-
-## Known limitations of this prototype specifically
-
-- All data lives in one browser's local storage — clearing browser data or switching
-  devices resets it. Real usage needs the shared backend described above.
-- Photos are stored as base64 images in local storage, which is fine for a demo but
-  not how a production app should store media (should use object storage like S3).
-- The "server timestamp" is your device's clock, since there's no server here.
-- Reverse geocoding depends on internet access to a free public API (OpenStreetMap
-  Nominatim); production should use a paid geocoding API with an SLA.
+Internal project for Upstage Co. No license specified yet.

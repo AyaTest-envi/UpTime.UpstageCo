@@ -88,7 +88,7 @@
   td{padding:10px;border-bottom:1px solid var(--line);}
   tr:last-child td{border-bottom:none;}
   .avatar{width:38px;height:38px;border-radius:50%;background:var(--panel-2);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:14px;border:1px solid var(--line);flex-shrink:0;}
-  .toast{position:fixed;bottom:110px;left:50%;transform:translateX(-50%);background:var(--panel-2);
+  .toast{position:fixed;bottom:110px;left:calc(50% + 105px);transform:translateX(-50%);background:var(--panel-2);
     border:1px solid var(--line);padding:12px 18px;border-radius:12px;font-size:14px;font-weight:600;z-index:200;
     box-shadow:0 10px 30px rgba(0,0,0,.15); max-width:90%; text-align:center;}
   .modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:100;display:flex;align-items:flex-end;justify-content:center;}
@@ -118,6 +118,23 @@
   .kpi .num{font-size:24px;font-weight:800;}
   .kpi .lab{font-size:11.5px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.3px;}
   .flexwrap{display:flex;flex-wrap:wrap;gap:10px;}
+  /* Mobile browser adjustments */
+@media (max-width: 768px) {
+  .toast {
+    left: 50%;
+  }
+}
+/* Job Start / End tracking */
+.job-track-card{padding:16px;margin-bottom:14px;border:1px solid var(--line);border-radius:16px;background:#fff}
+.job-track-card.active{background:#f3fff6;border-color:#93e6aa}
+.job-track-btn{width:100%;margin-top:14px;padding:15px;border:0;border-radius:12px;color:#fff;font-weight:800;font-size:16px;cursor:pointer}
+.job-start{background:#16a34a}
+.job-end{background:#dc2626}
+.job-track-btn:hover{filter:brightness(.94)}
+.job-track-icon{display:inline-grid;place-items:center;width:26px;height:26px;margin-right:8px;border-radius:50%;background:#fff}
+.job-start .job-track-icon{color:#16a34a}
+.job-end .job-track-icon{color:#dc2626}
+
 </style>
 </head>
 <body>
@@ -132,10 +149,22 @@
    ===================================================================== */
 
 const LOGO_DATA_URL = "data:image/png;base64,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";
-const KEY = "upstage_track_db_v2";
+const KEY = "upstage_track_db_v4";
 
 function uid(prefix){ return prefix + "_" + Math.random().toString(36).slice(2,9); }
 function nowISO(){ return new Date().toISOString(); }
+function ausNow(){
+  const p=new Intl.DateTimeFormat("en-AU",{timeZone:"Australia/Sydney",hour12:false,year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",second:"2-digit"}).formatToParts(new Date());
+  const v=Object.fromEntries(p.map(x=>[x.type,x.value]));
+  return {year:+v.year,month:+v.month,day:+v.day,hour:+v.hour,minute:+v.minute,second:+v.second,time:`${v.hour}:${v.minute}:${v.second}`};
+}
+function workReminderType(){
+  const t=ausNow();
+  if(t.hour===10) return "break";
+  if(t.hour===14) return "lunch";
+  if(t.hour===16) return "timeout";
+  return null;
+}
 function fmtTime(iso){ if(!iso) return "—"; return new Date(iso).toLocaleTimeString([], {hour:'numeric',minute:'2-digit'}); }
 function fmtDate(iso){ return new Date(iso).toLocaleDateString([], {weekday:'short',day:'numeric',month:'short'}); }
 function fmtDateShort(iso){ return new Date(iso).toLocaleDateString([], {day:'2-digit',month:'2-digit',year:'2-digit'}); }
@@ -145,6 +174,147 @@ function hm(totalMins){
   const h = Math.floor(totalMins/60), m = totalMins%60;
   return (h>0? h+"h ":"") + m+"m";
 }
+let workReminderSnoozeUntil=0;
+let overtimeConfirmedDate="";
+const FOUR_PM_GRACE_MINUTES=10;
+
+function showBreakReminder(type){
+  if(document.getElementById("workReminder")) return;
+  const isLunch=type==="lunch",w=document.createElement("div");
+  w.id="workReminder";w.className="modal-bg";
+  w.innerHTML=`<div class="modal" style="max-width:420px;text-align:center;">
+    <div class="h2">${isLunch?"Lunch Break Reminder":"Break Reminder"}</div>
+    <div style="font-size:18px;font-weight:600;line-height:1.45;margin:14px 0 20px;">
+      ${isLunch?"It's time to take your lunch break.":"It's time to take your break."}
+    </div>
+    <button class="btn btn-accent btn-block" id="reminderBreak">Start ${isLunch?"Lunch":"Break"}</button>
+    <button class="btn btn-ghost btn-block" style="margin-top:8px;" id="reminderLater">Remind Me Later</button>
+  </div>`;
+  document.body.appendChild(w);
+  w.querySelector("#reminderBreak").onclick=()=>{w.remove();doStartBreak();};
+  w.querySelector("#reminderLater").onclick=()=>{workReminderSnoozeUntil=Date.now()+10*60*1000;w.remove();};
+}
+function showFourPmReminder(emp,att,activeJob){
+  if(document.getElementById("fourPmReminder")) return;
+  const t=ausNow(),job=activeJob?jobName(activeJob.jobId):jobName(att.jobId),w=document.createElement("div");
+  const displayTime=new Date().toLocaleTimeString("en-AU",{timeZone:"Australia/Sydney",hour:"numeric",minute:"2-digit",second:"2-digit",hour12:true});  
+  w.id="fourPmReminder";w.className="modal-bg";
+  w.innerHTML=`<div class="modal" style="max-width:440px;text-align:center;">
+    <div class="h2">Time to log out</div>
+    <div style="font-size:18px;font-weight:600;line-height:1.45;margin:14px 0 20px;">
+      End existing <b>${escapeHtml(job)}</b> job at <b>${displayTime}</b> and time out?
+    </div>
+    <button class="btn btn-danger btn-block" id="fourPmOut">Time Out</button>
+    <button class="btn btn-accent btn-block" style="margin-top:8px;" id="fourPmContinue">Continue Working — Track OT</button>
+  </div>`;
+  document.body.appendChild(w);
+
+  w.querySelector("#fourPmOut").onclick=()=>{w.remove();doTimeOut();};
+  w.querySelector("#fourPmContinue").onclick=async()=>{
+  const confirmedAt=nowISO();
+
+  const {error}=await supabaseClient.from("attendance").update({
+    overtime_confirmed_at:confirmedAt,
+    updated_at:confirmedAt
+  }).eq("id",att.id);
+
+  if(error){
+    console.error("OT confirmation error:",error);
+    toast("Could not confirm overtime. Please try again.");
+    return;
+  }
+
+  overtimeConfirmedDate=`${t.year}-${t.month}-${t.day}`;
+  att.overtimeConfirmedAt=confirmedAt;
+  save();
+  w.remove();
+  toast("Continuing work — time after 4 PM will be tracked as overtime.");
+};
+}
+function fourPmCutoffState(){
+  const t=ausNow();
+  const minsNow=t.hour*60+t.minute;
+  const fourPm=16*60;
+  return {
+    prompt:minsNow>=fourPm&&minsNow<fourPm+FOUR_PM_GRACE_MINUTES,
+    expired:minsNow>=fourPm+FOUR_PM_GRACE_MINUTES,
+    today:`${t.year}-${t.month}-${t.day}`
+  };
+}
+function fourPmSydneyISO(){
+  const parts=new Intl.DateTimeFormat("en-CA",{timeZone:"Australia/Sydney",timeZoneName:"longOffset",year:"numeric",month:"2-digit",day:"2-digit"}).formatToParts(new Date());
+  const v=Object.fromEntries(parts.map(p=>[p.type,p.value]));
+  const offset=(v.timeZoneName.match(/[+-]\d{2}:\d{2}/)||["+10:00"])[0];
+  return new Date(`${v.year}-${v.month}-${v.day}T16:00:00${offset}`).toISOString();
+}
+async function autoFourPmCutoff(emp,att){
+  const cutoffISO=fourPmSydneyISO();
+  const activeJob=(DB.jobTimeEntries||[]).find(e=>e.employeeId===emp.id&&!e.endTime);
+
+  if(activeJob){
+    const ok=await closeJobAt(activeJob,cutoffISO,"automatic-4pm-cutoff");
+    if(!ok){console.error("4 PM cutoff: job could not be closed.");return false;}
+  }
+att.timeOut=cutoffISO;
+att.grossMin=mins(new Date(cutoffISO)-new Date(att.timeIn));
+
+const brks=DB.breaks.filter(b=>att.breakIds.includes(b.id));
+att.unpaidBreakMin=brks.filter(b=>!b.paid).reduce((s,b)=>s+mins(new Date(b.end)-new Date(b.start)),0);
+att.paidBreakMin=brks.filter(b=>b.paid).reduce((s,b)=>s+mins(new Date(b.end)-new Date(b.start)),0);
+att.netMin=att.grossMin-att.unpaidBreakMin;
+att.status="draft";
+
+const {error}=await supabaseClient.from("attendance").update({
+  time_out:cutoffISO,
+  gross_minutes:att.grossMin,
+  unpaid_break_minutes:att.unpaidBreakMin,
+  paid_break_minutes:att.paidBreakMin,
+  net_minutes:att.netMin,
+  status:"draft",
+  updated_at:nowISO()
+}).eq("id",att.id);
+
+if(error){
+  console.error("4 PM attendance cutoff error:",error);
+  return false;
+}
+
+save();
+
+  return true;
+}
+function checkWorkReminders(){
+  if(!DB.session) return;
+  const emp=currentEmployee(),att=emp?empOpenAttendance(emp.id):null;
+  if(!emp||!att||empOpenBreak(att.id)) return;
+
+  const type=workReminderType(),cutoff=fourPmCutoffState();
+  if(att.overtimeConfirmedAt){
+  const confirmedSydney=new Intl.DateTimeFormat("en-CA",{timeZone:"Australia/Sydney",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date(att.overtimeConfirmedAt));
+  if(confirmedSydney===cutoff.today)overtimeConfirmedDate=cutoff.today;
+}
+if(cutoff.prompt&&overtimeConfirmedDate!==cutoff.today){
+  const activeJob=(DB.jobTimeEntries||[]).find(e=>e.employeeId===emp.id&&!e.endTime);
+  showFourPmReminder(emp,att,activeJob);
+  return;
+}
+
+if(cutoff.expired&&overtimeConfirmedDate!==cutoff.today){
+  autoFourPmCutoff(emp,att).then(ok=>{
+    if(ok){
+      toast("Shift automatically ended at 4:00 PM.");
+      audit(emp.name,"Automatic 4 PM Time Out",jobName(att.jobId),"No response to 4 PM reminder within 10 minutes.");
+      go("emp-home");
+    }
+  });
+  return;
+}
+
+  if(Date.now()<workReminderSnoozeUntil) return;
+  if(type==="break"||type==="lunch") showBreakReminder(type);
+}
+setInterval(checkWorkReminders,60*1000);
+
 function hmsLive(totalSeconds){
   totalSeconds = Math.max(0, Math.floor(totalSeconds));
   const h = Math.floor(totalSeconds/3600);
@@ -177,21 +347,23 @@ const NOTIFICATION_LABELS = {
 };
 function seed(){
   const employees = [
-    {id:"emp_alex", empId:"EMP-001", name:"Alex Rivera", role:"Site Crew", pin:"1111", status:"active", email:"alex@upstage.co", department:"Production", payCategory:"Casual", employmentType:"Casual", hourlyRate:34.50, manager:"Julia Santos", defaultLocation:"Upstage Workshop", permission:"Employee"},
-    {id:"emp_shadelle", empId:"EMP-002", name:"Shadelle Nguyen", role:"Rigger", pin:"1111", status:"active", email:"shadelle@upstage.co", department:"Production", payCategory:"Casual", employmentType:"Casual", hourlyRate:38.00, manager:"Julia Santos", defaultLocation:"Upstage Workshop", permission:"Employee"},
-    {id:"emp_chris", empId:"EMP-003", name:"Chris Doyle", role:"Fabricator", pin:"1111", status:"active", email:"chris@upstage.co", department:"Workshop", payCategory:"Full-time", employmentType:"Full Time", hourlyRate:36.00, manager:"Julia Santos", defaultLocation:"Upstage Workshop", permission:"Employee"},
-    {id:"emp_julia", empId:"EMP-004", name:"Julia Santos", role:"Site Manager", pin:"1111", status:"active", email:"julia@upstage.co", department:"Production", payCategory:"Full-time", employmentType:"Full Time", hourlyRate:42.00, manager:"—", defaultLocation:"Upstage Workshop", permission:"Manager"},
-    {id:"emp_bodhi", empId:"EMP-005", name:"Bodhi Marsh", role:"Labourer", pin:"1111", status:"active", email:"bodhi@upstage.co", department:"Production", payCategory:"Casual", employmentType:"Casual", hourlyRate:32.00, manager:"Julia Santos", defaultLocation:"Upstage Workshop", permission:"Employee"},
-    {id:"emp_joel", empId:"EMP-006", name:"Joel Kaine", role:"Electrician", pin:"1111", status:"active", email:"joel@upstage.co", department:"Production", payCategory:"Casual", employmentType:"Casual", hourlyRate:40.00, manager:"Julia Santos", defaultLocation:"Upstage Workshop", permission:"Employee"},
-    {id:"emp_will", empId:"EMP-007", name:"Will Foster", role:"Office / Admin", pin:"1111", status:"active", email:"will@upstage.co", department:"Office", payCategory:"Full-time", employmentType:"Full Time", hourlyRate:35.00, manager:"Julia Santos", defaultLocation:"Upstage HQ", permission:"Payroll"},
+    {id:"emp_alex", empId:"EMP-001", name:"Alex Rosemont", role:"Site Crew", status:"active", email:"alex@upstage.co", department:"Production", payCategory:"Casual", employmentType:"Casual", hourlyRate:34.50, manager:"Julia Douglas", defaultLocation:"Upstage Workshop", permission:"Super Admin", fieldRole:true},
+    {id:"emp_shadelle", empId:"EMP-002", name:"Shadelle Abella", role:"Rigger", status:"active", email:"shadelle@upstage.co", department:"Production", payCategory:"Casual", employmentType:"Casual", hourlyRate:38.00, manager:"Julia Douglas", defaultLocation:"Upstage Workshop", permission:"Super Admin", fieldRole:true},
+    {id:"emp_chris", empId:"EMP-003", name:"Cian Joseph", role:"Fabricator", status:"active", email:"cian@upstage.co", department:"Workshop", payCategory:"Full-time", employmentType:"Full Time", hourlyRate:36.00, manager:"Julia Douglas", defaultLocation:"Upstage Workshop", permission:"Employee"},
+    {id:"emp_julia", empId:"EMP-004", name:"Julia Douglas", role:"Site Manager", status:"active", email:"julia@upstage.co", department:"Production", payCategory:"Full-time", employmentType:"Full Time", hourlyRate:42.00, manager:"—", defaultLocation:"Upstage Workshop", permission:"Super Admin", fieldRole:true},
+    {id:"emp_bodhi", empId:"EMP-005", name:"Bodhi Balson", role:"Labourer", status:"active", email:"bodhi@upstage.co", department:"Production", payCategory:"Casual", employmentType:"Casual", hourlyRate:32.00, manager:"Julia Douglas", defaultLocation:"Upstage Workshop", permission:"Employee"},
+    {id:"emp_joel", empId:"EMP-006", name:"Joel Douglas", role:"Electrician", status:"active", email:"joel@upstage.co", department:"Production", payCategory:"Casual", employmentType:"Casual", hourlyRate:40.00, manager:"Julia Douglas", defaultLocation:"Upstage Workshop", permission:"Employee"},
+    {id:"emp_will", empId:"EMP-007", name:"William Rigney", role:"Office / Admin", status:"active", email:"william@upstage.co", department:"Office", payCategory:"Full-time", employmentType:"Full Time", hourlyRate:35.00, manager:"Julia Douglas", defaultLocation:"Upstage HQ", permission:"Payroll"},
+    {id:"emp_joss", empId:"EMP-008", name:"Joss Arhley-Smith", role:"Stagehand", status:"active", email:"joss@upstage.co", department:"Production", payCategory:"Casual", employmentType:"Casual", hourlyRate:33.00, manager:"Julia Douglas", defaultLocation:"Upstage Workshop", permission:"Employee"},
+    {id:"emp_marjorie", empId:"EMP-009", name:"Marjorie Luzon", role:"Mechanical Engineer / Drafter", status:"active", email:"marjorie@upstage.co", department:"Workshop", payCategory:"Full-time", employmentType:"Full Time", hourlyRate:37.00, manager:"Julia Douglas", defaultLocation:"Upstage Workshop", permission:"Employee"},
   ];
   const superAdmin = {id:"admin_super", empId:"ADM-000", name:"Rosa Alvear", role:"Founder / Super Admin", pin:"9999", status:"active", email:"rosa@upstage.co", department:"Management", payCategory:"—", employmentType:"—", hourlyRate:null, manager:"—", defaultLocation:"Upstage HQ", permission:"Super Admin"};
   const jobs = [
-    {id:"job_ateez", number:"2026-001", name:"ATEEZ Tour", client:"Live Nation", venue:"Accor Stadium", location:"Sydney, NSW", start:"2026-08-10", end:"2026-08-20", manager:"Julia Santos", status:"Active", notes:"Load-in Aug 10, show Aug 18, pack-down Aug 19-20.", assigned:["emp_alex","emp_shadelle","emp_bodhi","emp_joel","emp_julia"]},
-    {id:"job_foo", number:"2026-002", name:"Foo Fighters Australia", client:"Live Nation", venue:"Marvel Stadium", location:"Melbourne, VIC", start:"2026-09-01", end:"2026-09-06", manager:"Julia Santos", status:"Upcoming", notes:"", assigned:["emp_alex","emp_joel"]},
-    {id:"job_workshop", number:"WS-000", name:"Workshop", client:"Internal", venue:"Upstage Workshop", location:"Cebu City", start:"2026-01-01", end:"", manager:"Chris Doyle", status:"Active", notes:"General fabrication and maintenance.", assigned:["emp_chris","emp_bodhi"]},
-    {id:"job_accor", number:"2026-003", name:"Accor Stadium — Rigging", client:"Accor Stadium", venue:"Accor Stadium", location:"Sydney, NSW", start:"2026-07-01", end:"2026-07-15", manager:"Julia Santos", status:"Completed", notes:"", assigned:["emp_shadelle"]},
-    {id:"job_office", number:"OFF-000", name:"General Office", client:"Internal", venue:"Upstage HQ", location:"Cebu City", start:"2026-01-01", end:"", manager:"Will Foster", status:"Active", notes:"", assigned:["emp_will","emp_julia"]},
+    {id:"job_ateez", number:"2026-001", name:"ATEEZ Tour", client:"Live Nation", venue:"Accor Stadium", location:"Sydney, NSW", start:"2026-08-10", end:"2026-08-20", manager:"Julia Douglas", status:"Active", notes:"Load-in Aug 10, show Aug 18, pack-down Aug 19-20.", assigned:["emp_alex","emp_shadelle","emp_bodhi","emp_joel","emp_julia","emp_joss"]},
+    {id:"job_foo", number:"2026-002", name:"Foo Fighters Australia", client:"Live Nation", venue:"Marvel Stadium", location:"Melbourne, VIC", start:"2026-09-01", end:"2026-09-06", manager:"Julia Douglas", status:"Upcoming", notes:"", assigned:["emp_alex","emp_joel"]},
+    {id:"job_workshop", number:"WS-000", name:"Workshop", client:"Internal", venue:"Upstage Workshop", location:"Cebu City", start:"2026-01-01", end:"", manager:"Cian Joseph", status:"Active", notes:"General fabrication and maintenance.", assigned:["emp_chris","emp_bodhi","emp_marjorie"]},
+    {id:"job_accor", number:"2026-003", name:"Accor Stadium — Rigging", client:"Accor Stadium", venue:"Accor Stadium", location:"Sydney, NSW", start:"2026-07-01", end:"2026-07-15", manager:"Julia Douglas", status:"Completed", notes:"", assigned:["emp_shadelle"]},
+    {id:"job_office", number:"OFF-000", name:"General Office", client:"Internal", venue:"Upstage HQ", location:"Cebu City", start:"2026-01-01", end:"", manager:"William Rigney", status:"Active", notes:"", assigned:["emp_will","emp_julia"]},
   ];
 
   const attendance = []; const worklogs = []; const auditLogs = []; const timesheets = [];
@@ -224,7 +396,7 @@ function seed(){
     });
     breaks.forEach(b=>attendance.push); // no-op, breaks stored separately below
     breaksStore.push(...breaks);
-    worklogs.push({id:uid("wl"), attendanceId:attId, employeeId:empId, jobId, task, start:ti.toISOString(), finish: dayOffset===0?null:to.toISOString(), notes:"", photos: dayOffset%2===0?1:0});
+    worklogs.push({id:uid("wl"), attendanceId:attId, employeeId:empId, jobId, task, start:ti.toISOString(), finish: dayOffset===0?null:to.toISOString(), notes:"", photos:0, photoData:null});
   }
   const breaksStore = [];
   mk("emp_alex","job_ateez",0,7,58,0,0,true,"Building 2m x 2m risers");
@@ -238,6 +410,12 @@ function seed(){
   mk("emp_bodhi","job_workshop",1,8,58,17,20,true,"Maintenance — forklift service");
   mk("emp_joel","job_ateez",2,8,0,16,30,true,"Site preparation, power distro");
   mk("emp_will","job_office",1,9,1,17,30,true,"Payroll admin, timesheet review");
+  mk("emp_joss","job_ateez",1,8,5,17,15,true,"Bump-in crew, staging");
+  mk("emp_joss","job_ateez",8,7,55,16,45,true,"Last week — general crew");
+  mk("emp_marjorie","job_workshop",0,8,20,0,0,true,"CAD drafting — bracket redesign");
+  mk("emp_marjorie","job_workshop",8,8,10,16,50,true,"Last week — structural load calcs");
+  mk("emp_alex","job_ateez",8,7,50,16,20,true,"Last week — rigging prep");
+  mk("emp_shadelle","job_ateez",9,7,45,17,0,true,"Last week — motor points");
 
   const settings = {
     companyName:"Upstage Co", timezone:"Australia/Sydney", workWeekStart:"Monday",
@@ -273,6 +451,337 @@ function loadDB(){
 }
 let DB = loadDB();
 function save(){ localStorage.setItem(KEY, JSON.stringify(DB)); }
+
+async function syncCompanySettings(){
+ const {data:s,error}=await supabaseClient.from("company_settings").select("*").eq("id",1).single();
+ if(error){console.error("Company settings sync error:",error);throw error;}
+ DB.settings={...DB.settings,
+  companyName:s.company_name,timezone:s.timezone,workWeekStart:s.work_week_start,
+  standardHours:Number(s.standard_hours),workStartTime:s.work_start_time,
+  lateThresholdMin:s.late_threshold_minutes,overtimeStartTime:s.overtime_start_time,
+  overtimeGraceMinutes:s.overtime_grace_minutes,requirePhoto:s.require_photo,
+  requireGPS:s.require_gps,geofenceEnforced:s.geofence_enforced,
+  galleryUploadAllowed:s.gallery_upload_allowed,backgroundTracking:s.background_tracking
+ };
+}
+async function syncTimeDataFromSupabase(employeeId){
+
+  const { data: attendanceRows, error: attendanceError } =
+    await supabaseClient
+      .from("attendance")
+      .select("*")
+      .eq("employee_id", employeeId)
+      .order("time_in", { ascending: true });
+
+  if(attendanceError){
+    console.error("Attendance sync error:", attendanceError);
+    throw attendanceError;
+  }
+
+  const attendanceIds = attendanceRows.map(a => a.id);
+
+  let breakRows = [];
+
+  if(attendanceIds.length){
+    const { data, error: breaksError } =
+      await supabaseClient
+        .from("breaks")
+        .select("*")
+        .in("attendance_id", attendanceIds)
+        .order("start_time", { ascending: true });
+
+    if(breaksError){
+      console.error("Break sync error:", breaksError);
+      throw breaksError;
+    }
+
+    breakRows = data;
+  }
+
+  DB.breaks = breakRows.map(b => ({
+    id: b.id,
+    attendanceId: b.attendance_id,
+    type: b.type,
+    start: b.start_time,
+    end: b.end_time,
+    paid: b.paid,
+    gpsStart: {
+      lat: b.gps_start_lat,
+      lng: b.gps_start_lng
+    },
+    gpsEnd: b.end_time ? {
+      lat: b.gps_end_lat,
+      lng: b.gps_end_lng
+    } : null
+  }));
+
+  DB.attendance = attendanceRows.map(a => ({
+    id: a.id,
+    employeeId: a.employee_id,
+    jobId: a.job_id,
+    category: a.category,
+    timeIn: a.time_in,
+    timeOut: a.time_out,
+    photoIn: a.photo_in,
+    photoOut: a.photo_out,
+
+    gpsIn: {
+      lat: a.gps_in_lat,
+      lng: a.gps_in_lng,
+      address: a.gps_in_address
+    },
+
+    gpsOut: a.time_out ? {
+      lat: a.gps_out_lat,
+      lng: a.gps_out_lng,
+      address: a.gps_out_address
+    } : null,
+
+    geofence: a.geofence,
+    device: a.device,
+    grossMin: a.gross_minutes,
+    unpaidBreakMin: a.unpaid_break_minutes,
+    paidBreakMin: a.paid_break_minutes,
+    netMin: a.net_minutes,
+    status: a.status,
+    source: a.source,
+    summary: a.summary,
+    rejectionReason:a.rejection_reason,
+    updatedAt: a.updated_at,
+    overtimeConfirmedAt: a.overtime_confirmed_at,
+
+    breakIds: DB.breaks
+      .filter(b => b.attendanceId === a.id)
+      .map(b => b.id)
+  }));
+
+// Load all employees from Supabase
+const { data: employeeRows, error: employeeSyncError } =
+  await supabaseClient
+    .from("employees")
+    .select("*")
+    .order("name", { ascending: true });
+
+if(employeeSyncError){
+  console.error("Employee sync error:", employeeSyncError);
+  throw employeeSyncError;
+}
+
+DB.employees = employeeRows.map(e => ({
+  id: e.id,
+  empId: e.emp_id,
+  name: e.name,
+  role: e.role,
+  status: e.status,
+  email: e.email,
+  department: e.department,
+  employmentType: e.employment_type,
+  payCategory: e.pay_category,
+  hourlyRate: e.hourly_rate,
+  manager: e.manager,
+  defaultLocation: e.default_location,
+  permission: e.permission,
+  fieldRole: e.field_role,
+  userId: e.user_id
+}));
+
+// Load employee job time entries
+const { data: timeRows, error: timeError } = await supabaseClient
+  .from("job_time_entries").select("*").eq("employee_id",employeeId)
+  .order("start_time",{ascending:false});
+
+if(timeError){ console.error("Job time sync error:",timeError); throw timeError; }
+
+DB.jobTimeEntries = timeRows.map(t=>({
+  id:t.id, employeeId:t.employee_id, jobId:t.job_id,
+  startTime:t.start_time, endTime:t.end_time,
+  durationSeconds:t.duration_seconds, endReason:t.end_reason,
+  switchedToJobId:t.switched_to_job_id
+}));
+
+  const { data: assignmentRows, error: assignmentError } =
+  await supabaseClient
+    .from("job_assignments")
+    .select("job_id, employee_id");
+
+if(assignmentError){
+  console.error("Job assignment sync error:", assignmentError);
+  throw assignmentError;
+}
+
+// Jobs assigned specifically to the currently logged-in employee
+const assignedJobIds = assignmentRows
+  .filter(a => a.employee_id === employeeId)
+  .map(a => a.job_id);
+const { data: jobRows, error: jobsError } =
+  await supabaseClient
+    .from("jobs")
+    .select("*");
+
+if(jobsError){
+  console.error("Jobs sync error:", jobsError);
+  throw jobsError;
+}
+
+DB.jobs = jobRows.map(j => ({
+  id: j.id,
+  number: j.number,
+  name: j.name,
+  client: j.client,
+  venue: j.venue,
+  location: j.location,
+  start: j.start_date,
+  end: j.end_date,
+  manager: j.manager,
+  status: j.status,
+  notes: j.notes,
+  
+  assigned: assignmentRows
+  .filter(a => a.job_id === j.id)
+  .map(a => a.employee_id)
+}));
+const { data: worklogRows, error: worklogSyncError } =
+  await supabaseClient
+    .from("worklogs")
+    .select("*")
+    .eq("employee_id", employeeId)
+    .order("start_time", { ascending: true });
+
+if(worklogSyncError){
+  console.error("Worklog sync error:", worklogSyncError);
+  throw worklogSyncError;
+}
+
+DB.worklogs = worklogRows.map(w => ({
+  id: w.id,
+  attendanceId: w.attendance_id,
+  employeeId: w.employee_id,
+  jobId: w.job_id,
+  task: w.task,
+  start: w.start_time,
+  finish: w.finish_time,
+  notes: w.notes,
+  photos: w.photos,
+  photoData: w.photo_data
+}));
+DB.worklogs = worklogRows.map(w => ({
+  id: w.id,
+  attendanceId: w.attendance_id,
+  employeeId: w.employee_id,
+  jobId: w.job_id,
+  task: w.task,
+  start: w.start_time,
+  finish: w.finish_time,
+  notes: w.notes,
+  photos: w.photos,
+  photoData: w.photo_data
+}));
+
+// Load permanent job change history
+const { data: jobHistoryRows, error: jobHistoryError } =
+  await supabaseClient
+    .from("job_change_history")
+    .select("*")
+    .order("created_at", { ascending: false });
+
+if(jobHistoryError){
+  console.error("Job change history sync error:", jobHistoryError);
+  throw jobHistoryError;
+}
+
+DB.jobChangeHistory = jobHistoryRows.map(h => ({
+  id: h.id,
+  jobId: h.job_id,
+  actor: h.actor,
+  action: h.action,
+  detail: h.detail,
+  userId: h.user_id,
+  ts: h.created_at
+}));
+
+const {data:correctionRows,error:correctionError}=await supabaseClient
+  .from("correction_requests").select("*").order("created_at",{ascending:false});
+
+if(correctionError){
+  console.error("Correction request sync error:",correctionError);
+  throw correctionError;
+}
+
+DB.correctionRequests=correctionRows.map(c=>({
+  id:c.id,attendanceId:c.attendance_id,employeeId:c.employee_id,
+  type:c.request_type,originalTimeIn:c.original_time_in,
+  originalTimeOut:c.original_time_out,requestedTimeIn:c.requested_time_in,
+  requestedTimeOut:c.requested_time_out,reason:c.reason,status:c.status,
+  reviewedBy:c.reviewed_by,reviewedAt:c.reviewed_at,createdAt:c.created_at
+}));
+
+const {data:auditRows,error:auditError}=await supabaseClient
+  .from("audit_logs").select("*").order("created_at",{ascending:false});
+
+if(auditError){
+  console.error("Audit log sync error:",auditError);
+}else{
+  DB.auditLogs=auditRows.map(a=>({
+    id:a.id,actor:a.actor,action:a.action,target:a.target,
+    detail:a.detail,userId:a.user_id,ts:a.created_at
+  }));
+}
+
+save();
+
+    console.log(
+    "Supabase data synced:",
+    DB.attendance.length,
+    "attendance records,",
+    DB.breaks.length,
+    "break records,",
+    DB.jobs.length,
+    "jobs loaded,",
+    DB.worklogs.length,
+    "worklogs",
+    DB.correctionRequests.length,
+    "correction requests loaded"
+);
+}
+async function syncAdminJobTimeEntries(){
+  const {data:attendanceRows,error:attendanceError}=await supabaseClient.from("attendance").select("*").order("time_in",{ascending:false});
+  if(attendanceError){console.error("Admin attendance sync error:",attendanceError);throw attendanceError;}
+
+  const ids=attendanceRows.map(a=>a.id);
+  let breakRows=[];
+  if(ids.length){
+    const {data,error}=await supabaseClient.from("breaks").select("*").in("attendance_id",ids).order("start_time",{ascending:true});
+    if(error){console.error("Admin break sync error:",error);throw error;}
+    breakRows=data;
+  }
+
+  DB.breaks=breakRows.map(b=>({
+    id:b.id,attendanceId:b.attendance_id,type:b.type,start:b.start_time,end:b.end_time,paid:b.paid,
+    gpsStart:{lat:b.gps_start_lat,lng:b.gps_start_lng},
+    gpsEnd:b.end_time?{lat:b.gps_end_lat,lng:b.gps_end_lng}:null
+  }));
+
+  DB.attendance=attendanceRows.map(a=>({
+    id:a.id,employeeId:a.employee_id,jobId:a.job_id,category:a.category,timeIn:a.time_in,timeOut:a.time_out,
+    photoIn:a.photo_in,photoOut:a.photo_out,
+    gpsIn:{lat:a.gps_in_lat,lng:a.gps_in_lng,address:a.gps_in_address},
+    gpsOut:a.time_out?{lat:a.gps_out_lat,lng:a.gps_out_lng,address:a.gps_out_address}:null,
+    geofence:a.geofence,device:a.device,grossMin:a.gross_minutes,
+    unpaidBreakMin:a.unpaid_break_minutes,paidBreakMin:a.paid_break_minutes,netMin:a.net_minutes,
+    status:a.status,source:a.source,summary:a.summary,rejectionReason:a.rejection_reason,
+    updatedAt:a.updated_at,overtimeConfirmedAt:a.overtime_confirmed_at,
+    breakIds:DB.breaks.filter(b=>b.attendanceId===a.id).map(b=>b.id)
+  }));
+
+  const {data,error}=await supabaseClient.from("job_time_entries").select("*").order("start_time",{ascending:false});
+  if(error){console.error("Admin job time sync error:",error);throw error;}
+  DB.jobTimeEntries=data.map(t=>({
+    id:t.id,employeeId:t.employee_id,jobId:t.job_id,startTime:t.start_time,endTime:t.end_time,
+    durationSeconds:t.duration_seconds,endReason:t.end_reason,switchedToJobId:t.switched_to_job_id
+  }));
+  save();
+}
+
 function isAdminRole(perm){ return perm && perm!=="Employee"; }
 /* Which admin tabs each permission level can see */
 const ROLE_TAB_ACCESS = {
@@ -286,10 +795,84 @@ function canAccess(tab){
   if(!isAdminRole(role)) return false;
   return (ROLE_TAB_ACCESS[role]||[]).includes(tab);
 }
+/* Admins/managers who are also field crew (e.g. Alex, Shadelle, Julia) get a "My Time" section
+   inside their admin shell reusing the same personal clock-in/break/timesheet screens. */
+const SELF_SERVICE_ROUTES = ["emp-home","job-select","worklog","worklog-add","worklog-detail","history","timesheet","emp-att-detail"];
+function hasFieldAccess(){ const e = currentEmployee(); return !!(e && e.fieldRole); }
+function isFieldStaff(e){ return e.permission==="Employee" || e.permission==="Manager" || !!e.fieldRole; }
 function firstAllowedTab(role){ return (ROLE_TAB_ACCESS[role]||["admin-dashboard"])[0]; }
-function audit(actor, action, target, detail){
-  DB.auditLogs.unshift({id:uid("aud"), actor, action, target, detail, ts:nowISO()});
+async function audit(actor,action,target,detail){
+  const ts=nowISO(),id=uid("aud");
+  const {data:{user},error:userError}=await supabaseClient.auth.getUser();
+
+  if(userError||!user){
+    console.error("Audit user error:",userError);
+    return;
+  }
+
+  const {error}=await supabaseClient.from("audit_logs").insert({
+    id,actor,action,target,detail,user_id:user.id,created_at:ts
+  });
+
+  if(error){
+    console.error("Audit save error:",error);
+    return;
+  }
+
+  DB.auditLogs.unshift({id,actor,action,target,detail,ts});
   save();
+}
+
+async function recordJobHistory(jobId, action, detail){
+  const { data: userData, error: userError } =
+    await supabaseClient.auth.getUser();
+
+  if(userError || !userData?.user){
+    console.error(
+      "Could not get authenticated user for job history:",
+      userError
+    );
+    return false;
+  }
+
+  const historyRecord = {
+    id: uid("jhist"),
+    job_id: jobId,
+    actor: DB.session?.name || "Unknown User",
+    action: action,
+    detail: detail,
+    user_id: userData.user.id
+  };
+
+  const { data: savedHistory, error: historyError } =
+    await supabaseClient
+      .from("job_change_history")
+      .insert(historyRecord)
+      .select()
+      .single();
+
+  if(historyError){
+    console.error("Job history save error:", historyError);
+    return false;
+  }
+
+  if(!DB.jobChangeHistory){
+    DB.jobChangeHistory = [];
+  }
+
+  DB.jobChangeHistory.unshift({
+    id: savedHistory.id,
+    jobId: savedHistory.job_id,
+    actor: savedHistory.actor,
+    action: savedHistory.action,
+    detail: savedHistory.detail,
+    userId: savedHistory.user_id,
+    ts: savedHistory.created_at
+  });
+
+  save();
+
+  return true;
 }
 
 /* ---------------- Router / State ---------------- */
@@ -339,15 +922,43 @@ function todayNetMinutes(empId){
 }
 
 /* ---------------- Geolocation & reverse geocode ---------------- */
-function getPosition(){
+function isEmbeddedFrame(){
+  try{ return window.self !== window.top; }catch(e){ return true; }
+}
+function getPosition(opts){
+  const { highAccuracy=true, timeout=12000 } = opts||{};
   return new Promise((resolve)=>{
-    if(!navigator.geolocation){ resolve(null); return; }
+    if(!navigator.geolocation){ resolve({error:"unsupported"}); return; }
     navigator.geolocation.getCurrentPosition(
       pos=> resolve({lat:pos.coords.latitude, lng:pos.coords.longitude, accuracy:pos.coords.accuracy}),
-      err=> resolve(null),
-      {enableHighAccuracy:true, timeout:8000}
+      err=>{
+        const msg = (err.message||"").toLowerCase();
+        const policyBlocked = msg.includes("policy")||msg.includes("permissions policy")||msg.includes("feature policy")||msg.includes("disabled in this document");
+        if(err.code===1 && (policyBlocked || isEmbeddedFrame())){
+          resolve({error:"iframe-blocked", message: err.message}); return;
+        }
+        resolve({error: err.code===1?"denied": err.code===3?"timeout":"unavailable", message: err.message});
+      },
+      {enableHighAccuracy:highAccuracy, timeout, maximumAge:0}
     );
   });
+}
+/* Every call re-invokes getCurrentPosition, which re-triggers the browser's native permission
+   prompt any time the site's permission for this origin is still "prompt" (not yet decided).
+   Once a person taps Allow/Block, the browser remembers that per-origin — no site-side code
+   can force the native prompt to reappear after that; a Block decision has to be reversed in
+   the browser's own site settings, so we detect that case and tell them exactly where to look. */
+async function getPositionSmart(){
+  if(!window.isSecureContext){
+    return {error:"insecure"};
+  }
+  let result = await getPosition({highAccuracy:true, timeout:12000});
+  if(result.error==="timeout" || result.error==="unavailable"){
+    // Fall back to network/Wi-Fi based location — many desktops/laptops have no GPS chip,
+    // so a high-accuracy GPS fix can time out even when location is genuinely allowed.
+    result = await getPosition({highAccuracy:false, timeout:12000});
+  }
+  return result;
 }
 async function reverseGeocode(lat,lng){
   try{
@@ -370,21 +981,61 @@ function geofenceCheck(lat,lng){
   }
   return {inside:false, name:null};
 }
+const LOCATION_ERROR_COPY = {
+  denied: {
+    title: "Location Blocked for This Site",
+    body: (label)=> `${label||"This action"} requires your device's location, but this browser has this site's location set to Blocked. Turning location on for the browser or your device in general settings isn't enough — the block is remembered per-site.<br><br>To fix it: tap the 🔒 or ⓘ icon next to the address bar → Site settings (or Permissions) → set <b>Location</b> to <b>Allow</b> → then try again. On iOS Safari this is under Settings → Safari → Location.`,
+    primary: "I've allowed it — Try Again"
+  },
+  "iframe-blocked": {
+    title: "Location Blocked in This Preview",
+    body: (label)=> `${label||"This action"} needs location, but this page is running inside an embedded preview frame (like a chat or editor preview) that doesn't pass location access through to the page — even if the browser's own address-bar permission shows location as Allowed for the outer site. That outer toggle applies to the container page, not to this embedded content, so it can't fix this from in here.<br><br>The reliable fix: open this file directly in its own full browser tab (not inside any preview panel) and try again there.`,
+    primary: "Open in a New Tab",
+    secondary: "Try Again Here Anyway"
+  },
+  insecure: {
+    title: "Secure Connection Required",
+    body: (label)=> `${label||"This action"} needs your device's location, but browsers only allow location access on secure (HTTPS) pages or on your own device — not on plain HTTP. Ask whoever is hosting this app to serve it over HTTPS, or open it directly on this device.`,
+    primary: "Try Again"
+  },
+  timeout: {
+    title: "Couldn't Get a Location Fix",
+    body: (label)=> `${label||"This action"} requires location, and your device took too long to respond. This is common indoors or on desktops without GPS. Try moving near a window, reconnecting Wi-Fi, or checking that Location Services are turned on at the device/OS level (separate from the browser permission).`,
+    primary: "Try Again"
+  },
+  unavailable: {
+    title: "Location Unavailable",
+    body: (label)=> `${label||"This action"} requires location, but your device couldn't determine one right now. Check that Location Services are enabled at the device/OS level, then try again.`,
+    primary: "Try Again"
+  },
+  unsupported: {
+    title: "Location Not Supported",
+    body: ()=> `This browser doesn't support location access at all. Please use an up-to-date Chrome, Safari, or Edge.`,
+    primary: "Close"
+  }
+};
 function requireLocation(onSuccess, actionLabel){
   (async function attempt(){
     toast("Getting GPS location…");
-    const pos = await getPosition();
-    if(!pos){
+    const pos = await getPositionSmart();
+    if(pos.error){
+      const copy = LOCATION_ERROR_COPY[pos.error] || LOCATION_ERROR_COPY.unavailable;
       const wrap = document.createElement("div"); wrap.className="modal-bg";
       wrap.innerHTML = `<div class="modal">
-        <div class="h2" style="margin-bottom:8px;">Location Required</div>
-        <div class="muted small" style="margin-bottom:16px;">${actionLabel||"This action"} requires your device's location. Please enable location/GPS permissions for this browser and try again.</div>
-        <button class="btn btn-accent btn-block btn-lg" id="locRetry">Try Again</button>
+        <div class="h2" style="margin-bottom:8px;">${copy.title}</div>
+        <div class="muted small" style="margin-bottom:16px;">${copy.body(actionLabel)}</div>
+        <button class="btn btn-accent btn-block btn-lg" id="locRetry">${copy.primary}</button>
+        ${copy.secondary? `<button class="btn btn-ghost btn-block" style="margin-top:8px;" id="locSecondary">${copy.secondary}</button>`:""}
         <button class="btn btn-ghost btn-block" style="margin-top:8px;" id="locCancel">Cancel</button>
       </div>`;
       document.body.appendChild(wrap);
       wrap.querySelector("#locCancel").onclick = ()=> wrap.remove();
-      wrap.querySelector("#locRetry").onclick = ()=> { wrap.remove(); attempt(); };
+      if(pos.error==="iframe-blocked"){
+        wrap.querySelector("#locRetry").onclick = ()=> { try{ window.open(window.location.href, "_blank", "noopener"); }catch(e){} };
+        if(wrap.querySelector("#locSecondary")) wrap.querySelector("#locSecondary").onclick = ()=> { wrap.remove(); attempt(); };
+      } else {
+        wrap.querySelector("#locRetry").onclick = ()=> { wrap.remove(); attempt(); };
+      }
       return;
     }
     onSuccess(pos);
@@ -451,28 +1102,21 @@ function screenLogin(){
     </div>
     <div class="card col gap-12" style="background:#000;border-color:#000;">
       <div class="field" style="margin-bottom:0;">
-        <label>Select account (demo)</label>
-        <select id="loginUser">
-          <optgroup label="Employee-level (PIN: 1111)">
-            ${DB.employees.filter(e=>e.permission==="Employee").map(e=>`<option value="${e.id}">${escapeHtml(e.name)} — ${escapeHtml(e.role)}</option>`).join("")}
-          </optgroup>
-          <optgroup label="Manager (PIN: 1111)">
-            ${DB.employees.filter(e=>e.permission==="Manager").map(e=>`<option value="${e.id}">${escapeHtml(e.name)} — Manager</option>`).join("")}
-          </optgroup>
-          <optgroup label="Payroll (PIN: 1111)">
-            ${DB.employees.filter(e=>e.permission==="Payroll").map(e=>`<option value="${e.id}">${escapeHtml(e.name)} — Payroll</option>`).join("")}
-          </optgroup>
-          <optgroup label="Super Admin (PIN: 9999)">
-            ${DB.employees.filter(e=>e.permission==="Super Admin").map(e=>`<option value="${e.id}">${escapeHtml(e.name)} — Super Admin</option>`).join("")}
-          </optgroup>
-        </select>
+  <label>Email</label>
+  <input
+    id="loginEmail"
+    type="email"
+    autocomplete="username"
+    placeholder="Enter email"
+  >
       </div>
       <div class="field" style="margin-bottom:0;">
-        <label>PIN</label>
-        <input id="loginPin" type="password" inputmode="numeric" maxlength="4" placeholder="••••">
+        <label>Password</label>
+<input id="loginPin" type="password" autocomplete="current-password" placeholder="Enter password">
+<div class="tiny" id="loginPinHint" style="margin-top:6px;color:#9a9a9a;"></div>
       </div>
       <button class="btn btn-block btn-lg" id="loginBtn" style="background:#fff;color:#000;">Log In</button>
-      <a class="link small" style="text-align:center;color:#fff;" id="forgotLink">Forgot PIN?</a>
+      <a class="link small" style="text-align:center;color:#fff;" id="forgotLink">Forgot Password?</a>
     </div>
     <div class="tiny" style="text-align:center;margin-top:22px;color:#000;">
       By logging in you acknowledge Upstage Co's attendance photo &amp; location policy. <span class="link" id="privacyLink">View privacy notice</span>.
@@ -480,20 +1124,91 @@ function screenLogin(){
   </div>`;
 }
 function bindLogin(){
-  document.getElementById("loginBtn").onclick = ()=>{
-    const id = document.getElementById("loginUser").value;
-    const pin = document.getElementById("loginPin").value;
-    const e = DB.employees.find(e=>e.id===id);
-    if(!e){ toast("Select an account"); return; }
-    if(pin !== e.pin){ toast("Incorrect PIN"); return; }
-    if(e.status==="disabled"){ toast("This account has been disabled. Contact your admin."); return; }
-    DB.session = {role:e.permission, employeeId:e.id, name:e.name};
-    audit(e.name,"Logged in",`${e.permission} session`,"");
+
+  document.getElementById("loginBtn").onclick = async ()=>{
+
+    const email = document
+      .getElementById("loginEmail")
+      .value
+      .trim();
+
+    const password = document
+      .getElementById("loginPin")
+      .value;
+
+    if(!email){
+      toast("Enter your email");
+      return;
+    }
+
+    if(!password){
+      toast("Enter your password");
+      return;
+    }
+
+    const { data: authData, error: authError } =
+      await supabaseClient.auth.signInWithPassword({
+        email,
+        password
+      });
+
+    if(authError){
+      console.error("Login error:", authError);
+      toast("Incorrect email or password");
+      return;
+    }
+
+    const { data: profile, error: profileError } =
+      await supabaseClient
+        .from("employees")
+        .select("id, emp_id, name, email, permission, status")
+        .eq("user_id", authData.user.id)
+        .single();
+
+    if(profileError || !profile){
+      console.error("Profile lookup error:", profileError);
+      toast("Employee profile could not be loaded");
+      await supabaseClient.auth.signOut();
+      return;
+    }
+
+    if(profile.status === "disabled"){
+      toast("This account has been disabled. Contact your admin.");
+      await supabaseClient.auth.signOut();
+      return;
+    }
+
+    try{
+  await syncCompanySettings();
+  await syncTimeDataFromSupabase(profile.id);
+  if(isAdminRole(profile.permission)) await syncAdminJobTimeEntries();
+}catch(error){
+  console.error("Initial data sync failed:", error);
+  toast("Unable to load attendance data. Please try again.");
+  await supabaseClient.auth.signOut();
+  return;
+}
+    DB.session = {
+      role: profile.permission,
+      employeeId: profile.id,
+      name: profile.name
+    };
+
+    await audit(
+      profile.name,
+      "Logged in",
+      `${profile.permission} session`,
+      ""
+    );
+
     save();
-    go(isAdminRole(e.permission) ? firstAllowedTab(e.permission) : "emp-home");
+
+    go(
+      isAdminRole(profile.permission)
+        ? firstAllowedTab(profile.permission)
+        : "emp-home"
+    );
   };
-  document.getElementById("forgotLink").onclick = ()=> toast("A real build emails/SMSs a reset link via your auth provider (e.g. Firebase Auth / Auth0).");
-  document.getElementById("privacyLink").onclick = ()=> { PRIVACY_FROM_LOGIN=true; go("privacy"); };
 }
 let PRIVACY_FROM_LOGIN=false;
 
@@ -504,6 +1219,7 @@ function renderEmployeeShell(){
     "job-select": screenJobSelect,
     "worklog": screenWorklog,
     "worklog-add": screenWorklogAdd,
+    "worklog-detail": screenWorklogDetail,
     "history": screenHistory,
     "timesheet": screenTimesheet,
     "emp-att-detail": screenEmpAttDetail,
@@ -557,7 +1273,9 @@ function screenEmpHome(){
     const breaksSoFar = DB.breaks.filter(b=>b.attendanceId===openAtt.id && b.end).reduce((s,b)=> s+ (b.paid? 0 : mins(new Date(b.end)-new Date(b.start))),0);
     todayMin += Math.max(0, elapsed - breaksSoFar - (openBrk? mins(new Date()-new Date(openBrk.start)) : 0));
   }
-  const job = openAtt? DB.jobs.find(j=>j.id===openAtt.jobId) : null;
+  const activeJobEntry=(DB.jobTimeEntries||[]).find(e=>e.employeeId===emp.id&&!e.endTime);
+  const job=activeJobEntry?DB.jobs.find(j=>j.id===activeJobEntry.jobId):null;
+  const assignedJobs=DB.jobs.filter(j=>j.assigned.includes(emp.id)&&j.status!=="Completed");
   const hour = new Date().getHours();
   const greeting = hour<12?"Good morning":hour<17?"Good afternoon":"Good evening";
   const firstName = emp.name.split(" ")[0];
@@ -616,11 +1334,20 @@ function screenEmpHome(){
     </div>`:""}
 
     <div class="row-between" style="margin-bottom:10px;"><div class="h3">TODAY'S WORK</div><a class="link small" id="goWorklog">Add +</a></div>
-    ${todaysLogs.length? todaysLogs.map(w=>`
-      <div class="card card-tight" style="margin-bottom:8px;">
-        <div class="row-between"><b class="small">${escapeHtml(jobName(w.jobId))}</b><span class="tiny muted">${fmtTime(w.start)}–${w.finish?fmtTime(w.finish):'now'}</span></div>
-        <div class="small muted" style="margin-top:2px;">${escapeHtml(w.task)}</div>
-      </div>`).join("") : `<div class="empty small">No work logged yet today.</div>`}
+
+${openAtt?assignedJobs.map(j=>{
+  const active=activeJobEntry?.jobId===j.id;
+  return `<div class="card card-tight" style="margin-bottom:8px;${active?"background:#effcf3;":""}">
+    <div class="row-between"><div><b>${escapeHtml(j.name)}</b><div class="tiny muted">${escapeHtml(j.number||"")}</div></div></div>
+    <button class="btn ${active?"btn-danger":"btn-accent"} btn-block" style="margin-top:8px;" ${active?`data-end-job="${j.id}"`:`data-start-job="${j.id}"`}>${active?"⏹ End Job":"▶ Start Job"}</button>
+  </div>`;
+}).join(""):""}
+
+${todaysLogs.length? todaysLogs.map(w=>`
+  <div class="card card-tight" style="margin-bottom:8px;">
+    <div class="row-between"><b class="small">${escapeHtml(jobName(w.jobId))}</b><span class="tiny muted">${fmtTime(w.start)}${w.finish?fmtTime(w.finish):" now"}</span></div>
+    <div class="small muted" style="margin-top:2px;">${escapeHtml(w.task)}</div>
+  </div>`).join("") : !openAtt?`<div class="empty small">No work logged yet today.</div>`:""}
 
     <div class="row-between" style="margin:18px 0 10px;"><div class="h3">RECENT ATTENDANCE</div><a class="link small" id="goHistory">View all</a></div>
     ${recentAtt.map(a=>`
@@ -635,23 +1362,134 @@ function screenEmpHome(){
 }
 
 function screenJobSelect(){
-  const emp = currentEmployee();
-  const jobs = DB.jobs.filter(j=> j.assigned.includes(emp.id) && j.status!=="Completed");
+  const emp=currentEmployee();
+  const jobs=DB.jobs.filter(j=>j.assigned.includes(emp.id)&&j.status!=="Completed");
+  const active=(DB.jobTimeEntries||[]).find(e=>e.employeeId===emp.id&&!e.endTime);
+
   return `
   <div class="topbar"><button class="backbtn" id="back">← Back</button><div class="h2">Select Job</div><div style="width:40px"></div></div>
   <div class="content">
-    <div class="muted small" style="margin-bottom:14px;">Choose the job you're clocking in for.</div>
-    <div class="col gap-10">
-      ${jobs.map(j=>`
-        <button class="btn btn-ghost btn-block" style="justify-content:flex-start;text-align:left;padding:16px;" data-job="${j.id}">
-          <div>
-            <div style="font-weight:800;">${escapeHtml(j.name)}</div>
-            <div class="tiny muted">#${j.number} · ${escapeHtml(j.venue)}, ${escapeHtml(j.location)}</div>
-          </div>
-        </button>`).join("")}
-      ${jobs.length===0? `<div class="empty">No jobs assigned to you yet. Ask your admin to assign one.</div>`:""}
-    </div>
+    <div class="muted small" style="margin-bottom:16px;">Start or end time tracking for an assigned job.</div>
+
+    ${jobs.map(j=>{
+      const on=active?.jobId===j.id;
+      return `<div class="job-track-card ${on?"active":""}">
+        <div><b style="font-size:16px;">${escapeHtml(j.name)}</b>
+        <div class="tiny muted">#${j.number} · ${escapeHtml(j.venue)}, ${escapeHtml(j.location)}</div></div>
+        <button class="job-track-btn ${on?"job-end":"job-start"}" ${on?`data-end-job="${j.id}"`:`data-start-job="${j.id}"`}>
+          <span class="job-track-icon">${on?"■":"▶"}</span>${on?"End Job":"Start Job"}
+        </button>
+      </div>`;
+    }).join("")}
+
+    ${jobs.length?"":`<div class="empty">No jobs assigned to you yet.</div>`}
   </div>`;
+}
+
+async function startJobTracking(jobId){
+  const emp=currentEmployee(),job=DB.jobs.find(j=>j.id===jobId);
+  const att=empOpenAttendance(emp.id);
+  if(att&&empOpenBreak(att.id)){toast("End your current break before starting or switching jobs.");return;}
+  const active=(DB.jobTimeEntries||[]).find(e=>e.employeeId===emp.id&&!e.endTime);
+  const openAtt=DB.attendance.find(a=>a.employeeId===emp.id&&!a.timeOut);
+  const ts=new Date(),iso=ts.toISOString();
+
+  if(active&&active.jobId!==jobId){
+    const oldJob=DB.jobs.find(j=>j.id===active.jobId);
+    const time=ts.toLocaleTimeString("en-GB",{hour12:false});
+    if(!await showSwitchJobConfirm(oldJob?.name||"current",time))return;
+
+    const seconds=Math.max(0,Math.floor((ts-new Date(active.startTime))/1000));
+    const {error}=await supabaseClient.from("job_time_entries").update({
+      end_time:iso,duration_seconds:seconds,end_reason:"switched_job",
+      switched_to_job_id:jobId,updated_at:iso
+    }).eq("id",active.id);
+
+    if(error){console.error(error);toast("Could not stop current job.");return;}
+    active.endTime=iso;active.durationSeconds=seconds;
+  }
+
+  if(active?.jobId===jobId){toast("This job is already active.");return;}
+
+  if(!openAtt){
+    const att={
+      id:uid("att"),employeeId:emp.id,jobId,timeIn:iso,timeOut:null,
+      photoIn:null,photoOut:null,gpsIn:null,gpsOut:null,
+      geofence:"n/a",breakIds:[],grossMin:null,unpaidBreakMin:0,
+      paidBreakMin:0,netMin:null,category:"Job Start",
+      device:deviceLabel(),status:"draft",source:"app",summary:""
+    };
+
+    const {error}=await supabaseClient.from("attendance").insert({
+      id:att.id,employee_id:emp.id,job_id:jobId,time_in:iso,time_out:null,
+      photo_in:null,photo_out:null,gps_in_lat:null,gps_in_lng:null,
+      gps_in_address:null,gps_out_lat:null,gps_out_lng:null,
+      gps_out_address:null,geofence:"n/a",gross_minutes:null,
+      unpaid_break_minutes:0,paid_break_minutes:0,net_minutes:null,
+      category:"Job Start",device:att.device,status:"draft",
+      source:"app",summary:""
+    });
+
+    if(error){console.error("Attendance start error:",error);toast("Could not clock in.");return;}
+    DB.attendance.push(att);
+  }
+
+  const {data,error}=await supabaseClient.from("job_time_entries").insert({
+    id:uid("jte"),employee_id:emp.id,job_id:jobId,start_time:iso
+  }).select().single();
+
+  if(error){console.error(error);toast("Could not start job.");return;}
+
+  DB.jobTimeEntries.unshift({
+    id:data.id,employeeId:data.employee_id,jobId:data.job_id,
+    startTime:data.start_time,endTime:data.end_time
+  });
+
+  audit(emp.name,"Started Job",job.name,active?`Switched from ${jobName(active.jobId)}`:"");
+  save();toast(`${job.name} started`);go("emp-home");
+}
+
+async function closeJobAt(active,iso,reason="manual"){
+  const seconds=Math.max(0,Math.floor((new Date(iso)-new Date(active.startTime))/1000));
+  const {error}=await supabaseClient.from("job_time_entries").update({
+    end_time:iso,duration_seconds:seconds,end_reason:reason,updated_at:iso
+  }).eq("id",active.id);
+  if(error){console.error("Job close error:",error);return false;}
+  active.endTime=iso;active.durationSeconds=seconds;active.endReason=reason;save();
+  return true;
+}
+
+async function endJobTracking(jobId){
+  const emp=currentEmployee(),att=empOpenAttendance(emp.id);
+  if(att&&empOpenBreak(att.id)){toast("End your current break before ending a job.");return;}
+  const active=(DB.jobTimeEntries||[]).find(e=>e.jobId===jobId&&!e.endTime);
+  if(!active){toast("No active job found.");return;}
+
+  const iso=nowISO();
+  const ok=await closeJobAt(active,iso,"manual");
+  if(!ok){toast("Could not end job.");return;}
+
+  audit(currentEmployee().name,"Ended Job",jobName(jobId),`Duration: ${Math.floor((active.durationSeconds||0)/60)}m`);
+  toast("Job ended");
+  go("job-select");
+}
+
+function showSwitchJobConfirm(jobName,time){
+  return new Promise(resolve=>{
+    const w=document.createElement("div"); w.className="modal-bg";
+    w.innerHTML=`<div class="modal" style="max-width:420px;text-align:center;">
+      <div class="h2" style="margin-bottom:10px;">Switch Job Assignment</div>
+      <div class="small muted" style="margin-bottom:18px;">
+        Starting new job assignment.<br>
+        Record stop for <b>${escapeHtml(jobName)}</b> job at time <b>${time}</b>
+      </div>
+      <button class="btn btn-accent btn-block" id="switchOk">Continue</button>
+      <button class="btn btn-ghost btn-block" style="margin-top:8px;" id="switchCancel">Cancel</button>
+    </div>`;
+    document.body.appendChild(w);
+    w.querySelector("#switchOk").onclick=()=>{w.remove();resolve(true);};
+    w.querySelector("#switchCancel").onclick=()=>{w.remove();resolve(false);};
+  });
 }
 
 const TASK_CATEGORIES = ["Warehouse / Prep","Site / Bump In","Pack Down","Workshop","Office / Admin"];
@@ -686,7 +1524,50 @@ function doTimeIn(jobId){
         breakIds:[], grossMin:null, unpaidBreakMin:0, paidBreakMin:0, netMin:null,
         status:"open", source:navigator.onLine?"app":"app-offline-pending", summary:""
       };
-      DB.attendance.push(att); audit(emp.name,"Clock In",jobName(jobId),`${category} · Location: ${address}`); save();
+      const { error: attendanceError } = await supabaseClient
+  .from("attendance")
+  .insert({
+    id: att.id,
+    employee_id: att.employeeId,
+    job_id: att.jobId,
+    time_in: att.timeIn,
+    time_out: att.timeOut,
+    photo_in: att.photoIn,
+    photo_out: att.photoOut,
+    gps_in_lat: att.gpsIn?.lat ?? null,
+    gps_in_lng: att.gpsIn?.lng ?? null,
+    gps_in_address: att.gpsIn?.address ?? null,
+    gps_out_lat: att.gpsOut?.lat ?? null,
+    gps_out_lng: att.gpsOut?.lng ?? null,
+    gps_out_address: att.gpsOut?.address ?? null,
+    geofence: att.geofence,
+    gross_minutes: att.grossMin,
+    unpaid_break_minutes: att.unpaidBreakMin,
+    paid_break_minutes: att.paidBreakMin,
+    net_minutes: att.netMin,
+    category: att.category,
+    device: att.device,
+    status: att.status,
+    source: att.source,
+    summary: att.summary
+  });
+
+if(attendanceError){
+  console.error("Supabase clock-in error:", attendanceError);
+  toast("Clock in could not be saved. Please try again.");
+  return;
+}
+
+DB.attendance.push(att);
+
+audit(
+  emp.name,
+  "Clock In",
+  jobName(jobId),
+  `${category} · Location: ${address}`
+);
+
+save();
       go("emp-home");
       setTimeout(()=> showConfirmModal("CLOCK IN RECORDED", [
         ["Time", fmtTime(att.timeIn)],
@@ -712,48 +1593,158 @@ function doStartBreak(){
   </div>`;
   document.body.appendChild(wrap);
   wrap.querySelector("#brkCancel").onclick=()=>wrap.remove();
-  wrap.querySelector("#brkGo").onclick= async ()=>{
+  wrap.querySelector("#brkGo").onclick= ()=>{
     const ruleId = wrap.querySelector("#brkType").value;
     const rule = rules.find(r=>r.id===ruleId);
     wrap.remove();
-    toast("Getting GPS location…");
-    const pos = await getPosition();
-    const brk = {id:uid("brk"), attendanceId:att.id, type:rule.name, start:nowISO(), end:null, paid:rule.paid, plannedMinutes:rule.minutes, gpsStart:pos||{lat:0,lng:0}, gpsEnd:null};
-    DB.breaks.push(brk); att.breakIds.push(brk.id);
-    audit(emp.name,"Start Break",jobName(att.jobId),rule.name); save();
-    go("emp-home"); toast(`${rule.name} started`);
+    requireLocation(async (pos)=>{
+      const gpsStart = {lat:pos.lat,lng:pos.lng,accuracy:pos.accuracy};
+      const brk = {id:uid("brk"), attendanceId:att.id, type:rule.name, start:nowISO(), end:null, paid:rule.paid, plannedMinutes:rule.minutes, gpsStart, gpsEnd:null};
+      const { error: breakStartError } = await supabaseClient
+  .from("breaks")
+  .insert({
+    id: brk.id,
+    attendance_id: brk.attendanceId,
+    type: brk.type,
+    start_time: brk.start,
+    end_time: brk.end,
+    paid: brk.paid,
+    gps_start_lat: brk.gpsStart?.lat ?? null,
+    gps_start_lng: brk.gpsStart?.lng ?? null,
+    gps_end_lat: brk.gpsEnd?.lat ?? null,
+    gps_end_lng: brk.gpsEnd?.lng ?? null
+  });
+
+if(breakStartError){
+  console.error("Supabase break-start error:", breakStartError);
+  toast("Break could not be started. Please try again.");
+  return;
+}
+
+DB.breaks.push(brk);
+att.breakIds.push(brk.id);
+      audit(emp.name,"Start Break",jobName(att.jobId),rule.name); save();
+      go("emp-home"); toast(`${rule.name} started`);
+    }, "Starting a break");
   };
 }
 function doEndBreak(){
   const emp = currentEmployee(); const att = empOpenAttendance(emp.id); const brk = empOpenBreak(att.id);
-  (async ()=>{
-    toast("Getting GPS location…");
-    const pos = await getPosition();
-    brk.end = nowISO(); brk.gpsEnd = pos||{lat:0,lng:0};
-    audit(emp.name,"End Break",jobName(att.jobId), `${brk.type} — ${hm(mins(new Date(brk.end)-new Date(brk.start)))}`); save();
-    go("emp-home"); toast(`Break ended — ${hm(mins(new Date(brk.end)-new Date(brk.start)))}`);
-  })();
+  requireLocation(async(pos)=>{
+    brk.end = nowISO(); brk.gpsEnd = {lat:pos.lat,lng:pos.lng,accuracy:pos.accuracy};
+    const { error: breakEndError } = await supabaseClient
+  .from("breaks")
+  .update({
+    end_time: brk.end,
+    gps_end_lat: brk.gpsEnd?.lat ?? null,
+    gps_end_lng: brk.gpsEnd?.lng ?? null
+  })
+  .eq("id", brk.id);
+
+if(breakEndError){
+  console.error("Supabase break-end error:", breakEndError);
+  toast("Break could not be ended. Please try again.");
+  return;
 }
-function doTimeOut(){
+
+audit(
+  emp.name,
+  "End Break",
+  jobName(att.jobId),
+  `${brk.type} - ${hm(mins(new Date(brk.end)-new Date(brk.start)))}`
+);
+
+save();
+    go("emp-home"); toast(`Break ended — ${hm(mins(new Date(brk.end)-new Date(brk.start)))}`);
+  }, "Ending your break");
+}
+function showTimeOutConfirm(jobName,time){
+  return new Promise(resolve=>{
+    const w=document.createElement("div");w.className="modal-bg";
+    w.innerHTML=`<div class="modal" style="max-width:420px;text-align:center;">
+  <div class="h2" style="margin-bottom:10px;">Time to log out</div>
+  <div style="font-size:18px;font-weight:600;line-height:1.45;margin-bottom:20px;">
+    End existing <b>${escapeHtml(jobName)}</b> job at <b>${time}</b> and time out?
+  </div>
+  <button class="btn btn-accent btn-block" id="timeOutOk">Continue</button>
+  <button class="btn btn-ghost btn-block" style="margin-top:8px;" id="timeOutCancel">Cancel</button>
+</div>`;
+    document.body.appendChild(w);
+    w.querySelector("#timeOutOk").onclick=()=>{w.remove();resolve(true);};
+    w.querySelector("#timeOutCancel").onclick=()=>{w.remove();resolve(false);};
+  });
+}
+async function doTimeOut(){
   const emp = currentEmployee(); const att = empOpenAttendance(emp.id);
   const openBrk = empOpenBreak(att.id);
   if(openBrk){ toast("End your current break before timing out."); return; }
+  const activeJob=(DB.jobTimeEntries||[]).find(e=>e.employeeId===emp.id&&!e.endTime);
+const timeOutISO=nowISO();
+
+if(activeJob){
+  const activeJobName=jobName(activeJob.jobId);
+  const confirmed=await showTimeOutConfirm(activeJobName,fmtTime(timeOutISO));
+  if(!confirmed)return;
+}
+
   requireLocation(async (pos)=>{
     const gps = {lat:pos.lat, lng:pos.lng, accuracy:pos.accuracy};
     const address = await reverseGeocode(pos.lat,pos.lng);
-    showWorkSummaryModal((summary)=>{
-      att.timeOut = nowISO(); att.photoOut = null; att.gpsOut = {...gps,address};
+    showWorkSummaryModal(async (summary)=>{
+      att.timeOut = timeOutISO;
       att.grossMin = mins(new Date(att.timeOut)-new Date(att.timeIn));
       const brks = DB.breaks.filter(b=>att.breakIds.includes(b.id));
       att.unpaidBreakMin = brks.filter(b=>!b.paid).reduce((s,b)=>s+mins(new Date(b.end)-new Date(b.start)),0);
       att.paidBreakMin = brks.filter(b=>b.paid).reduce((s,b)=>s+mins(new Date(b.end)-new Date(b.start)),0);
       att.netMin = att.grossMin - att.unpaidBreakMin;
       att.summary = summary; att.status="draft";
-      audit(emp.name,"Clock Out",jobName(att.jobId), `Net: ${hm(att.netMin)}`);
-      save(); go("emp-home");
+      const { error: clockOutError } = await supabaseClient
+  .from("attendance")
+  .update({
+    time_out: att.timeOut,
+    photo_out: att.photoOut,
+    gps_out_lat: att.gpsOut?.lat ?? null,
+    gps_out_lng: att.gpsOut?.lng ?? null,
+    gps_out_address: att.gpsOut?.address ?? null,
+    gross_minutes: att.grossMin,
+    unpaid_break_minutes: att.unpaidBreakMin,
+    paid_break_minutes: att.paidBreakMin,
+    net_minutes: att.netMin,
+    summary: att.summary,
+    status: att.status
+  })
+  .eq("id", att.id);
+
+if(clockOutError){
+  console.error("Supabase clock-out error:", clockOutError);
+  toast("Clock out could not be saved. Please try again.");
+  return;
+}
+if(activeJob){
+  const ok=await closeJobAt(activeJob,timeOutISO,"time-out");
+  if(!ok){
+    console.error("Attendance was clocked out but active job could not be closed.");
+    toast("Time Out was saved, but the active job could not be stopped. Please contact an administrator.");
+    return;
+  }
+}
+
+audit(
+  emp.name,
+  "Clock Out",
+  jobName(att.jobId),
+  `Net: ${hm(att.netMin)} (Gross ${hm(att.grossMin)}, Break ${hm(att.unpaidBreakMin)})`
+);
+
+save();
+go("emp-home");
+      const breakRows = brks.map(b=> [`${b.type} (${b.paid?'paid':'unpaid'})`, hm(mins(new Date(b.end)-new Date(b.start)))]);
       setTimeout(()=> showConfirmModal("CLOCK OUT RECORDED", [
-        ["Worked today", hm(att.netMin)],
-        ["Break", hm(att.unpaidBreakMin+att.paidBreakMin)],
+        ["Time In → Time Out", `${fmtTime(att.timeIn)} → ${fmtTime(att.timeOut)}`],
+        ["Total shift time (gross)", hm(att.grossMin)],
+        ...breakRows,
+        ["Total break time", hm(att.unpaidBreakMin+att.paidBreakMin)+` (${hm(att.unpaidBreakMin)} unpaid, ${hm(att.paidBreakMin)} paid)`],
+        ["Net hours worked today", hm(att.netMin)],
         ["Job", jobName(att.jobId)],
         ["Location", address],
         ["GPS accuracy", gps.accuracy? Math.round(gps.accuracy)+"m" : "—"]
@@ -799,22 +1790,54 @@ function screenWorklog(){
     ${Object.entries(byDay).map(([day,items])=>`
       <div class="h3" style="margin:16px 0 8px;">${day.toUpperCase()}</div>
       ${items.map(w=>`
-        <div class="card card-tight" style="margin-bottom:8px;">
+        <div class="card card-tight" style="margin-bottom:8px;cursor:pointer;" data-wl-detail="${w.id}">
           <div class="row-between"><b class="small">${escapeHtml(jobName(w.jobId))}</b><span class="tiny muted">${fmtTime(w.start)}–${w.finish?fmtTime(w.finish):'now'}</span></div>
           <div class="small" style="margin-top:3px;">${escapeHtml(w.task)}</div>
           ${w.notes? `<div class="tiny muted" style="margin-top:3px;">${escapeHtml(w.notes)}</div>`:""}
-          ${w.photos? `<div class="tiny muted" style="margin-top:4px;">📷 ${w.photos} photo${w.photos>1?'s':''}</div>`:""}
+          ${w.photoData? `<img src="${w.photoData}" class="photo-thumb" style="width:56px;height:56px;margin-top:6px;">` : (w.photos? `<div class="tiny muted" style="margin-top:4px;">📷 ${w.photos} photo${w.photos>1?'s':''}</div>`:"")}
         </div>`).join("")}
     `).join("")}
   </div>`;
 }
+function screenWorklogDetail(){
+  const w = DB.worklogs.find(x=>x.id===route.id);
+  const isAdminCtx = isAdminRole(DB.session?.role);
+  if(!w) return `<div class="topbar"><button class="backbtn" id="back">← Back</button><div class="h2">Work Entry</div><div style="width:40px"></div></div><div class="content"><div class="empty">Entry not found.</div></div>`;
+  const job = DB.jobs.find(j=>j.id===w.jobId);
+  return `
+  <div class="topbar"><button class="backbtn" id="back">← Back</button><div class="h2">Work Entry Detail</div><div style="width:40px"></div></div>
+  <div class="content">
+    <div class="card" style="margin-bottom:16px;">
+      <div class="row-between"><div class="h2">${escapeHtml(job?job.name:'—')}</div></div>
+      ${isAdminCtx? `<div class="muted small" style="margin-top:4px;">${escapeHtml(empName(w.employeeId))}</div>`:""}
+      <div class="tiny muted" style="margin-top:4px;">${fmtDate(w.start)} · ${fmtTime(w.start)}${w.finish?` – ${fmtTime(w.finish)}`:''}</div>
+    </div>
+    <div class="card col gap-8" style="margin-bottom:16px;">
+      <div class="muted small">Task</div>
+      <div class="small">${escapeHtml(w.task)}</div>
+      ${w.notes? `<div class="muted small" style="margin-top:8px;">Notes</div><div class="small">${escapeHtml(w.notes)}</div>`:""}
+    </div>
+    <div class="h3" style="margin-bottom:8px;">PHOTO SUBMITTED</div>
+    ${w.photoData? `<img src="${w.photoData}" style="width:100%;border-radius:12px;border:1px solid var(--line);">` : `<div class="empty small">No photo was attached to this entry.</div>`}
+  </div>`;
+}
 function screenWorklogAdd(){
   const emp = currentEmployee();
-  const jobs = DB.jobs.filter(j=>j.assigned.includes(emp.id));
+  const jobs = DB.jobs.filter(j=>j.status!=="Completed");
   return `
   <div class="topbar"><button class="backbtn" id="back">← Back</button><div class="h2">Add Work Entry</div><div style="width:40px"></div></div>
   <div class="content">
-    <div class="field"><label>Job</label><select id="wlJob">${jobs.map(j=>`<option value="${j.id}">${escapeHtml(j.name)}</option>`).join("")}</select></div>
+    <div class="field">
+  <label>Job</label>
+  <select id="wlJob">
+    ${jobs.map(j=>{
+      const assigned = j.assigned.includes(emp.id);
+      return `<option value="${j.id}">
+        ${escapeHtml(j.name)}${assigned ? "" : " — Photo Required"}
+      </option>`;
+    }).join("")}
+  </select>
+</div>
     <div class="field"><label>What did you work on?</label>
       <select id="wlTaskPreset">
         <option value="">— choose a common task or write your own below —</option>
@@ -880,7 +1903,11 @@ function screenEmpAttDetail(){
       <div class="row-between small"><span class="muted">Location</span><b>${escapeHtml(a.gpsIn.address||'—')}</b></div>
     </div>
     ${brks.length? `<div class="h3" style="margin-bottom:8px;">BREAKS</div>${brks.map(b=>`
-      <div class="card card-tight" style="margin-bottom:8px;"><div class="row-between small"><b>${escapeHtml(b.type)} ${b.paid?'(paid)':'(unpaid)'}</b><span>${fmtTime(b.start)} – ${b.end?fmtTime(b.end):'ongoing'}</span></div></div>`).join("")}`:""}
+      <div class="card card-tight" style="margin-bottom:8px;">
+        <div class="row-between small"><b>${escapeHtml(b.type)} ${b.paid?'(paid)':'(unpaid)'}</b><span>${fmtTime(b.start)} – ${b.end?fmtTime(b.end):'ongoing'}</span></div>
+        <div class="tiny muted" style="margin-top:2px;">${b.end? hm(mins(new Date(b.end)-new Date(b.start)))+' consumed' : 'In progress'}</div>
+      </div>`).join("")}
+      <div class="card card-tight" style="margin-bottom:16px;background:var(--panel-2);"><div class="row-between small"><b>Total break time consumed</b><b>${hm((a.unpaidBreakMin||0)+(a.paidBreakMin||0))}</b></div></div>`:""}
     ${a.summary? `<div class="card col" style="margin:16px 0;"><div class="muted small" style="margin-bottom:4px;">Work summary</div><div class="small">${escapeHtml(a.summary)}</div></div>`:""}
 
     ${openReq? `<div class="card" style="border-color:var(--warn);margin-top:10px;"><b class="small">Correction request pending</b><div class="small muted" style="margin-top:4px;">${openReq.requestedTimeIn?`Requested new clock-in: ${fmtTime(openReq.requestedTimeIn)}<br>`:""}${openReq.requestedTimeOut?`Requested new clock-out: ${fmtTime(openReq.requestedTimeOut)}<br>`:""}Reason: ${escapeHtml(openReq.reason)}</div><div class="tiny muted" style="margin-top:4px;">Awaiting admin review.</div></div>`
@@ -917,7 +1944,7 @@ function modalRequestCorrection(attId){
   wrap.querySelector("#reqType").onchange = syncFields;
   syncFields();
   wrap.querySelector("#reqCancel").onclick=()=>wrap.remove();
-  wrap.querySelector("#reqSend").onclick=()=>{
+  wrap.querySelector("#reqSend").onclick=async()=>{
     const type = wrap.querySelector("#reqType").value;
     const reason = wrap.querySelector("#reqReason").value;
     const timeInVal = wrap.querySelector("#reqTimeIn").value;
@@ -937,12 +1964,21 @@ function modalRequestCorrection(attId){
       requestedTimeOut = d.toISOString();
     }
     const emp = currentEmployee();
-    DB.correctionRequests.push({
-      id:uid("cr"), attendanceId:a.id, employeeId:emp.id, type,
-      originalTimeIn:a.timeIn, originalTimeOut:a.timeOut,
-      requestedTimeIn, requestedTimeOut,
-      reason, status:"pending", createdAt:nowISO()
-    });
+   const correction={
+  id:uid("cr"),attendance_id:a.id,employee_id:emp.id,request_type:type,
+  original_time_in:a.timeIn,original_time_out:a.timeOut,
+  requested_time_in:requestedTimeIn||null,requested_time_out:requestedTimeOut||null,
+  reason,status:"pending"
+};
+const {data,error}=await supabaseClient.from("correction_requests").insert(correction).select().single();
+if(error){console.error("Correction request save error:",error);toast("Could not submit correction request.");return;}
+
+DB.correctionRequests.push({
+  id:data.id,attendanceId:data.attendance_id,employeeId:data.employee_id,type:data.request_type,
+  originalTimeIn:data.original_time_in,originalTimeOut:data.original_time_out,
+  requestedTimeIn:data.requested_time_in,requestedTimeOut:data.requested_time_out,
+  reason:data.reason,status:data.status,createdAt:data.created_at
+});
     const typeLabel = type==="both"?"Time In & Time Out":type==="timeIn"?"Time In":"Time Out";
     const detail = `${typeLabel} correction requested.${requestedTimeIn?` New Time In: ${fmtTime(requestedTimeIn)}.`:""}${requestedTimeOut?` New Time Out: ${fmtTime(requestedTimeOut)}.`:""} Reason: ${reason}`;
     audit(emp.name,"Requested correction",jobName(a.jobId),detail);
@@ -952,7 +1988,8 @@ function modalRequestCorrection(attId){
 
 function screenTimesheet(){
   const emp = currentEmployee();
-  const weekStart = startOfWeek();
+  const weekOffset = route.weekOffset||0;
+  const weekStart = new Date(startOfWeek()); weekStart.setDate(weekStart.getDate()+weekOffset*7);
   const week = empRecordsForWeek(emp.id, weekStart).filter(a=>a.timeOut);
   const totalNet = week.reduce((s,a)=>s+(a.netMin||0),0);
   const draftCount = week.filter(a=>a.status==="draft").length;
@@ -967,9 +2004,16 @@ function screenTimesheet(){
   const deadline = thursdayOfWeek(weekStart);
   const pastDeadline = new Date() > deadline;
   const needsAction = draftCount>0 || anyRejected;
+  const weekEnd = new Date(weekStart); weekEnd.setDate(weekEnd.getDate()+6);
+  const weekLabel = weekOffset===0? "This week" : weekOffset===-1? "Last week" : `${fmtDateShort(weekStart)} – ${fmtDateShort(weekEnd)}`;
   return `
   <div class="topbar"><div class="h2">My Timesheet</div></div>
   <div class="content">
+    <div class="row-between" style="margin-bottom:10px;">
+      <button class="btn btn-ghost btn-sm" id="tsPrevWeek">← Previous week</button>
+      <span class="small muted">${weekLabel}</span>
+      <button class="btn btn-ghost btn-sm" id="tsNextWeek" ${weekOffset>=0?'disabled':''}>Next week →</button>
+    </div>
     <div class="card" style="margin-bottom:16px;">
       <div class="muted small">Week of ${fmtDateShort(weekStart)}</div>
       <div class="flowbig" style="margin:6px 0;">${hm(totalNet)}</div>
@@ -977,9 +2021,12 @@ function screenTimesheet(){
       <div class="tiny" style="margin-top:8px;color:${pastDeadline && needsAction ? 'var(--danger)':'var(--muted)'};">
         ${pastDeadline && needsAction ? '⚠️ Past this week\'s deadline — ' : ''}Submissions and correction requests for this week are due by <b>Thursday, ${fmtDateShort(deadline)}</b>.
       </div>
-      ${draftCount>0? `<button class="btn btn-accent btn-block" style="margin-top:14px;" id="submitTs">Submit ${draftCount} Day${draftCount>1?'s':''} for Approval</button>`:""}
+      <div class="grid2" style="margin-top:14px;gap:10px;">
+        ${draftCount>0? `<button class="btn btn-accent" id="submitTs">Submit ${draftCount} Day${draftCount>1?'s':''}</button>`:'<div></div>'}
+        <button class="btn btn-ghost" id="openCorrectionCalendar">📅 Request Correction</button>
+      </div>
     </div>
-    <div class="row-between" style="margin-bottom:8px;"><div class="h3">ALL SHIFTS THIS WEEK</div>${week.length>1?`<span class="tiny muted">Bulk view — ${week.length} days</span>`:""}</div>
+    <div class="row-between" style="margin-bottom:8px;"><div class="h3">ALL SHIFTS — ${weekLabel.toUpperCase()}</div>${week.length>1?`<span class="tiny muted">Bulk view — ${week.length} days</span>`:""}</div>
     <table>
       <tr><th>Date</th><th>Job</th><th>In</th><th>Out</th><th>Break</th><th>Total</th><th>Status</th></tr>
       ${week.map(a=>`<tr data-emp-att="${a.id}" style="cursor:pointer;">
@@ -989,10 +2036,67 @@ function screenTimesheet(){
         <td>${a.netMin!=null?hm(a.netMin):'—'}</td>
         <td>${attStatusPill(a.status)}</td>
       </tr>`).join("")}
-      ${week.length===0?`<tr><td colspan="7" class="muted" style="text-align:center;padding:20px;">No completed shifts this week yet</td></tr>`:""}
+      ${week.length===0?`<tr><td colspan="7" class="muted" style="text-align:center;padding:20px;">No completed shifts this week</td></tr>`:""}
     </table>
-    <div class="tiny muted" style="margin-top:14px;">Approved records are locked. If something looks wrong on an approved or submitted day, open it and tap "Request Correction". If you have more than one day to submit or correct, use this weekly list to see and act on all of them at once.</div>
+    <div class="tiny muted" style="margin-top:14px;">Approved records are locked. Use "Request Correction" to pick any day this week from a calendar. Use the weekly list or Previous/Next week to review and act on multiple days at once.</div>
   </div>`;
+}
+function modalBulkSubmitSummary(){
+  const emp = currentEmployee();
+  const weekOffset = route.weekOffset||0;
+  const weekStart = new Date(startOfWeek()); weekStart.setDate(weekStart.getDate()+weekOffset*7);
+  const drafts = empRecordsForWeek(emp.id, weekStart).filter(a=>a.status==="draft");
+  const totalNet = drafts.reduce((s,a)=>s+(a.netMin||0),0);
+  const wrap = document.createElement("div"); wrap.className="modal-bg";
+  wrap.innerHTML = `<div class="modal">
+    <div class="h2" style="margin-bottom:6px;">Submit for Approval</div>
+    <div class="muted small" style="margin-bottom:14px;">Review the ${drafts.length} day${drafts.length>1?'s':''} below before sending to your admin.</div>
+    <div class="col gap-8" style="margin-bottom:14px;">
+      ${drafts.map(a=>`<div class="card card-tight"><div class="row-between small"><b>${fmtDate(a.timeIn)}</b><span>${hm(a.netMin||0)}</span></div><div class="tiny muted">${escapeHtml(jobName(a.jobId))} · ${fmtTime(a.timeIn)}–${a.timeOut?fmtTime(a.timeOut):'—'}</div></div>`).join("")}
+    </div>
+    <div class="row-between card-tight" style="background:var(--panel-2);border-radius:10px;margin-bottom:16px;"><span class="small muted">Total for submission</span><b>${hm(totalNet)}</b></div>
+    <button class="btn btn-accent btn-block btn-lg" id="bulkSubmitConfirm">Confirm &amp; Submit</button>
+    <button class="btn btn-ghost btn-block" style="margin-top:8px;" id="bulkSubmitCancel">Cancel</button>
+  </div>`;
+  document.body.appendChild(wrap);
+  wrap.querySelector("#bulkSubmitCancel").onclick=()=>wrap.remove();
+  wrap.querySelector("#bulkSubmitConfirm").onclick=async()=>{
+    const ids=drafts.map(a=>a.id);
+const {error}=await supabaseClient.from("attendance").update({
+  status:"submitted",updated_at:nowISO()
+}).in("id",ids);
+
+if(error){console.error("Timesheet submit error:",error);toast("Could not submit timesheet.");return;}
+
+drafts.forEach(a=>a.status="submitted");
+    audit(emp.name,"Submitted timesheet for approval","Weekly timesheet",`${drafts.length} day(s), week of ${fmtDateShort(weekStart)}`);
+    save(); wrap.remove(); toast("Timesheet submitted for approval"); go("timesheet",{weekOffset});
+  };
+}
+function modalCorrectionCalendar(){
+  const emp = currentEmployee();
+  const weekOffset = route.weekOffset||0;
+  const weekStart = new Date(startOfWeek()); weekStart.setDate(weekStart.getDate()+weekOffset*7);
+  const days = Array.from({length:7}, (_,i)=>{ const d=new Date(weekStart); d.setDate(d.getDate()+i); return d; });
+  const dayNames = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
+  const wrap = document.createElement("div"); wrap.className="modal-bg";
+  wrap.innerHTML = `<div class="modal">
+    <div class="h2" style="margin-bottom:6px;">Request Correction</div>
+    <div class="muted small" style="margin-bottom:14px;">Pick the day you need corrected.</div>
+    <div class="grid3" style="gap:8px;">
+      ${days.map((d,i)=>{
+        const att = DB.attendance.find(a=>a.employeeId===emp.id && sameDay(a.timeIn,d));
+        const disabled = !att;
+        return `<button class="btn ${disabled?'btn-ghost':'btn-accent'} btn-sm" style="flex-direction:column;padding:12px 6px;${disabled?'opacity:.4;':''}" data-cal-day="${att?att.id:''}" ${disabled?'disabled':''}>
+          <span style="font-weight:800;">${dayNames[i]}</span><span class="tiny">${d.getDate()}</span>
+        </button>`;
+      }).join("")}
+    </div>
+    <button class="btn btn-ghost btn-block" style="margin-top:16px;" id="calCancel">Cancel</button>
+  </div>`;
+  document.body.appendChild(wrap);
+  wrap.querySelector("#calCancel").onclick=()=>wrap.remove();
+  wrap.querySelectorAll("[data-cal-day]").forEach(b=> b.onclick = ()=>{ const attId=b.dataset.calDay; wrap.remove(); modalRequestCorrection(attId); });
 }
 
 function screenProfile(){
@@ -1031,20 +2135,21 @@ function screenPrivacy(){
 /* ---------------- Screen event binding (employee) ---------------- */
 function bindScreen(){
   const $ = id=>document.getElementById(id);
-  if($("back")) $("back").onclick = ()=> {
-    if(route.name==="privacy") go("profile");
-    else if(route.name==="emp-att-detail") go("history");
+  document.querySelectorAll("[data-start-job]").forEach(b=>b.onclick=()=>startJobTracking(b.dataset.startJob));
+  document.querySelectorAll("[data-end-job]").forEach(b=>b.onclick=()=>endJobTracking(b.dataset.endJob));
+  if($("back") && SELF_SERVICE_ROUTES.includes(route.name)) $("back").onclick = ()=> {
+    if(route.name==="emp-att-detail") go("history");
+    else if(route.name==="worklog-detail") go(route.back?.name||"worklog", route.back?.params||{});
+    else if(route.name==="worklog-add") go("worklog");
     else go("emp-home");
   };
+  if($("back") && route.name==="privacy" && !isAdminRole(DB.session?.role)) $("back").onclick = ()=> go("profile");
   document.querySelectorAll("[data-emp-att]").forEach(el=> el.onclick = ()=> go("emp-att-detail",{id:el.dataset.empAtt}));
   if($("reqCorrection")) $("reqCorrection").onclick = ()=> modalRequestCorrection(route.id);
-  if($("submitTs")) $("submitTs").onclick = ()=>{
-    const emp = currentEmployee();
-    const week = empRecordsForWeek(emp.id, startOfWeek()).filter(a=>a.status==="draft");
-    week.forEach(a=> a.status="submitted");
-    audit(emp.name,"Submitted timesheet for approval","Weekly timesheet",`${week.length} day(s)`);
-    save(); toast("Timesheet submitted for approval"); go("timesheet");
-  };
+  if($("submitTs")) $("submitTs").onclick = ()=> modalBulkSubmitSummary();
+  if($("openCorrectionCalendar")) $("openCorrectionCalendar").onclick = ()=> modalCorrectionCalendar();
+  if($("tsPrevWeek")) $("tsPrevWeek").onclick = ()=> go("timesheet",{weekOffset:(route.weekOffset||0)-1});
+  if($("tsNextWeek")) $("tsNextWeek").onclick = ()=> { if((route.weekOffset||0)<0) go("timesheet",{weekOffset:(route.weekOffset||0)+1}); };
   if($("btnTimeIn")) $("btnTimeIn").onclick = ()=> go("job-select");
   document.querySelectorAll("[data-job]").forEach(b=> b.onclick = ()=> doTimeIn(b.dataset.job));
   if($("btnStartBreak")) $("btnStartBreak").onclick = doStartBreak;
@@ -1055,30 +2160,103 @@ function bindScreen(){
   if($("goSubmit")) $("goSubmit").onclick = ()=> go("timesheet");
   if($("addWl")) $("addWl").onclick = ()=> go("worklog-add");
   if($("viewPrivacy")) $("viewPrivacy").onclick = ()=> { PRIVACY_FROM_LOGIN=false; go("privacy"); };
-  if($("logoutBtn")) $("logoutBtn").onclick = ()=> { audit(currentEmployee().name,"Logged out","Employee session",""); DB.session=null; save(); go("login"); };
+  if($("logoutBtn")) $("logoutBtn").onclick = async () => {
+  const employee = currentEmployee();
+
+  if(employee){
+    await audit(employee.name, "Logged out", "Employee session", "");
+  }
+
+  const { error } = await supabaseClient.auth.signOut();
+
+  if(error){
+    console.error("Logout error:", error);
+    toast("Unable to log out. Please try again.");
+    return;
+  }
+
+  DB.session = null;
+  save();
+  go("login");
+};
   if($("ackBtn")) $("ackBtn").onclick = ()=> { toast("Acknowledged"); go(PRIVACY_FROM_LOGIN? "login" : "profile"); PRIVACY_FROM_LOGIN=false; };
 
   if($("wlPhotoBtn")){
-    let photoTaken = false;
     $("wlPhotoBtn").onclick = ()=> openGalleryPhoto((photo)=>{
-      photoTaken = true;
+      window.__wlPhotoData = photo;
       $("wlPhotoPreview").innerHTML = `<img src="${photo}" class="photo-thumb">`;
     }, "Job Photo");
   }
   if($("wlTaskPreset")) $("wlTaskPreset").onchange = ()=>{ if($("wlTaskPreset").value) $("wlTask").value = $("wlTaskPreset").value; };
-  if($("wlSave")) $("wlSave").onclick = ()=>{
-    const emp = currentEmployee();
-    const jobId = $("wlJob").value, task = $("wlTask").value || $("wlTaskPreset").value;
-    if(!task){ toast("Add a task description"); return; }
-    const today = new Date();
-    const [sh,sm] = ($("wlStart").value||"08:00").split(":").map(Number);
-    const [fh,fm] = ($("wlFinish").value||"").split(":").map(Number);
-    const start = new Date(today); start.setHours(sh,sm,0,0);
-    const finish = $("wlFinish").value ? (()=>{const d=new Date(today); d.setHours(fh,fm,0,0); return d;})() : null;
-    DB.worklogs.push({id:uid("wl"), attendanceId:null, employeeId:emp.id, jobId, task, start:start.toISOString(), finish: finish?finish.toISOString():null, notes:$("wlNotes").value, photos: $("wlPhotoPreview").innerHTML? 1:0});
-    audit(emp.name,"Added work log entry",jobName(jobId),task);
-    save(); toast("Work entry saved"); go("worklog");
-  };
+  if($("wlSave")){
+    window.__wlPhotoData = null;
+    $("wlSave").onclick = async ()=>{
+      console.log("Worklog save clicked");
+      const emp = currentEmployee();
+      const jobId = $("wlJob").value, task = $("wlTask").value || $("wlTaskPreset").value;
+         if(!task){ toast("Add a task description"); return; }
+      const today = new Date();
+      const [sh,sm] = ($("wlStart").value||"08:00").split(":").map(Number);
+      const [fh,fm] = ($("wlFinish").value||"").split(":").map(Number);
+      const start = new Date(today); start.setHours(sh,sm,0,0);
+      const finish = $("wlFinish").value ? (()=>{const d=new Date(today); d.setHours(fh,fm,0,0); return d;})() : null;
+      const openAtt = empOpenAttendance(emp.id);
+      const photoData = window.__wlPhotoData||null;
+      const selectedJob = DB.jobs.find(j=>j.id===jobId);
+
+if(!selectedJob){
+  toast("Selected job could not be found.");
+  return;
+}
+
+const isAssignedJob = selectedJob.assigned.includes(emp.id);
+
+if(!isAssignedJob && !photoData){
+     toast("A photo is required when adding a work log for an unassigned job.");
+  return;
+}
+      const worklog = {
+  id: uid("wl"),
+  attendanceId: openAtt ? openAtt.id : null,
+  employeeId: emp.id,
+  jobId,
+  task,
+  start: start.toISOString(),
+  finish: finish ? finish.toISOString() : null,
+  notes: $("wlNotes").value,
+  photos: photoData ? 1 : 0,
+  photoData
+};
+
+console.log("About to save worklog:", worklog);
+const { error: worklogError } = await supabaseClient
+  .from("worklogs")
+  .insert({
+    id: worklog.id,
+    attendance_id: worklog.attendanceId,
+    employee_id: worklog.employeeId,
+    job_id: worklog.jobId,
+    task: worklog.task,
+    start_time: worklog.start,
+    finish_time: worklog.finish,
+    notes: worklog.notes,
+    photos: worklog.photos,
+    photo_data: worklog.photoData
+  });
+
+if(worklogError){
+  console.error("Supabase work log error:", worklogError);
+  toast("Work entry could not be saved. Please try again.");
+  return;
+}
+
+DB.worklogs.push(worklog);
+      audit(emp.name,"Added work log entry",jobName(jobId),task);
+      window.__wlPhotoData = null;
+      save(); toast("Work entry saved"); go("worklog");
+    };
+  }
+  document.querySelectorAll("[data-wl-detail]").forEach(el=> el.onclick = ()=> go("worklog-detail",{id:el.dataset.wlDetail, back:{name:route.name, params:route}}));
 
   if(document.getElementById("att")) {} // reserved
 }
@@ -1088,6 +2266,7 @@ function bindScreen(){
    ===================================================================== */
 function renderAdminShell(){
   const allTabs = [
+    ...(hasFieldAccess()? [["emp-home","⏱️","My Time"]] : []),
     ["admin-dashboard","📊","Dashboard"],
     ["admin-employees","👥","Employees"],
     ["admin-jobs","🧰","Jobs"],
@@ -1100,8 +2279,11 @@ function renderAdminShell(){
     ["admin-xero","🔗","Xero"],
     ["admin-settings","⚙️","Settings"],
   ];
-  const tabs = allTabs.filter(([k])=>canAccess(k));
-  if(!canAccess(route.name) && route.name!=="admin-att-detail" && route.name!=="admin-employee-detail" && route.name!=="admin-job-detail" && route.name!=="privacy"){
+  const fieldAccess = hasFieldAccess();
+  const tabs = allTabs.filter(([k])=> k==="emp-home" ? fieldAccess : canAccess(k));
+  const detailExceptions = ["admin-att-detail","admin-employee-detail","admin-job-detail","privacy"];
+  const selfServiceOk = fieldAccess && SELF_SERVICE_ROUTES.includes(route.name);
+  if(!canAccess(route.name) && !detailExceptions.includes(route.name) && !selfServiceOk){
     route = {name: firstAllowedTab(DB.session.role)};
   }
   const body = ({
@@ -1120,6 +2302,14 @@ function renderAdminShell(){
     "admin-xero": screenAdminXero,
     "admin-settings": screenAdminSettings,
     "privacy": screenPrivacy,
+    "emp-home": screenEmpHome,
+    "job-select": screenJobSelect,
+    "worklog": screenWorklog,
+    "worklog-add": screenWorklogAdd,
+    "worklog-detail": screenWorklogDetail,
+    "history": screenHistory,
+    "timesheet": screenTimesheet,
+    "emp-att-detail": screenEmpAttDetail,
   })[route.name] || screenAdminDash;
 
   if(isWide()){
@@ -1142,12 +2332,13 @@ function renderAdminShell(){
 }
 function bindAdminShell(){
   document.querySelectorAll("[data-nav]").forEach(b=> b.onclick = ()=> go(b.dataset.nav));
-  const lo = document.getElementById("logoutBtn"); if(lo) lo.onclick = ()=>{ audit(DB.session.name,"Logged out",`${DB.session.role} session`,""); DB.session=null; save(); go("login"); };
-  bindAdminScreen();
+  const lo=document.getElementById("logoutBtn"); if(lo) lo.onclick=async()=>{ await audit(DB.session.name,"Logged out",`${DB.session.role} session`,""); const {error}=await supabaseClient.auth.signOut(); if(error){console.error("Logout error:",error);toast("Unable to log out. Please try again.");return;} DB.session=null; save(); go("login"); };
+  if(SELF_SERVICE_ROUTES.includes(route.name)){ bindScreen(); }
+  else { bindAdminScreen(); }
 }
 
 function todayStats(){
-  const emps = DB.employees.filter(e=>e.status==="active" && e.permission==="Employee");
+  const emps = DB.employees.filter(e=>e.status==="active" && isFieldStaff(e));
   let working=0, onBreak=0, notClocked=0, clockedOut=0, late=0, totalMin=0;
   emps.forEach(e=>{
     const st = empStatus(e.id);
@@ -1213,14 +2404,14 @@ function screenAdminDash(){
     <div class="row-between" style="margin-bottom:10px;"><div class="h3">LIVE EMPLOYEE STATUS</div><a class="link small" data-nav="admin-live">View all</a></div>
     <table>
       <tr><th>Employee</th><th>Status</th><th>Job</th><th>Time in</th><th>Location</th></tr>
-      ${DB.employees.filter(e=>e.status==="active" && e.permission==="Employee").map(e=>{
+      ${DB.employees.filter(e=>e.status==="active" && isFieldStaff(e)).map(e=>{
         const st=empStatus(e.id); const att=empOpenAttendance(e.id);
         return `<tr>
           <td>${escapeHtml(e.name)}</td>
           <td>${st==='working'?'<span class="pill pill-ok">Working</span>':st==='break'?'<span class="pill pill-warn">Break</span>':'<span class="pill pill-muted">Off</span>'}</td>
           <td>${att?escapeHtml(jobName(att.jobId)):'—'}</td>
           <td>${att?fmtTime(att.timeIn):'—'}</td>
-          <td class="tiny">${att?escapeHtml((att.gpsIn.address||'').split(",").slice(0,2).join(",")):'—'}</td>
+          <td class="tiny">${att?escapeHtml((att.gpsIn?.address||'').split(",").slice(0,2).join(","))||'-':'-'}</td>
         </tr>`;
       }).join("")}
     </table>
@@ -1235,7 +2426,7 @@ function screenAdminDash(){
 
 function visibleEmployeeList(){
   const role = DB.session.role;
-  const all = DB.employees.filter(e=>e.permission==="Employee"||e.permission==="Manager");
+  const all = DB.employees.filter(e=>isFieldStaff(e));
   if(role==="Manager") return all.filter(e=> e.manager===DB.session.name || e.id===DB.session.employeeId);
   return all;
 }
@@ -1306,18 +2497,16 @@ function screenAdminAttDetail(){
       <div><div class="h2">${escapeHtml(empName(a.employeeId))}</div><div class="muted small">${fmtDate(a.timeIn)} · ${escapeHtml(jobName(a.jobId))}</div></div>
       ${attStatusPill(a.status)}
     </div>
-    <div class="grid2" style="margin-bottom:16px;">
-      <div class="card col" style="align-items:center;">
-        <div class="muted small" style="margin-bottom:6px;">Time In Photo</div>
-        ${a.photoIn && a.photoIn!=="PHOTO" ? `<img src="${a.photoIn}" class="photo-thumb" style="width:100%;height:120px;">` : `<div class="photo-thumb" style="width:100%;height:120px;display:flex;align-items:center;justify-content:center;">📷</div>`}
-        <div class="tiny muted" style="margin-top:6px;">${fmtTime(a.timeIn)}</div>
-      </div>
-      <div class="card col" style="align-items:center;">
-        <div class="muted small" style="margin-bottom:6px;">Time Out Photo</div>
-        ${a.photoOut && a.photoOut!=="PHOTO" ? `<img src="${a.photoOut}" class="photo-thumb" style="width:100%;height:120px;">` : `<div class="photo-thumb" style="width:100%;height:120px;display:flex;align-items:center;justify-content:center;">${a.timeOut?'📷':'—'}</div>`}
-        <div class="tiny muted" style="margin-top:6px;">${a.timeOut?fmtTime(a.timeOut):'Not yet clocked out'}</div>
-      </div>
-    </div>
+<div class="grid2" style="margin-bottom:16px;">
+  <div class="card">
+    <div class="muted small">Time In</div>
+    <div class="h2">${fmtTime(a.timeIn)}</div>
+  </div>
+  <div class="card">
+    <div class="muted small">Time Out</div>
+    <div class="h2">${a.timeOut?fmtTime(a.timeOut):"Not yet clocked out"}</div>
+  </div>
+</div>
     <div class="card col gap-8" style="margin-bottom:16px;">
       <div class="row-between small"><span class="muted">Location (in)</span><b>${escapeHtml(a.gpsIn.address||'—')}</b></div>
       <div class="row-between small"><span class="muted">Coordinates</span><b>${a.gpsIn.lat?.toFixed(4)}, ${a.gpsIn.lng?.toFixed(4)}</b></div>
@@ -1334,9 +2523,15 @@ function screenAdminAttDetail(){
     ${brks.length? `<div class="h3" style="margin-bottom:8px;">BREAKS</div>${brks.map(b=>`
       <div class="card card-tight" style="margin-bottom:8px;">
         <div class="row-between small"><b>${escapeHtml(b.type)} ${b.paid?'(paid)':'(unpaid)'}</b><span>${fmtTime(b.start)} – ${b.end?fmtTime(b.end):'ongoing'}</span></div>
-      </div>`).join("")}`:""}
+        <div class="tiny muted" style="margin-top:2px;">${b.end? hm(mins(new Date(b.end)-new Date(b.start)))+' consumed' : 'In progress'}</div>
+      </div>`).join("")}
+      <div class="card card-tight" style="margin-bottom:16px;background:var(--panel-2);"><div class="row-between small"><b>Total break time consumed that day</b><b>${hm((a.unpaidBreakMin||0)+(a.paidBreakMin||0))}</b></div></div>`:""}
     ${a.summary? `<div class="card col" style="margin-bottom:16px;"><div class="muted small" style="margin-bottom:4px;">Work summary</div><div class="small">${escapeHtml(a.summary)}</div></div>`:""}
-    ${wl.length? `<div class="h3" style="margin-bottom:8px;">JOB NOTES</div>${wl.map(w=>`<div class="card card-tight" style="margin-bottom:8px;"><b class="small">${escapeHtml(w.task)}</b>${w.notes?`<div class="tiny muted">${escapeHtml(w.notes)}</div>`:""}</div>`).join("")}`:""}
+    ${wl.length? `<div class="h3" style="margin-bottom:8px;">JOB NOTES / WORK LOG PHOTOS</div>${wl.map(w=>`<div class="card card-tight" style="margin-bottom:8px;cursor:pointer;" data-wl-detail="${w.id}">
+        <div class="row-between"><b class="small">${escapeHtml(w.task)}</b>${w.photoData?'<span class="tiny">📷</span>':''}</div>
+        ${w.notes?`<div class="tiny muted">${escapeHtml(w.notes)}</div>`:""}
+        ${w.photoData?`<img src="${w.photoData}" class="photo-thumb" style="width:64px;height:64px;margin-top:6px;">`:""}
+      </div>`).join("")}`:""}
 
     ${a.rejectReason? `<div class="card" style="border-color:var(--danger);margin-bottom:12px;"><b class="small">Rejection reason</b><div class="small muted" style="margin-top:4px;">${escapeHtml(a.rejectReason)}</div></div>`:""}
     ${a.status==="submitted"? `<div class="grid2" style="margin-top:10px;">
@@ -1364,7 +2559,8 @@ function screenAdminJobs(){
 }
 function screenAdminJobDetail(){
   const j = DB.jobs.find(x=>x.id===route.id);
-  if(!j.changeLog) j.changeLog = [];
+  const jobHistory = (DB.jobChangeHistory || [])
+  .filter(h => h.jobId === j.id);
   const logs = DB.worklogs.filter(w=>w.jobId===j.id);
   const jobMins = DB.attendance.filter(a=>a.jobId===j.id).reduce((s,a)=>s+(a.netMin||0),0);
   const canManageJobs = (DB.session.role==="Manager" || DB.session.role==="Super Admin") && j.status!=="Completed";
@@ -1374,6 +2570,7 @@ function screenAdminJobDetail(){
     <div class="card" style="margin-bottom:16px;">
       <div class="row-between"><div class="h2">${escapeHtml(j.name)}</div><span class="pill ${j.status==='Active'?'pill-ok':j.status==='Upcoming'?'pill-warn':'pill-muted'}">${j.status}</span></div>
       <div class="muted small" style="margin-top:4px;">JOB #${j.number}</div>
+      ${j.photo? `<img src="${j.photo}" style="width:100%;border-radius:10px;margin-top:10px;">` : ""}
       <div class="divider"></div>
       <div class="col gap-8 small">
         <div class="row-between"><span class="muted">Client</span><b>${escapeHtml(j.client)}</b></div>
@@ -1391,21 +2588,40 @@ function screenAdminJobDetail(){
       ${j.assigned.length===0?`<div class="tiny muted">No employees assigned yet.</div>`:""}
     </div>
     <div class="h3" style="margin-bottom:8px;">JOB NOTES / WORK LOGS</div>
-    ${logs.map(w=>`<div class="card card-tight" style="margin-bottom:8px;">
+    ${logs.map(w=>`<div class="card card-tight" style="margin-bottom:8px;cursor:pointer;" data-wl-detail="${w.id}">
       <div class="row-between"><b class="small">${escapeHtml(empName(w.employeeId))}</b><span class="tiny muted">${fmtDate(w.start)}</span></div>
       <div class="small">${escapeHtml(w.task)}</div>
+      ${w.photoData? `<img src="${w.photoData}" class="photo-thumb" style="width:56px;height:56px;margin-top:6px;">` : (w.photos? `<div class="tiny muted" style="margin-top:4px;">📷 photo attached</div>`:"")}
     </div>`).join("")}
     ${logs.length===0? `<div class="empty small">No work logged for this job yet.</div>`:""}
 
-    <div class="h3" style="margin:20px 0 8px;">JOB CHANGE LOG</div>
-    ${j.changeLog.slice().reverse().map(c=>`<div class="card card-tight" style="margin-bottom:8px;">
-      <div class="row-between"><b class="small">${escapeHtml(c.actor)}</b><span class="tiny muted">${fmtDate(c.ts)} ${fmtTime(c.ts)}</span></div>
-      <div class="small" style="margin-top:2px;">${escapeHtml(c.detail)}</div>
-    </div>`).join("")}
-    ${j.changeLog.length===0? `<div class="empty small">No changes logged for this job yet.</div>`:""}
+    <div class="h3" style="margin:20px 0 8px;">JOB CHANGE HISTORY</div>
+
+${jobHistory.map(c=>`
+  <div class="card card-tight" style="margin-bottom:8px;">
+    <div class="row-between">
+      <div>
+        <b class="small">${escapeHtml(c.actor)}</b>
+        <div class="tiny muted">${escapeHtml(c.action)}</div>
+      </div>
+
+      <span class="tiny muted">
+        ${fmtDate(c.ts)} ${fmtTime(c.ts)}
+      </span>
+    </div>
+
+    <div class="small" style="margin-top:6px;">
+      ${escapeHtml(c.detail || "")}
+    </div>
+  </div>
+`).join("")}
+
+${jobHistory.length===0
+  ? `<div class="empty small">No changes recorded for this job yet.</div>`
+  : ""}
+
   </div>`;
 }
-
 function screenAdminLive(){
   return `
   <div class="topbar"><div class="h2">Live Attendance</div></div>
@@ -1431,7 +2647,10 @@ function screenAdminLive(){
 function screenAdminTimesheets(){
   const pending = DB.attendance.filter(a=>a.status==="submitted");
   const rejected = DB.attendance.filter(a=>a.status==="rejected");
-  const approved = DB.attendance.filter(a=>a.status==="approved"||a.status==="corrected").slice(0,15);
+  const approved=DB.attendance
+  .filter(a=>a.status==="approved"||a.status==="corrected")
+  .sort((a,b)=>new Date(b.updatedAt||b.timeOut||b.timeIn)-new Date(a.updatedAt||a.timeOut||a.timeIn))
+  .slice(0,15);
   const corrections = DB.correctionRequests.filter(r=>r.status==="pending");
   return `
   <div class="topbar"><div class="h2">Timesheet Approval</div></div>
@@ -1475,7 +2694,7 @@ function screenAdminTimesheets(){
     </div>`).join("")}`:""}
 
     <div class="h3" style="margin:20px 0 10px;">RECENTLY APPROVED</div>
-    ${approved.map(a=>`<div class="card card-tight" style="margin-bottom:8px;">
+    ${approved.map(a=>`<div class="card card-tight" style="margin-bottom:8px;cursor:pointer;" onclick="go('admin-att-detail',{id:'${a.id}'})">
       <div class="row-between small"><b>${escapeHtml(empName(a.employeeId))}</b>${attStatusPill(a.status)}</div>
       <div class="tiny muted">${fmtDate(a.timeIn)} · ${escapeHtml(jobName(a.jobId))} · ${hm(a.netMin)}</div>
     </div>`).join("")}
@@ -1483,7 +2702,7 @@ function screenAdminTimesheets(){
 }
 
 function screenAdminReports(){
-  const empOpts = DB.employees.filter(e=>e.permission==="Employee"||e.permission==="Manager").map(e=>`<option value="${e.id}">${escapeHtml(e.name)}</option>`).join("");
+  const empOpts = DB.employees.filter(e=>isFieldStaff(e)).map(e=>`<option value="${e.id}">${escapeHtml(e.name)}</option>`).join("");
   const jobOpts = DB.jobs.map(j=>`<option value="${j.id}">${escapeHtml(j.name)}</option>`).join("");
   const deptOpts = [...new Set(DB.employees.map(e=>e.department))].map(d=>`<option value="${d}">${escapeHtml(d)}</option>`).join("");
   const reportTypes = [
@@ -1515,25 +2734,83 @@ function screenAdminReports(){
     <div id="reportResults"></div>
   </div>`;
 }
+function sydney4pmISO(dateISO){
+  const d=new Date(dateISO);
+  const p=new Intl.DateTimeFormat("en-CA",{timeZone:"Australia/Sydney",timeZoneName:"longOffset",year:"numeric",month:"2-digit",day:"2-digit"}).formatToParts(d);
+  const v=Object.fromEntries(p.map(x=>[x.type,x.value]));
+  const off=(v.timeZoneName.match(/[+-]\d{2}:\d{2}/)||["+10:00"])[0];
+  return new Date(`${v.year}-${v.month}-${v.day}T16:00:00${off}`);
+}
 
-function payrollRows(fromDate, toDate){
-  const from = fromDate? new Date(fromDate) : startOfWeek();
-  const to = toDate? new Date(toDate+"T23:59:59") : new Date();
-  const emps = DB.employees.filter(e=>e.permission==="Employee"||e.permission==="Manager");
-  const otThreshold = DB.settings.overtimeThresholdHrs*60;
-  return emps.map(e=>{
-    const recs = DB.attendance.filter(a=>a.employeeId===e.id && (a.status==="approved"||a.status==="corrected") && new Date(a.timeIn)>=from && new Date(a.timeIn)<=to);
-    let regular=0, ot=0;
-    recs.forEach(a=>{
-      const g = a.grossMin||0;
-      if(g>otThreshold){ regular += otThreshold; ot += g-otThreshold; }
-      else regular += g;
+function overlapSeconds(aStart,aEnd,bStart,bEnd){
+  const start=Math.max(new Date(aStart),new Date(bStart));
+  const end=Math.min(new Date(aEnd),new Date(bEnd));
+  return Math.max(0,(end-start)/1000);
+}
+
+function unpaidBreakOverlapSeconds(att,start,end){
+  return (DB.breaks||[])
+    .filter(b=>b.attendanceId===att.id&&!b.paid&&b.start&&b.end)
+    .reduce((sum,b)=>sum+overlapSeconds(start,end,b.start,b.end),0);
+}
+function payrollRows(fromDate,toDate){
+  const from=fromDate?new Date(fromDate):startOfWeek();
+  const to=toDate?new Date(toDate+"T23:59:59"):new Date();
+  const emps=DB.employees.filter(e=>isFieldStaff(e));
+
+  return emps.map(emp=>{
+    const recs=DB.attendance.filter(a=>
+      a.employeeId===emp.id &&
+      (a.status==="approved"||a.status==="corrected") &&
+      a.timeOut &&
+      new Date(a.timeIn)>=from &&
+      new Date(a.timeIn)<=to
+    );
+
+    let regularSec=0,otSec=0;
+
+    recs.forEach(att=>{
+      const attStart=new Date(att.timeIn),attEnd=new Date(att.timeOut);
+      const entries=(DB.jobTimeEntries||[]).filter(e=>
+        e.employeeId===emp.id &&
+        e.startTime && e.endTime &&
+        new Date(e.startTime)<attEnd &&
+        new Date(e.endTime)>attStart
+      );
+
+      if(!entries.length){
+        regularSec+=(att.netMin||0)*60;
+        return;
+      }
+
+      const cutoff=sydney4pmISO(att.timeIn);
+      const otConfirmed=!!att.overtimeConfirmedAt;
+
+      entries.forEach(e=>{
+        const start=new Date(Math.max(new Date(e.startTime),attStart));
+        const end=new Date(Math.min(new Date(e.endTime),attEnd));
+        if(end<=start)return;
+
+        if(otConfirmed&&end>cutoff){
+          if(start<cutoff){
+            const regEnd=cutoff;
+            regularSec+=Math.max(0,overlapSeconds(start,regEnd,start,regEnd)-unpaidBreakOverlapSeconds(att,start,regEnd));
+          }
+          const otStart=start>cutoff?start:cutoff;
+          otSec+=Math.max(0,overlapSeconds(otStart,end,otStart,end)-unpaidBreakOverlapSeconds(att,otStart,end));
+        }else{
+          regularSec+=Math.max(0,overlapSeconds(start,end,start,end)-unpaidBreakOverlapSeconds(att,start,end));
+        }
+      });
     });
-    // convert gross-based regular/ot roughly to net-adjusted using unpaid break ratio
-    const totalNet = recs.reduce((s,a)=>s+(a.netMin||0),0);
-    const totalGross = recs.reduce((s,a)=>s+(a.grossMin||0),0) || 1;
-    const scale = totalGross? totalNet/totalGross : 1;
-    return {emp:e, regular: regular*scale/60, ot: ot*scale/60, total: totalNet/60, shifts: recs.length};
+
+    return {
+      emp,
+      regular:regularSec/3600,
+      ot:otSec/3600,
+      total:(regularSec+otSec)/3600,
+      shifts:recs.length
+    };
   }).filter(r=>r.shifts>0);
 }
 function screenAdminPayroll(){
@@ -1681,34 +2958,78 @@ function screenAdminSettings(){
       ${Object.entries(NOTIFICATION_LABELS).map(([k,label],i)=>`<label class="row-between small" style="margin:0;padding:12px 0;${i>0?'border-top:1px solid var(--line);':''}"><span style="padding-right:16px;">${label}</span><input type="checkbox" data-notif="${k}" style="flex-shrink:0;" ${s.notifications[k]?'checked':''}></label>`).join("")}
     </div>
     <button class="btn btn-ghost btn-block" id="viewPrivacyAdmin">View Employee Privacy Notice</button>
+
+    <div class="h3" style="margin:20px 0 8px;">PROTOTYPE DATA</div>
+    <div class="card col gap-8" style="margin-bottom:16px;">
+      <div class="small muted">This demo stores all data in this browser only. If employee names, PINs, or roles look out of date after an app update, resetting will reload the current built-in roster (any demo data you've entered will be lost).</div>
+      <button class="btn btn-outline-danger btn-block" id="resetDemoData" style="margin-top:6px;">Reset Demo Data to Current Roster</button>
+    </div>
   </div>`;
 }
 
 /* ---------------- Admin bindings ---------------- */
 function bindAdminScreen(){
   const $ = id=>document.getElementById(id);
-  if($("back")) $("back").onclick = ()=> go(route.name==="admin-att-detail"||route.name==="admin-employee-detail" ? "admin-employees" : "admin-dashboard");
+  if($("back")) $("back").onclick=()=>go(route.name==="admin-att-detail"?"admin-timesheets":route.name==="admin-employee-detail"?"admin-employees":"admin-dashboard");
 
   document.querySelectorAll("[data-nav]").forEach(b=> b.onclick = ()=> go(b.dataset.nav));
   document.querySelectorAll("[data-emp]").forEach(tr=> tr.onclick = ()=> go("admin-employee-detail",{id:tr.dataset.emp}));
   document.querySelectorAll("[data-job2]").forEach(c=> c.onclick = ()=> go("admin-job-detail",{id:c.dataset.job2}));
   document.querySelectorAll("[data-att]").forEach(el=> el.onclick = ()=> go("admin-att-detail",{id:el.dataset.att}));
+  document.querySelectorAll("[data-wl-detail]").forEach(el=> el.onclick = ()=> go("worklog-detail",{id:el.dataset.wlDetail, back:{name:route.name, params:route}}));
 
   if($("addEmp")) $("addEmp").onclick = ()=> modalAddEmployee();
   if($("addJob")) $("addJob").onclick = ()=> modalAddJob();
   if($("editJob")) $("editJob").onclick = ()=> modalEditJob(route.id);
   if($("addJobEmp")) $("addJobEmp").onclick = ()=> modalAssignEmployeeToJob(route.id);
-  document.querySelectorAll("[data-remove-emp]").forEach(b=> b.onclick = ()=>{
+  document.querySelectorAll("[data-start-job]").forEach(b=>b.onclick=()=>startJobTracking(b.dataset.startJob));
+  document.querySelectorAll("[data-end-job]").forEach(b=>b.onclick=()=>endJobTracking(b.dataset.endJob));
+  document.querySelectorAll("[data-remove-emp]").forEach(b => {
+  b.onclick = async ()=>{
     const j = DB.jobs.find(x=>x.id===route.id);
     const empId = b.dataset.removeEmp;
     const name = empName(empId);
-    j.assigned = j.assigned.filter(id=>id!==empId);
-    if(!j.changeLog) j.changeLog=[];
+
+    const { error: removeError } = await supabaseClient
+      .from("job_assignments")
+      .delete()
+      .eq("job_id", j.id)
+      .eq("employee_id", empId);
+
+    if(removeError){
+      console.error(
+        "Supabase job assignment removal error:",
+        removeError
+      );
+
+      toast("Employee could not be removed from the job.");
+      return;
+    }
+
+    j.assigned = j.assigned.filter(id => id !== empId);
+
     const detail = `Removed ${name} from job.`;
-    j.changeLog.push({actor:DB.session.name, ts:nowISO(), detail});
-    audit(DB.session.name,"Removed employee from job",j.name,detail);
-    save(); toast("Employee removed from job"); go("admin-job-detail",{id:j.id});
-  });
+
+    audit(
+      DB.session.name,
+      "Removed employee from job",
+      j.name,
+      detail
+    );
+
+    await recordJobHistory(
+      j.id,
+      "Employee Removed",
+      detail
+    );
+
+    save();
+
+    toast("Employee removed from job");
+
+    go("admin-job-detail", { id: j.id });
+  };
+});
   if($("resetPin")) $("resetPin").onclick = ()=>{ const e=DB.employees.find(x=>x.id===route.id); audit(DB.session.name,"Reset PIN",e.name,"PIN reset to default 1111"); toast("PIN reset — employee notified"); };
   if($("toggleActive")) $("toggleActive").onclick = ()=>{ const e=DB.employees.find(x=>x.id===route.id); e.status = e.status==='active'?'disabled':'active'; audit(DB.session.name, e.status==='active'?"Re-enabled employee":"Disabled employee", e.name,""); save(); go("admin-employee-detail",{id:e.id}); };
   if($("manualEntry")) $("manualEntry").onclick = ()=> modalManualEntry(route.id);
@@ -1720,27 +3041,48 @@ function bindAdminScreen(){
 
   document.querySelectorAll("[data-approve]").forEach(b=> b.onclick = ()=> { setAttStatus(b.dataset.approve,"approved"); });
   document.querySelectorAll("[data-reject]").forEach(b=> b.onclick = ()=> { setAttStatus(b.dataset.reject,"rejected"); });
-  document.querySelectorAll("[data-cr-approve]").forEach(b=> b.onclick = ()=>{
-    const r = DB.correctionRequests.find(x=>x.id===b.dataset.crApprove);
-    const a = DB.attendance.find(x=>x.id===r.attendanceId);
-    const origIn = fmtTime(a.timeIn), origOut = fmtTime(a.timeOut);
-    if(r.requestedTimeIn) a.timeIn = r.requestedTimeIn;
-    if(r.requestedTimeOut) a.timeOut = r.requestedTimeOut;
-    if(a.timeOut){
-      a.grossMin = mins(new Date(a.timeOut)-new Date(a.timeIn));
-      a.netMin = a.grossMin - (a.unpaidBreakMin||0);
-    }
-    a.status = "corrected"; r.status="approved";
-    const detail = `${r.requestedTimeIn?`Time In: ${origIn} → ${fmtTime(a.timeIn)}. `:""}${r.requestedTimeOut?`Time Out: ${origOut} → ${fmtTime(a.timeOut)}. `:""}Reason: ${r.reason}`;
-    audit(DB.session.name,"Approved correction request", empName(r.employeeId), detail);
-    save(); toast("Correction approved"); go("admin-timesheets");
-  });
-  document.querySelectorAll("[data-cr-reject]").forEach(b=> b.onclick = ()=>{
-    const r = DB.correctionRequests.find(x=>x.id===b.dataset.crReject);
-    r.status="rejected";
-    audit(DB.session.name,"Rejected correction request", empName(r.employeeId), r.reason);
-    save(); toast("Correction request rejected"); go("admin-timesheets");
-  });
+  document.querySelectorAll("[data-cr-approve]").forEach(b=>b.onclick=async()=>{
+  const r=DB.correctionRequests.find(x=>x.id===b.dataset.crApprove);
+  const a=DB.attendance.find(x=>x.id===r.attendanceId);
+  const timeIn=r.requestedTimeIn||a.timeIn,timeOut=r.requestedTimeOut||a.timeOut;
+  const gross=mins(new Date(timeOut)-new Date(timeIn)),net=gross-(a.unpaidBreakMin||0);
+  const reviewedAt=nowISO(),reviewer=DB.session.name;
+
+  const {error:attError}=await supabaseClient.from("attendance").update({
+    time_in:timeIn,time_out:timeOut,gross_minutes:gross,net_minutes:net,
+    status:"corrected",updated_at:reviewedAt
+  }).eq("id",a.id);
+
+  if(attError){console.error("Attendance correction error:",attError);toast("Could not approve correction.");return;}
+
+  const {error:crError}=await supabaseClient.from("correction_requests").update({
+    status:"approved",reviewed_by:reviewer,reviewed_at:reviewedAt
+  }).eq("id",r.id);
+
+  if(crError){console.error("Correction approval error:",crError);toast("Could not complete approval.");return;}
+
+  const origIn=fmtTime(a.timeIn),origOut=fmtTime(a.timeOut);
+  a.timeIn=timeIn;a.timeOut=timeOut;a.grossMin=gross;a.netMin=net;a.status="corrected";
+  r.status="approved";r.reviewedBy=reviewer;r.reviewedAt=reviewedAt;
+
+  const detail=`${r.requestedTimeIn?`Time In: ${origIn} → ${fmtTime(timeIn)}. `:""}${r.requestedTimeOut?`Time Out: ${origOut} → ${fmtTime(timeOut)}. `:""}Reason: ${r.reason}`;
+  audit(DB.session.name,"Approved correction request",empName(r.employeeId),detail);
+  save();toast("Correction approved");go("admin-timesheets");
+});
+  document.querySelectorAll("[data-cr-reject]").forEach(b=>b.onclick=async()=>{
+  const r=DB.correctionRequests.find(x=>x.id===b.dataset.crReject);
+  const reviewedAt=nowISO(),reviewer=DB.session.name;
+
+  const {error}=await supabaseClient.from("correction_requests").update({
+    status:"rejected",reviewed_by:reviewer,reviewed_at:reviewedAt
+  }).eq("id",r.id);
+
+  if(error){console.error("Correction rejection error:",error);toast("Could not reject correction.");return;}
+
+  r.status="rejected";r.reviewedBy=reviewer;r.reviewedAt=reviewedAt;
+  audit(DB.session.name,"Rejected correction request",empName(r.employeeId),r.reason);
+  save();toast("Correction rejected");go("admin-timesheets");
+});
 
   if($("xeroToggle")) $("xeroToggle").onclick = ()=>{
     const x = DB.settings.xero;
@@ -1756,6 +3098,12 @@ function bindAdminScreen(){
   };
   if($("syncHistory")) $("syncHistory").onclick = ()=> go("admin-audit");
   if($("viewPrivacyAdmin")) $("viewPrivacyAdmin").onclick = ()=> { PRIVACY_FROM_LOGIN=false; go("privacy"); };
+  if($("resetDemoData")) $("resetDemoData").onclick = ()=>{
+    if(confirm("Reset all demo data to the current built-in roster? This clears everything stored in this browser and cannot be undone.")){
+      localStorage.removeItem(KEY);
+      location.reload();
+    }
+  };
   if($("ackBtn")) $("ackBtn").onclick = ()=> go("admin-settings");
 
   document.querySelectorAll("[data-notif]").forEach(cb=> cb.onchange = ()=>{ DB.settings.notifications[cb.dataset.notif]=cb.checked; save(); });
@@ -1788,12 +3136,18 @@ function bindAdminScreen(){
   };
 }
 
-function setAttStatus(attId, status){
-  if(status==="rejected"){ modalReject(attId); return; }
-  const a = DB.attendance.find(x=>x.id===attId);
-  a.status = status;
-  audit(DB.session.name,"Approved timesheet", empName(a.employeeId), fmtDate(a.timeIn));
-  save(); toast("Approved"); go(route.name);
+async function setAttStatus(attId,status){
+  if(status==="rejected"){modalReject(attId);return;}
+  const a=DB.attendance.find(x=>x.id===attId),updatedAt=nowISO();
+
+  const {error}=await supabaseClient.from("attendance")
+    .update({status,updated_at:updatedAt}).eq("id",attId);
+
+  if(error){console.error("Timesheet approval error:",error);toast("Could not update timesheet.");return;}
+
+  a.status=status;
+  audit(DB.session.name,"Approved timesheet",empName(a.employeeId),fmtDate(a.timeIn));
+  save();toast("Approved");go(route.name);
 }
 function modalReject(attId){
   const a = DB.attendance.find(x=>x.id===attId);
@@ -1806,13 +3160,30 @@ function modalReject(attId){
   </div>`;
   document.body.appendChild(wrap);
   wrap.querySelector("#rejCancel").onclick=()=>wrap.remove();
-  wrap.querySelector("#rejGo").onclick=()=>{
-    const reason = wrap.querySelector("#rejReason").value;
-    if(!reason){ toast("A reason is required"); return; }
-    a.status="rejected"; a.rejectReason=reason;
-    audit(DB.session.name,"Rejected timesheet", empName(a.employeeId), `${fmtDate(a.timeIn)}. Reason: ${reason}`);
-    save(); wrap.remove(); toast("Rejected — employee notified"); go(route.name);
-  };
+  wrap.querySelector("#rejGo").onclick=async()=>{
+  const reason=wrap.querySelector("#rejReason").value.trim();
+  if(!reason){toast("A reason is required");return;}
+
+  const updatedAt=nowISO();
+  const {error}=await supabaseClient.from("attendance").update({
+    status:"rejected",
+    rejection_reason:reason,
+    updated_at:updatedAt
+  }).eq("id",a.id);
+
+  if(error){
+    console.error("Timesheet rejection error:",error);
+    toast("Could not reject timesheet.");
+    return;
+  }
+
+  a.status="rejected";
+  a.rejectReason=reason;
+  a.updatedAt=updatedAt;
+
+  audit(DB.session.name,"Rejected timesheet",empName(a.employeeId),`${fmtDate(a.timeIn)}. Reason: ${reason}`);
+  save();wrap.remove();toast("Rejected — employee notified");go(route.name);
+};
 }
 function modalEditApproved(attId){
   const a = DB.attendance.find(x=>x.id===attId);
@@ -1826,19 +3197,44 @@ function modalEditApproved(attId){
   </div>`;
   document.body.appendChild(wrap);
   wrap.querySelector("#editCancel").onclick=()=>wrap.remove();
-  wrap.querySelector("#editSave").onclick=()=>{
-    const reason = wrap.querySelector("#editReason").value;
-    if(!reason){ toast("A reason is required for audit purposes"); return; }
-    const [h,m] = wrap.querySelector("#editOut").value.split(":").map(Number);
-    const oldOut = fmtTime(a.timeOut);
-    const d = new Date(a.timeOut); d.setHours(h,m,0,0);
-    a.timeOut = d.toISOString();
-    a.grossMin = mins(new Date(a.timeOut)-new Date(a.timeIn));
-    a.netMin = a.grossMin - (a.unpaidBreakMin||0);
-    a.status = "corrected";
-    audit(DB.session.name,"Changed Time Out", empName(a.employeeId), `Original: ${oldOut} → New: ${fmtTime(a.timeOut)}. Reason: ${reason}`);
-    save(); wrap.remove(); toast("Updated — audit record created"); go("admin-att-detail",{id:attId});
-  };
+  wrap.querySelector("#editSave").onclick=async()=>{
+  const reason=wrap.querySelector("#editReason").value.trim();
+  if(!reason){toast("A reason is required for audit purposes");return;}
+
+  const [h,m]=wrap.querySelector("#editOut").value.split(":").map(Number);
+  const oldOut=fmtTime(a.timeOut),d=new Date(a.timeOut);
+  d.setHours(h,m,0,0);
+
+  const timeOut=d.toISOString();
+  const grossMin=mins(new Date(timeOut)-new Date(a.timeIn));
+  const netMin=grossMin-(a.unpaidBreakMin||0);
+  const updatedAt=nowISO();
+
+  const {error}=await supabaseClient.from("attendance").update({
+    time_out:timeOut,
+    gross_minutes:grossMin,
+    net_minutes:netMin,
+    status:"corrected",
+    rejection_reason:null,
+    updated_at:updatedAt
+  }).eq("id",a.id);
+
+  if(error){
+    console.error("Approved record edit error:",error);
+    toast("Could not update approved record.");
+    return;
+  }
+
+  a.timeOut=timeOut;
+  a.grossMin=grossMin;
+  a.netMin=netMin;
+  a.status="corrected";
+  a.rejectReason=null;
+  a.updatedAt=updatedAt;
+
+  audit(DB.session.name,"Changed Time Out",empName(a.employeeId),`Original: ${oldOut} → New: ${fmtTime(a.timeOut)}. Reason: ${reason}`);
+  save();wrap.remove();toast("Updated — audit record created");go("admin-att-detail",{id:attId});
+};
 }
 function modalManualEntry(empId){
   const e = DB.employees.find(x=>x.id===empId);
@@ -1890,27 +3286,116 @@ function modalAddEmployee(){
       <div class="field"><label>Hourly rate</label><input id="neRate" type="number" step="0.5" placeholder="34.50"></div>
     </div>
     <div class="grid2">
-      <div class="field"><label>Manager</label><input id="neManager" placeholder="e.g. Julia Santos"></div>
+      <div class="field"><label>Manager</label><input id="neManager" placeholder="e.g. Julia Douglas"></div>
       <div class="field"><label>Default location</label><input id="neLoc" placeholder="e.g. Upstage Workshop"></div>
     </div>
-    <div class="field"><label>Permission level</label><select id="nePerm"><option>Employee</option><option>Manager</option><option>Payroll</option><option>Admin</option></select></div>
+    <div class="field"><label>Permission level</label><select id="nePerm"><option>Employee</option><option>Manager</option><option>Payroll</option><option>Admin</option><option>Super Admin</option></select></div>
+    <div class="field"><label><input type="checkbox" id="neFieldRole" style="width:auto;margin-right:6px;">Also has field duties (clock in/out, breaks)</label></div>
     <button class="btn btn-accent btn-block btn-lg" id="neSave">Create Employee</button>
     <button class="btn btn-ghost btn-block" style="margin-top:8px;" id="neCancel">Cancel</button>
   </div>`;
   document.body.appendChild(wrap);
   wrap.querySelector("#neCancel").onclick=()=>wrap.remove();
-  wrap.querySelector("#neSave").onclick=()=>{
+  wrap.querySelector("#neSave").onclick = async ()=>{
     const name = wrap.querySelector("#neName").value;
-    if(!name){ toast("Name is required"); return; }
-    const nextNum = DB.employees.filter(e=>e.empId&&e.empId.startsWith("EMP-")).length+1;
-    const emp = {id:uid("emp"), empId:"EMP-"+String(nextNum).padStart(3,'0'), name, role:wrap.querySelector("#neRole").value||"Crew", pin:"1111", status:"active",
-      email:wrap.querySelector("#neEmail").value, department:wrap.querySelector("#neDept").value||"Production",
-      employmentType:wrap.querySelector("#nePay").value, payCategory:wrap.querySelector("#nePay").value,
-      hourlyRate: parseFloat(wrap.querySelector("#neRate").value)||null, manager:wrap.querySelector("#neManager").value||"—",
-      defaultLocation:wrap.querySelector("#neLoc").value||"—", permission:wrap.querySelector("#nePerm").value};
-    DB.employees.push(emp);
-    audit(DB.session.name,"Created employee",name,`Default PIN 1111 issued`);
-    save(); wrap.remove(); toast("Employee created"); go("admin-employees");
+
+if(!name){
+  toast("Name is required");
+  return;
+}
+
+const nextNum =
+  DB.employees.filter(
+    e => e.empId && e.empId.startsWith("EMP-")
+  ).length + 1;
+
+const emp = {
+  id: uid("emp"),
+  empId: "EMP-" + String(nextNum).padStart(3, "0"),
+  name: name,
+  role: wrap.querySelector("#neRole").value || "Crew",
+  status: "active",
+  email: wrap.querySelector("#neEmail").value,
+  department: wrap.querySelector("#neDept").value || "Production",
+  employmentType: wrap.querySelector("#nePay").value,
+  payCategory: wrap.querySelector("#nePay").value,
+  hourlyRate:
+    parseFloat(wrap.querySelector("#neRate").value) || null,
+  manager:
+    wrap.querySelector("#neManager").value || "—",
+  defaultLocation:
+    wrap.querySelector("#neLoc").value || "—",
+  permission:
+    wrap.querySelector("#nePerm").value,
+  fieldRole:
+    wrap.querySelector("#neFieldRole").checked
+};
+
+const { data: savedEmployee, error: employeeCreateError } =
+  await supabaseClient
+    .from("employees")
+    .insert({
+      id: emp.id,
+      emp_id: emp.empId,
+      name: emp.name,
+      role: emp.role,
+      email: emp.email || null,
+      department: emp.department,
+      pay_category: emp.payCategory,
+      employment_type: emp.employmentType,
+      hourly_rate: emp.hourlyRate,
+      manager: emp.manager,
+      default_location: emp.defaultLocation,
+      permission: emp.permission,
+      field_role: emp.fieldRole,
+      status: emp.status,
+      user_id: null
+    })
+    .select()
+    .single();
+
+if(employeeCreateError){
+  console.error(
+    "Supabase employee create error:",
+    employeeCreateError
+  );
+
+  toast("Employee could not be created.");
+  return;
+}
+
+DB.employees.push({
+  id: savedEmployee.id,
+  empId: savedEmployee.emp_id,
+  name: savedEmployee.name,
+  role: savedEmployee.role,
+  status: savedEmployee.status,
+  email: savedEmployee.email,
+  department: savedEmployee.department,
+  employmentType: savedEmployee.employment_type,
+  payCategory: savedEmployee.pay_category,
+  hourlyRate: savedEmployee.hourly_rate,
+  manager: savedEmployee.manager,
+  defaultLocation: savedEmployee.default_location,
+  permission: savedEmployee.permission,
+  fieldRole: savedEmployee.field_role,
+  userId: savedEmployee.user_id
+});
+
+audit(
+  DB.session.name,
+  "Created employee",
+  name,
+  `${emp.empId} employee profile created`
+);
+
+save();
+
+wrap.remove();
+
+toast("Employee created");
+
+go("admin-employees");
   };
 }
 function modalAddJob(){
@@ -1927,21 +3412,64 @@ function modalAddJob(){
       <div class="field"><label>End date</label><input type="date" id="njEnd"></div>
     </div>
     <div class="field"><label>Job manager</label><input id="njMgr"></div>
+    <div class="field">
+      <label>Reference photo (optional)</label>
+      <button class="btn btn-ghost btn-block" id="njPhotoBtn" type="button">📷 Add Photo</button>
+      <div id="njPhotoPreview" class="row gap-8" style="margin-top:8px;"></div>
+    </div>
     <button class="btn btn-accent btn-block btn-lg" id="njSave">Create Job</button>
     <button class="btn btn-ghost btn-block" style="margin-top:8px;" id="njCancel">Cancel</button>
   </div>`;
   document.body.appendChild(wrap);
+  let njPhotoData = null;
+  wrap.querySelector("#njPhotoBtn").onclick = ()=> openGalleryPhoto((photo)=>{
+    njPhotoData = photo;
+    wrap.querySelector("#njPhotoPreview").innerHTML = `<img src="${photo}" class="photo-thumb">`;
+  }, "Job Reference Photo");
   wrap.querySelector("#njCancel").onclick=()=>wrap.remove();
-  wrap.querySelector("#njSave").onclick=()=>{
+  wrap.querySelector("#njSave").onclick=async ()=>{
     const name = wrap.querySelector("#njName").value;
     if(!name){ toast("Job name is required"); return; }
     const job = {id:uid("job"), number:wrap.querySelector("#njNum").value||"—", name, client:wrap.querySelector("#njClient").value,
       venue:wrap.querySelector("#njVenue").value, location:wrap.querySelector("#njLoc").value, start:wrap.querySelector("#njStart").value,
-      end:wrap.querySelector("#njEnd").value, manager:wrap.querySelector("#njMgr").value, status:"Upcoming", notes:"", assigned:[],
-      changeLog:[{actor:DB.session.name, ts:nowISO(), detail:"Job created."}]};
+      end:wrap.querySelector("#njEnd").value, manager:wrap.querySelector("#njMgr").value, status:"Upcoming", notes:"", assigned:[], photo:njPhotoData,
+      changeLog:[{actor:DB.session.name, ts:nowISO(), detail:"Job created."+(njPhotoData?" Reference photo attached.":"")}]};
     DB.jobs.push(job);
-    audit(DB.session.name,"Created job",name,`#${job.number}`);
-    save(); wrap.remove(); toast("Job created"); go("admin-jobs");
+    const { error: jobCreateError } = await supabaseClient
+  .from("jobs")
+  .insert({
+    id: job.id,
+    number: job.number,
+    name: job.name,
+    client: job.client,
+    venue: job.venue,
+    location: job.location,
+    start_date: job.start || null,
+    end_date: job.end || null,
+    manager: job.manager,
+    status: job.status,
+    notes: job.notes
+  });
+
+if(jobCreateError){
+  console.error("Supabase job create error:", jobCreateError);
+  toast("Job could not be created. Please try again.");
+  return;
+}
+
+DB.jobs.push(job);
+
+audit(
+  DB.session.name,
+  "Created job",
+  name,
+  `#${job.number}`
+);
+
+save();
+wrap.remove();
+toast("Job created");
+go("admin-jobs");
   };
 }
 function modalEditJob(jobId){
@@ -1965,50 +3493,257 @@ function modalEditJob(jobId){
   </div>`;
   document.body.appendChild(wrap);
   wrap.querySelector("#ejCancel").onclick=()=>wrap.remove();
-  wrap.querySelector("#ejSave").onclick=()=>{
+  wrap.querySelector("#ejSave").onclick=async ()=>{
     const name = wrap.querySelector("#ejName").value;
-    if(!name){ toast("Job name is required"); return; }
-    const before = {number:j.number, name:j.name, client:j.client, venue:j.venue, location:j.location, start:j.start, end:j.end, manager:j.manager, status:j.status};
-    j.number = wrap.querySelector("#ejNum").value||j.number;
-    j.name = name;
-    j.client = wrap.querySelector("#ejClient").value;
-    j.venue = wrap.querySelector("#ejVenue").value;
-    j.location = wrap.querySelector("#ejLoc").value;
-    j.start = wrap.querySelector("#ejStart").value;
-    j.end = wrap.querySelector("#ejEnd").value;
-    j.manager = wrap.querySelector("#ejMgr").value;
-    j.status = wrap.querySelector("#ejStatus").value;
-    const changed = Object.keys(before).filter(k=> String(before[k]||"")!==String(j[k]||""));
-    if(!j.changeLog) j.changeLog=[];
-    const detail = changed.length? `Updated ${changed.map(k=>`${k} ("${before[k]||'—'}" → "${j[k]||'—'}")`).join(", ")}.` : "Saved with no field changes.";
-    j.changeLog.push({actor:DB.session.name, ts:nowISO(), detail});
-    audit(DB.session.name,"Edited job",j.name,detail);
-    save(); wrap.remove(); toast("Job updated"); go("admin-job-detail",{id:j.id});
+
+if(!name){
+  toast("Job name is required");
+  return;
+}
+
+const before = {
+  number: j.number,
+  name: j.name,
+  client: j.client,
+  venue: j.venue,
+  location: j.location,
+  start: j.start,
+  end: j.end,
+  manager: j.manager,
+  status: j.status
+};
+
+const updatedJob = {
+  number: wrap.querySelector("#ejNum").value || j.number,
+  name: name,
+  client: wrap.querySelector("#ejClient").value,
+  venue: wrap.querySelector("#ejVenue").value,
+  location: wrap.querySelector("#ejLoc").value,
+  start: wrap.querySelector("#ejStart").value,
+  end: wrap.querySelector("#ejEnd").value,
+  manager: wrap.querySelector("#ejMgr").value,
+  status: wrap.querySelector("#ejStatus").value
+};
+
+const { error: jobUpdateError } = await supabaseClient
+  .from("jobs")
+  .update({
+    number: updatedJob.number,
+    name: updatedJob.name,
+    client: updatedJob.client,
+    venue: updatedJob.venue,
+    location: updatedJob.location,
+    start_date: updatedJob.start || null,
+    end_date: updatedJob.end || null,
+    manager: updatedJob.manager,
+    status: updatedJob.status
+  })
+  .eq("id", j.id);
+
+if(jobUpdateError){
+  console.error("Supabase job update error:", jobUpdateError);
+  toast("Job could not be updated. Please try again.");
+  return;
+}
+
+Object.assign(j, updatedJob);
+
+const changed = Object.keys(before).filter(
+  k => String(before[k] || "") !== String(j[k] || "")
+);
+
+if(!j.changeLog){
+  j.changeLog = [];
+}
+
+const detail = changed.length
+  ? `Updated ${changed
+      .map(k => `${k} ("${before[k] || "—"}" → "${j[k] || "—"}")`)
+      .join(", ")}.`
+  : "Saved with no field changes.";
+
+j.changeLog.push({
+  actor: DB.session.name,
+  ts: nowISO(),
+  detail
+});
+
+audit(
+  DB.session.name,
+  "Edited job",
+  j.name,
+  detail
+);
+
+await recordJobHistory(
+  j.id,
+  "Edited Job",
+  detail
+);
+
+save();
+wrap.remove();
+toast("Job updated");
+go("admin-job-detail", { id: j.id });
   };
 }
 function modalAssignEmployeeToJob(jobId){
   const j = DB.jobs.find(x=>x.id===jobId);
-  const available = DB.employees.filter(e=>e.status==="active" && !j.assigned.includes(e.id));
-  const wrap = document.createElement("div"); wrap.className="modal-bg";
-  wrap.innerHTML = `<div class="modal">
-    <div class="h2" style="margin-bottom:14px;">Add Employee to Job</div>
-    ${available.length? `
-    <div class="field"><label>Employee</label><select id="ajEmp">${available.map(e=>`<option value="${e.id}">${escapeHtml(e.name)} — ${escapeHtml(e.role)}</option>`).join("")}</select></div>
-    <button class="btn btn-accent btn-block btn-lg" id="ajSave">Add to Job</button>
-    ` : `<div class="empty small">All active employees are already assigned to this job.</div>`}
-    <button class="btn btn-ghost btn-block" style="margin-top:8px;" id="ajCancel">Cancel</button>
-  </div>`;
+
+  const available = DB.employees.filter(
+    e => e.status==="active" && !j.assigned.includes(e.id)
+  );
+
+  const wrap = document.createElement("div");
+  wrap.className = "modal-bg";
+
+  wrap.innerHTML = `
+    <div class="modal">
+      <div class="h2" style="margin-bottom:14px;">
+        Add Employees to Job
+      </div>
+
+      ${available.length ? `
+        <div class="tiny muted" style="margin-bottom:10px;">
+          Select one or more employees to assign to this job.
+        </div>
+
+        <div
+          style="
+            max-height:320px;
+            overflow-y:auto;
+            border:1px solid var(--line);
+            border-radius:10px;
+            padding:8px;
+            margin-bottom:14px;
+          "
+        >
+          ${available.map(e=>`
+            <label
+              style="
+                display:flex;
+                align-items:center;
+                gap:10px;
+                padding:10px 8px;
+                cursor:pointer;
+                border-bottom:1px solid var(--line);
+              "
+            >
+              <input
+                type="checkbox"
+                class="job-employee-select"
+                value="${e.id}"
+                style="width:18px;height:18px;"
+              >
+
+              <div>
+                <div class="small">
+                  <b>${escapeHtml(e.name)}</b>
+                </div>
+
+                <div class="tiny muted">
+                  ${escapeHtml(e.role || "")}
+                </div>
+              </div>
+            </label>
+          `).join("")}
+        </div>
+
+        <button
+          class="btn btn-accent btn-block btn-lg"
+          id="ajSave"
+        >
+          Add Selected Employees
+        </button>
+      ` : `
+        <div class="empty small">
+          All active employees are already assigned to this job.
+        </div>
+      `}
+
+      <button
+        class="btn btn-ghost btn-block"
+        style="margin-top:8px;"
+        id="ajCancel"
+      >
+        Cancel
+      </button>
+    </div>
+  `;
+
   document.body.appendChild(wrap);
-  wrap.querySelector("#ajCancel").onclick=()=>wrap.remove();
+
+  wrap.querySelector("#ajCancel").onclick = () => wrap.remove();
+
   if(wrap.querySelector("#ajSave")){
-    wrap.querySelector("#ajSave").onclick=()=>{
-      const empId = wrap.querySelector("#ajEmp").value;
-      j.assigned.push(empId);
-      if(!j.changeLog) j.changeLog=[];
-      const detail = `Added ${empName(empId)} to job.`;
-      j.changeLog.push({actor:DB.session.name, ts:nowISO(), detail});
-      audit(DB.session.name,"Added employee to job",j.name,detail);
-      save(); wrap.remove(); toast("Employee added to job"); go("admin-job-detail",{id:j.id});
+    wrap.querySelector("#ajSave").onclick = async ()=>{
+      const selectedEmployeeIds = [
+        ...wrap.querySelectorAll(".job-employee-select:checked")
+      ].map(cb => cb.value);
+
+      if(selectedEmployeeIds.length === 0){
+        toast("Select at least one employee.");
+        return;
+      }
+
+      const assignmentRows = selectedEmployeeIds.map(empId => ({
+        job_id: j.id,
+        employee_id: empId
+      }));
+
+      const { error: assignmentError } = await supabaseClient
+        .from("job_assignments")
+        .insert(assignmentRows);
+
+      if(assignmentError){
+        console.error(
+          "Supabase job assignment error:",
+          assignmentError
+        );
+
+        toast("Employees could not be added to the job.");
+        return;
+      }
+
+      selectedEmployeeIds.forEach(empId => {
+        if(!j.assigned.includes(empId)){
+          j.assigned.push(empId);
+        }
+      });
+
+      const employeeNames = selectedEmployeeIds.map(
+        empId => empName(empId)
+      );
+
+      const detail =
+        `Added ${employeeNames.join(", ")} to job.`;
+
+      audit(
+        DB.session.name,
+        "Added employees to job",
+        j.name,
+        detail
+      );
+
+      await recordJobHistory(
+        j.id,
+        selectedEmployeeIds.length === 1
+          ? "Employee Added"
+          : "Employees Added",
+        detail
+      );
+
+      save();
+
+      wrap.remove();
+
+      toast(
+        selectedEmployeeIds.length === 1
+          ? "Employee added to job"
+          : `${selectedEmployeeIds.length} employees added to job`
+      );
+
+      go("admin-job-detail", { id: j.id });
     };
   }
 }
@@ -2018,7 +3753,7 @@ function baseFilteredAttendance(){
   const empId = $("repEmp").value, jobId = $("repJob").value, status=$("repStatus").value, dept=$("repDept").value;
   const from = $("repFrom").value ? new Date($("repFrom").value) : null;
   const to = $("repTo").value ? new Date($("repTo").value+"T23:59:59") : null;
-  let rows = DB.attendance.filter(a=> DB.employees.find(e=>e.id===a.employeeId)?.permission==="Employee" || DB.employees.find(e=>e.id===a.employeeId)?.permission==="Manager");
+  let rows = DB.attendance.filter(a=> { const e = DB.employees.find(e=>e.id===a.employeeId); return e && isFieldStaff(e); });
   if(empId) rows = rows.filter(a=>a.employeeId===empId);
   if(jobId) rows = rows.filter(a=>a.jobId===jobId);
   if(status) rows = rows.filter(a=>a.status===status);
@@ -2026,6 +3761,21 @@ function baseFilteredAttendance(){
   if(from) rows = rows.filter(a=>new Date(a.timeIn)>=from);
   if(to) rows = rows.filter(a=>new Date(a.timeIn)<=to);
   rows.sort((a,b)=>new Date(b.timeIn)-new Date(a.timeIn));
+  return rows;
+}
+function baseFilteredJobTimeEntries(){
+  const $=id=>document.getElementById(id);
+  const empId=$("repEmp").value,jobId=$("repJob").value,dept=$("repDept").value,status=$("repStatus").value;
+  const from=$("repFrom").value?new Date($("repFrom").value):null;
+  const to=$("repTo").value?new Date($("repTo").value+"T23:59:59"):null;
+  let rows=(DB.jobTimeEntries||[]).filter(e=>e.endTime&&e.durationSeconds!=null);
+  if(empId) rows=rows.filter(e=>e.employeeId===empId);
+  if(jobId) rows=rows.filter(e=>e.jobId===jobId);
+  if(dept) rows=rows.filter(e=>DB.employees.find(x=>x.id===e.employeeId)?.department===dept);
+  if(status) rows=rows.filter(e=>DB.attendance.some(a=>a.employeeId===e.employeeId&&a.status===status&&new Date(e.startTime)>=new Date(a.timeIn)&&new Date(e.startTime)<new Date(a.timeOut||Date.now())));
+  if(from) rows=rows.filter(e=>new Date(e.startTime)>=from);
+  if(to) rows=rows.filter(e=>new Date(e.startTime)<=to);
+  rows.sort((a,b)=>new Date(b.startTime)-new Date(a.startTime));
   return rows;
 }
 function runReport(){
@@ -2041,16 +3791,20 @@ function runReport(){
     header = ["Date","Employee","Job","In","Out","Net","Status"];
     tableRows = rows.map(a=>[fmtDateShort(a.timeIn), empName(a.employeeId), jobName(a.jobId), fmtTime(a.timeIn), a.timeOut?fmtTime(a.timeOut):'—', a.netMin!=null?hm(a.netMin):'—', a.status]);
   } else if(type==="job-labour"){
-    const byJob = {};
-    rows.forEach(a=>{ const k=a.jobId; byJob[k]=byJob[k]||{}; byJob[k][a.employeeId]=(byJob[k][a.employeeId]||0)+(a.netMin||0); });
-    const flat = [];
-    Object.entries(byJob).forEach(([jobId,emps])=> Object.entries(emps).forEach(([empId,mins])=> flat.push({jobId,empId,mins})));
-    flat.sort((a,b)=> jobName(a.jobId).localeCompare(jobName(b.jobId)));
-    const rate = id => DB.employees.find(e=>e.id===id)?.hourlyRate || 0;
-    title = `${flat.length} JOB/EMPLOYEE LINES · ${hm(flat.reduce((s,f)=>s+f.mins,0))} TOTAL`;
-    header = ["Job","Employee","Hours","Labour Cost"];
-    tableRows = flat.map(f=>[jobName(f.jobId), empName(f.empId), hm(f.mins), "$"+((f.mins/60)*rate(f.empId)).toFixed(2)]);
-  } else if(type==="department"){
+  const entries=baseFilteredJobTimeEntries();
+  const byJob={};
+  entries.forEach(e=>{
+    const k=e.jobId;byJob[k]=byJob[k]||{};
+    byJob[k][e.employeeId]=(byJob[k][e.employeeId]||0)+(e.durationSeconds||0);
+  });
+  const flat=[];
+  Object.entries(byJob).forEach(([jobId,emps])=>Object.entries(emps).forEach(([empId,seconds])=>flat.push({jobId,empId,seconds})));
+  flat.sort((a,b)=>jobName(a.jobId).localeCompare(jobName(b.jobId)));
+  const rate=id=>DB.employees.find(e=>e.id===id)?.hourlyRate||0;
+  title=`${flat.length} JOB/EMPLOYEE LINES · ${hm(Math.round(flat.reduce((s,f)=>s+f.seconds,0)/60))} TOTAL`;
+  header=["Job","Employee","Hours","Labour Cost"];
+  tableRows=flat.map(f=>[jobName(f.jobId),empName(f.empId),hm(Math.round(f.seconds/60)),"$"+((f.seconds/3600)*rate(f.empId)).toFixed(2)]);
+ } else if(type==="department"){
     const byDept = {};
     rows.forEach(a=>{ const d = DB.employees.find(e=>e.id===a.employeeId)?.department||"—"; byDept[d]=(byDept[d]||0)+(a.netMin||0); });
     title = `${Object.keys(byDept).length} DEPARTMENTS`;
@@ -2067,17 +3821,28 @@ function runReport(){
     header = ["Date","Employee","Job","Clock In"];
     tableRows = missing.map(a=>[fmtDateShort(a.timeIn), empName(a.employeeId), jobName(a.jobId), fmtTime(a.timeIn)]);
   } else if(type==="overtime"){
-    const ot = rows.filter(a=>a.grossMin && a.grossMin>overtimeThreshold);
-    title = `${ot.length} OVERTIME SHIFTS · Threshold ${DB.settings.overtimeThresholdHrs}h/day`;
-    header = ["Date","Employee","Job","Total Hours","Overtime"];
-    tableRows = ot.map(a=>[fmtDateShort(a.timeIn), empName(a.employeeId), jobName(a.jobId), hm(a.grossMin), hm(a.grossMin-overtimeThreshold)]);
-  } else if(type==="location"){
-    const exceptions = rows.filter(a=>a.geofence==="outside");
-    title = `${exceptions.length} LOCATION EXCEPTIONS`;
-    header = ["Date","Employee","Job","Clock In","Location"];
-    tableRows = exceptions.map(a=>[fmtDateShort(a.timeIn), empName(a.employeeId), jobName(a.jobId), fmtTime(a.timeIn), a.gpsIn.address||'—']);
+ const ot=[];
+ rows.forEach(a=>{
+  if(!a.timeOut||!a.overtimeConfirmedAt)return;
+  const cutoff=sydney4pmISO(a.timeIn);
+  let otSec=0;
+  (DB.jobTimeEntries||[]).filter(e=>e.employeeId===a.employeeId&&e.startTime&&e.endTime&&new Date(e.startTime)<new Date(a.timeOut)&&new Date(e.endTime)>new Date(a.timeIn)).forEach(e=>{
+   const start=new Date(Math.max(new Date(e.startTime),new Date(a.timeIn),cutoff));
+   const end=new Date(Math.min(new Date(e.endTime),new Date(a.timeOut)));
+   if(end>start)otSec+=Math.max(0,overlapSeconds(start,end,start,end)-unpaidBreakOverlapSeconds(a,start,end));
+  });
+  if(otSec>0)ot.push({a,otSec});
+ });
+ title=`${ot.length} OVERTIME SHIFTS · After 4:00 PM Sydney`;
+ header=["Date","Employee","Job","Total Hours","Overtime"];
+ tableRows=ot.map(x=>[fmtDateShort(x.a.timeIn),empName(x.a.employeeId),jobName(x.a.jobId),hm(x.a.netMin||0),hm(Math.round(x.otSec/60))]);
   }
-
+else if(type==="location"){
+ const exceptions=rows.filter(a=>a.geofence==="outside");
+ title=`${exceptions.length} LOCATION EXCEPTIONS`;
+ header=["Date","Employee","Job","Clock In","Location"];
+ tableRows=exceptions.map(a=>[fmtDateShort(a.timeIn),empName(a.employeeId),jobName(a.jobId),fmtTime(a.timeIn),a.gpsIn?.address||"-"]);
+}
   window.__lastReportHeader = header; window.__lastReportRows = tableRows;
   el.innerHTML = `
     <div class="row-between" style="margin:16px 0 10px;"><div class="h3">${title}</div>
@@ -2092,7 +3857,7 @@ function runReport(){
       ${tableRows.length===0? `<tr><td colspan="${header.length}" class="muted" style="text-align:center;padding:16px;">No matching records</td></tr>`:""}
     </table>`;
   document.getElementById("expCsv").onclick = exportCSV;
-  document.getElementById("expPdf").onclick = ()=> toast("A production build renders this via a PDF service (e.g. server-side Puppeteer or a PDF library) — CSV export is fully functional now.");
+  document.getElementById("expPdf").onclick=exportPDF;
 }
 function exportCSV(){
   const header = window.__lastReportHeader||[]; const rows = window.__lastReportRows||[];
@@ -2102,18 +3867,54 @@ function exportCSV(){
   const link = document.createElement("a"); link.href=url; link.download="upstage_report.csv"; link.click();
   audit(DB.session.name,"Exported report","Reports",`${rows.length} rows`); save();
 }
+function exportPDF(){
+ const {jsPDF}=window.jspdf,doc=new jsPDF();
+ const header=window.__lastReportHeader||[],rows=window.__lastReportRows||[];
+ doc.setFontSize(16);doc.text("Upstage Co Report",14,18);
+ doc.setFontSize(10);
+
+ let y=30;
+ doc.text(header.join("     "),14,y);y+=8;
+
+ rows.forEach(r=>{
+  doc.text(r.map(v=>String(v)).join("     "),14,y);
+  y+=7;
+  if(y>280){doc.addPage();y=20;}
+ });
+
+ doc.save("upstage_report.pdf");
+ audit(DB.session.name,"Exported PDF report","Reports",rows.length+" rows");
+}
 
 /* ---------------- boot ---------------- */
 window.addEventListener("resize", render);
 render();
 setInterval(()=>{
-  const el = document.getElementById("statusTimer");
-  if(!el) return;
-  const since = el.dataset.since;
-  if(!since) return;
-  const secs = Math.floor((Date.now()-new Date(since).getTime())/1000);
-  el.textContent = hmsLive(secs);
-}, 1000);
+ const el = document.getElementById("statusTimer");
+ if(!el) return;
+ const since = el.dataset.since;
+ if(!since) return;
+ const secs = Math.floor((Date.now()-new Date(since).getTime())/1000);
+ el.textContent = hmsLive(secs);
+},1000);
 </script>
+
+<!-- Supabase Connection -->
+ <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+<script>
+  const SUPABASE_URL = "https://qtdziqikffwkevlwqbnp.supabase.co";
+  const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_-3QrlsU_0_9usnNlDouX2A_Ifke8FeN";
+
+  const supabaseClient = supabase.createClient(
+    SUPABASE_URL,
+    SUPABASE_PUBLISHABLE_KEY
+  );
+
+  console.log("Supabase client connected.");
+</script>
+
+
 </body>
 </html>
