@@ -484,7 +484,7 @@ async function updateCompanySetting(column,value,localKey){
   return false;
  }
 }
-async function syncTimeDataFromSupabase(employeeId){
+async function syncTimeDataFromSupabase(employeeId, includeAllWorklogs=false, requireAuditSync=false){
 
   const { data: attendanceRows, error: attendanceError } =
     await supabaseClient
@@ -660,11 +660,9 @@ DB.jobs = jobRows.map(j => ({
   .filter(a => a.job_id === j.id)
   .map(a => a.employee_id)
 }));
+const worklogQuery=supabaseClient.from("worklogs").select("*");
 const { data: worklogRows, error: worklogSyncError } =
-  await supabaseClient
-    .from("worklogs")
-    .select("*")
-    .eq("employee_id", employeeId)
+  await (includeAllWorklogs ? worklogQuery : worklogQuery.eq("employee_id", employeeId))
     .order("start_time", { ascending: true });
 
 if(worklogSyncError){
@@ -682,7 +680,8 @@ DB.worklogs = worklogRows.map(w => ({
   finish: w.finish_time,
   notes: w.notes,
   photos: w.photos,
-  photoData: w.photo_data
+  photoData: w.photo_data,
+  photoPath: w.photo_path
 }));
 DB.worklogs = worklogRows.map(w => ({
   id: w.id,
@@ -694,7 +693,8 @@ DB.worklogs = worklogRows.map(w => ({
   finish: w.finish_time,
   notes: w.notes,
   photos: w.photos,
-  photoData: w.photo_data
+  photoData: w.photo_data,
+  photoPath: w.photo_path
 }));
 
 // Load permanent job change history
@@ -740,10 +740,11 @@ const {data:auditRows,error:auditError}=await supabaseClient
 
 if(auditError){
   console.error("Audit log sync error:",auditError);
+  if(requireAuditSync) throw auditError;
 }else{
   DB.auditLogs=auditRows.map(a=>({
     id:a.id,actor:a.actor,action:a.action,target:a.target,
-    detail:a.detail,userId:a.user_id,ts:a.created_at
+    detail:a.detail,worklogId:a.worklog_id||null,userId:a.user_id,ts:a.created_at
   }));
 }
 
@@ -821,26 +822,27 @@ const SELF_SERVICE_ROUTES = ["emp-home","job-select","worklog","worklog-add","wo
 function hasFieldAccess(){ const e = currentEmployee(); return !!(e && e.fieldRole); }
 function isFieldStaff(e){ return e.permission==="Employee" || e.permission==="Manager" || !!e.fieldRole; }
 function firstAllowedTab(role){ return (ROLE_TAB_ACCESS[role]||["admin-dashboard"])[0]; }
-async function audit(actor,action,target,detail){
+async function audit(actor,action,target,detail,worklogId=null){
   const ts=nowISO(),id=uid("aud");
   const {data:{user},error:userError}=await supabaseClient.auth.getUser();
 
   if(userError||!user){
     console.error("Audit user error:",userError);
-    return;
+    return false;
   }
 
-  const {error}=await supabaseClient.from("audit_logs").insert({
-    id,actor,action,target,detail,user_id:user.id,created_at:ts
-  });
+  const auditRow={id,actor,action,target,detail,user_id:user.id,created_at:ts};
+  if(worklogId) auditRow.worklog_id=worklogId;
+  const {error}=await supabaseClient.from("audit_logs").insert(auditRow);
 
   if(error){
     console.error("Audit save error:",error);
-    return;
+    return false;
   }
 
-  DB.auditLogs.unshift({id,actor,action,target,detail,ts});
-  save();
+  DB.auditLogs.unshift({id,actor,action,target,detail,worklogId,ts});
+  try{save();}catch(cacheError){console.error("Audit cache error:",cacheError);}
+  return true;
 }
 
 async function recordJobHistory(jobId, action, detail){
@@ -897,6 +899,7 @@ async function recordJobHistory(jobId, action, detail){
 
 /* ---------------- Router / State ---------------- */
 let route = {name:"login"};
+let adminAuditSyncState="idle";
 let toastTimer = null;
 function toast(msg){
   const el = document.createElement("div");
@@ -905,7 +908,11 @@ function toast(msg){
   clearTimeout(toastTimer);
   setTimeout(()=>el.remove(), 2600);
 }
-function go(name, params={}){ route = {name, ...params}; render(); window.scrollTo(0,0); }
+function go(name, params={}){
+  if(route.name==="worklog-add" && name!=="worklog-add") clearWorklogPhotoSelection();
+  if(route.name==="worklog-detail" && (name!=="worklog-detail" || route.id!==params.id)) clearWorklogDetailPhoto();
+  route = {name, ...params}; render(); window.scrollTo(0,0);
+}
 
 function currentEmployee(){ return DB.employees.find(e=>e.id===DB.session?.employeeId); }
 function isWide(){ return document.body.classList.contains("wide"); }
@@ -1062,7 +1069,7 @@ function requireLocation(onSuccess, actionLabel){
   })();
 }
 
-/* ---------------- Gallery photo picker (work log photos only) ---------------- */
+/* ---------------- Gallery photo picker (job reference photos) ---------------- */
 function openGalleryPhoto(onCapture, title){
   const wrap = document.createElement("div");
   wrap.className = "modal-bg";
@@ -1089,6 +1096,101 @@ function openGalleryPhoto(onCapture, title){
     reader.onload = ()=>{ wrap.remove(); onCapture(reader.result); };
     reader.readAsDataURL(file);
   });
+}
+const worklogPhotoSelection = {file:null, extension:null, previewUrl:null};
+function clearWorklogPhotoSelection(){
+  if(worklogPhotoSelection.previewUrl) URL.revokeObjectURL(worklogPhotoSelection.previewUrl);
+  worklogPhotoSelection.file=null;
+  worklogPhotoSelection.extension=null;
+  worklogPhotoSelection.previewUrl=null;
+}
+async function validateWorklogPhoto(file){
+  const extensions={"image/jpeg":"jpg","image/png":"png","image/webp":"webp"};
+  if(!file || !file.size) throw new Error("Choose a non-empty photo.");
+  if(!extensions[file.type]) throw new Error("Choose a JPEG, PNG, or WebP photo.");
+  if(file.size>5242880) throw new Error("Photo must be 5 MiB or smaller.");
+  const bytes=new Uint8Array(await file.slice(0,12).arrayBuffer());
+  const text=(from,to)=>String.fromCharCode(...bytes.slice(from,to));
+  const valid=file.type==="image/jpeg" ? bytes[0]===0xff&&bytes[1]===0xd8&&bytes[2]===0xff
+    : file.type==="image/png" ? text(0,8)==="\x89PNG\r\n\x1a\n"
+    : text(0,4)==="RIFF"&&text(8,12)==="WEBP";
+  if(!valid) throw new Error("Photo file does not match its image type.");
+  const previewUrl=URL.createObjectURL(file);
+  try{
+    const image=new Image();
+    await new Promise((resolve,reject)=>{image.onload=resolve;image.onerror=reject;image.src=previewUrl;});
+    if(!image.naturalWidth || !image.naturalHeight) throw new Error("Invalid image dimensions");
+    return {extension:extensions[file.type],previewUrl};
+  }catch(error){
+    URL.revokeObjectURL(previewUrl);
+    throw new Error("Photo could not be opened. Choose another image.");
+  }
+}
+function openWorklogPhotoPicker(onSelect){
+  const wrap=document.createElement("div"); wrap.className="modal-bg";
+  wrap.innerHTML=`<div class="modal">
+    <div class="row-between" style="margin-bottom:12px;"><div class="h2">Job Photo</div><button class="btn btn-ghost btn-sm" id="wlPhotoCancel">Cancel</button></div>
+    <div class="col gap-12" style="align-items:center;text-align:center;padding:14px 0;">
+      <div class="muted small">Choose a photo from your device's gallery.</div>
+      <input type="file" accept="image/jpeg,image/png,image/webp" id="wlPhotoInput" style="display:none;">
+      <button class="btn btn-accent btn-block btn-lg" id="wlPhotoPick">Choose from Gallery</button>
+    </div></div>`;
+  document.body.appendChild(wrap);
+  let cancelled=false;
+  wrap.querySelector("#wlPhotoCancel").onclick=()=>{cancelled=true;wrap.remove();};
+  wrap.querySelector("#wlPhotoPick").onclick=()=>wrap.querySelector("#wlPhotoInput").click();
+  wrap.querySelector("#wlPhotoInput").onchange=async e=>{
+    const file=e.target.files?.[0];
+    if(!file) return;
+    e.target.disabled=true;
+    try{
+      const {extension,previewUrl}=await validateWorklogPhoto(file);
+      if(cancelled || route.name!=="worklog-add"){
+        URL.revokeObjectURL(previewUrl);
+        return;
+      }
+      wrap.remove();
+      onSelect(file,extension,previewUrl);
+    }catch(error){toast(error.message);e.target.value="";}
+    finally{e.target.disabled=false;}
+  };
+}
+const worklogDetailPhoto={id:null,path:null,url:null,status:"idle",token:0};
+function clearWorklogDetailPhoto(){
+  worklogDetailPhoto.token++;
+  if(worklogDetailPhoto.url) URL.revokeObjectURL(worklogDetailPhoto.url);
+  worklogDetailPhoto.id=null;
+  worklogDetailPhoto.path=null;
+  worklogDetailPhoto.url=null;
+  worklogDetailPhoto.status="idle";
+}
+async function loadWorklogDetailPhoto(w){
+  if(worklogDetailPhoto.id===w.id && worklogDetailPhoto.path===w.photoPath && worklogDetailPhoto.status!=="idle") return;
+  clearWorklogDetailPhoto();
+  worklogDetailPhoto.id=w.id;
+  worklogDetailPhoto.path=w.photoPath;
+  worklogDetailPhoto.status="loading";
+  const token=worklogDetailPhoto.token;
+  try{
+    const {data,error}=await supabaseClient.storage.from("worklog-photos").download(w.photoPath);
+    if(error || !data) throw error || new Error("Storage download returned no photo");
+    const url=URL.createObjectURL(data);
+    if(token!==worklogDetailPhoto.token || route.name!=="worklog-detail" || route.id!==w.id || worklogDetailPhoto.path!==w.photoPath){
+      URL.revokeObjectURL(url);
+      return;
+    }
+    worklogDetailPhoto.url=url;
+    worklogDetailPhoto.status="ready";
+    render();
+  }catch(error){
+    console.error("Worklog photo download error:",{worklogId:w.id,photoPath:w.photoPath,error});
+    if(token===worklogDetailPhoto.token && route.name==="worklog-detail" && route.id===w.id){
+      if(worklogDetailPhoto.url) URL.revokeObjectURL(worklogDetailPhoto.url);
+      worklogDetailPhoto.url=null;
+      worklogDetailPhoto.status="error";
+      render();
+    }
+  }
 }
 
 /* =====================================================================
@@ -1198,9 +1300,10 @@ function bindLogin(){
       return;
     }
 
+    adminAuditSyncState="idle";
     try{
   await syncCompanySettings();
-  await syncTimeDataFromSupabase(profile.id);
+  await syncTimeDataFromSupabase(profile.id,profile.permission==="Super Admin");
   if(isAdminRole(profile.permission)) await syncAdminJobTimeEntries();
 }catch(error){
   console.error("Initial data sync failed:", error);
@@ -1838,7 +1941,11 @@ function screenWorklogDetail(){
       ${w.notes? `<div class="muted small" style="margin-top:8px;">Notes</div><div class="small">${escapeHtml(w.notes)}</div>`:""}
     </div>
     <div class="h3" style="margin-bottom:8px;">PHOTO SUBMITTED</div>
-    ${w.photoData? `<img src="${w.photoData}" style="width:100%;border-radius:12px;border:1px solid var(--line);">` : `<div class="empty small">No photo was attached to this entry.</div>`}
+    ${w.photoPath ? (
+      worklogDetailPhoto.id===w.id && worklogDetailPhoto.path===w.photoPath && worklogDetailPhoto.status==="ready"
+        ? `<img src="${worklogDetailPhoto.url}" style="width:100%;border-radius:12px;border:1px solid var(--line);">`
+        : `<div class="empty small">${worklogDetailPhoto.id===w.id && worklogDetailPhoto.status==="error"?'Photo could not be loaded.':'Loading photo…'}</div>`
+    ) : w.photoData? `<img src="${w.photoData}" style="width:100%;border-radius:12px;border:1px solid var(--line);">` : `<div class="empty small">No photo was attached to this entry.</div>`}
   </div>`;
 }
 function screenWorklogAdd(){
@@ -2155,6 +2262,11 @@ function screenPrivacy(){
 /* ---------------- Screen event binding (employee) ---------------- */
 function bindScreen(){
   const $ = id=>document.getElementById(id);
+  if(route.name==="worklog-detail"){
+    const w=DB.worklogs.find(x=>x.id===route.id);
+    if(w?.photoPath) loadWorklogDetailPhoto(w);
+    else if(worklogDetailPhoto.id) clearWorklogDetailPhoto();
+  }
   document.querySelectorAll("[data-start-job]").forEach(b=>b.onclick=()=>startJobTracking(b.dataset.startJob));
   document.querySelectorAll("[data-end-job]").forEach(b=>b.onclick=()=>endJobTracking(b.dataset.endJob));
   if($("back") && SELF_SERVICE_ROUTES.includes(route.name)) $("back").onclick = ()=> {
@@ -2202,16 +2314,18 @@ function bindScreen(){
   if($("ackBtn")) $("ackBtn").onclick = ()=> { toast("Acknowledged"); go(PRIVACY_FROM_LOGIN? "login" : "profile"); PRIVACY_FROM_LOGIN=false; };
 
   if($("wlPhotoBtn")){
-    $("wlPhotoBtn").onclick = ()=> openGalleryPhoto((photo)=>{
-      window.__wlPhotoData = photo;
-      $("wlPhotoPreview").innerHTML = `<img src="${photo}" class="photo-thumb">`;
-    }, "Job Photo");
+    if(worklogPhotoSelection.previewUrl) $("wlPhotoPreview").innerHTML=`<img src="${worklogPhotoSelection.previewUrl}" class="photo-thumb">`;
+    $("wlPhotoBtn").onclick = ()=> openWorklogPhotoPicker((file,extension,previewUrl)=>{
+      clearWorklogPhotoSelection();
+      worklogPhotoSelection.file=file;
+      worklogPhotoSelection.extension=extension;
+      worklogPhotoSelection.previewUrl=previewUrl;
+      $("wlPhotoPreview").innerHTML = `<img src="${previewUrl}" class="photo-thumb">`;
+    });
   }
   if($("wlTaskPreset")) $("wlTaskPreset").onchange = ()=>{ if($("wlTaskPreset").value) $("wlTask").value = $("wlTaskPreset").value; };
   if($("wlSave")){
-    window.__wlPhotoData = null;
     $("wlSave").onclick = async ()=>{
-      console.log("Worklog save clicked");
       const emp = currentEmployee();
       const jobId = $("wlJob").value, task = $("wlTask").value || $("wlTaskPreset").value;
          if(!task){ toast("Add a task description"); return; }
@@ -2221,7 +2335,8 @@ function bindScreen(){
       const start = new Date(today); start.setHours(sh,sm,0,0);
       const finish = $("wlFinish").value ? (()=>{const d=new Date(today); d.setHours(fh,fm,0,0); return d;})() : null;
       const openAtt = empOpenAttendance(emp.id);
-      const photoData = window.__wlPhotoData||null;
+      const photoFile = worklogPhotoSelection.file;
+      const photoExtension = worklogPhotoSelection.extension;
       const selectedJob = DB.jobs.find(j=>j.id===jobId);
 
 if(!selectedJob){
@@ -2231,12 +2346,39 @@ if(!selectedJob){
 
 const isAssignedJob = selectedJob.assigned.includes(emp.id);
 
-if(!isAssignedJob && !photoData){
+if(!isAssignedJob && !photoFile){
      toast("A photo is required when adding a work log for an unassigned job.");
   return;
 }
+      if(photoFile && !window.crypto?.randomUUID){toast("Secure photo upload is unavailable in this browser.");return;}
+      const worklogId=photoFile?crypto.randomUUID():uid("wl");
+      let photoPath=null;
+      let photoUploaded=false;
+      let worklogInserted=false;
+      const saveButton=$("wlSave");
+      const photoButton=$("wlPhotoBtn");
+      saveButton.disabled=true;
+      photoButton.disabled=true;
+      try{
+        if(photoFile){
+          const {data:{user},error:authError}=await supabaseClient.auth.getUser();
+          if(authError || !user){
+            console.error("Worklog photo authentication error:",authError);
+            toast("Sign in again before uploading a photo.");
+            return;
+          }
+          photoPath=`${user.id}/${worklogId}/${crypto.randomUUID()}.${photoExtension}`;
+          const {error:uploadError}=await supabaseClient.storage.from("worklog-photos")
+            .upload(photoPath,photoFile,{contentType:photoFile.type,upsert:false});
+          if(uploadError){
+            console.error("Worklog photo upload error:",{worklogId,photoPath,error:uploadError});
+            toast("Photo upload failed. Work entry was not saved.");
+            return;
+          }
+          photoUploaded=true;
+        }
       const worklog = {
-  id: uid("wl"),
+  id: worklogId,
   attendanceId: openAtt ? openAtt.id : null,
   employeeId: emp.id,
   jobId,
@@ -2244,11 +2386,11 @@ if(!isAssignedJob && !photoData){
   start: start.toISOString(),
   finish: finish ? finish.toISOString() : null,
   notes: $("wlNotes").value,
-  photos: photoData ? 1 : 0,
-  photoData
+  photos: photoPath ? 1 : 0,
+  photoData:null,
+  photoPath
 };
 
-console.log("About to save worklog:", worklog);
 const { error: worklogError } = await supabaseClient
   .from("worklogs")
   .insert({
@@ -2261,19 +2403,27 @@ const { error: worklogError } = await supabaseClient
     finish_time: worklog.finish,
     notes: worklog.notes,
     photos: worklog.photos,
-    photo_data: worklog.photoData
+    photo_data: null,
+    photo_path: worklog.photoPath
   });
 
 if(worklogError){
-  console.error("Supabase work log error:", worklogError);
-  toast("Work entry could not be saved. Please try again.");
+  console.error("Supabase work log error:",{worklogId,photoPath,error:worklogError});
+  toast(photoPath?"Work entry could not be saved; the uploaded photo may need cleanup.":"Work entry could not be saved. Please try again.");
   return;
 }
 
+worklogInserted=true;
 DB.worklogs.push(worklog);
-      audit(emp.name,"Added work log entry",jobName(jobId),task);
-      window.__wlPhotoData = null;
-      save(); toast("Work entry saved"); go("worklog");
+      let auditSaved=false;
+      try{auditSaved=await audit(emp.name,"Added work log entry",jobName(jobId),task,worklog.id);}
+      catch(auditError){console.error("Worklog audit error:",{worklogId,error:auditError});}
+      try{save();}catch(cacheError){console.error("Worklog cache error:",cacheError);}
+      toast(auditSaved?"Work entry saved":"Work entry saved, but Audit Log link could not be recorded."); go("worklog");
+      }catch(error){
+        console.error("Worklog save error:",{worklogId,photoPath,error});
+        toast(worklogInserted?"Work entry saved, but the screen could not update.":photoUploaded?"Work entry could not be confirmed; the uploaded photo may need cleanup.":photoFile?"Photo upload failed. Work entry was not saved.":"Work entry could not be saved. Please try again.");
+      }finally{saveButton.disabled=false;photoButton.disabled=false;}
     };
   }
   document.querySelectorAll("[data-wl-detail]").forEach(el=> el.onclick = ()=> go("worklog-detail",{id:el.dataset.wlDetail, back:{name:route.name, params:route}}));
@@ -2303,7 +2453,10 @@ function renderAdminShell(){
   const tabs = allTabs.filter(([k])=> k==="emp-home" ? fieldAccess : canAccess(k));
   const detailExceptions = ["admin-att-detail","admin-employee-detail","admin-job-detail","privacy"];
   const selfServiceOk = fieldAccess && SELF_SERVICE_ROUTES.includes(route.name);
-  if(!canAccess(route.name) && !detailExceptions.includes(route.name) && !selfServiceOk){
+  const auditWorklogOk = route.name==="worklog-detail" && route.back?.name==="admin-audit"
+    && canAccess("admin-audit") && DB.auditLogs.some(a=>a.action==="Added work log entry" && a.worklogId===route.id)
+    && DB.worklogs.some(w=>w.id===route.id);
+  if(!canAccess(route.name) && !detailExceptions.includes(route.name) && !selfServiceOk && !auditWorklogOk){
     route = {name: firstAllowedTab(DB.session.role)};
   }
   const body = ({
@@ -2352,7 +2505,7 @@ function renderAdminShell(){
 }
 function bindAdminShell(){
   document.querySelectorAll("[data-nav]").forEach(b=> b.onclick = ()=> go(b.dataset.nav));
-  const lo=document.getElementById("logoutBtn"); if(lo) lo.onclick=async()=>{ await audit(DB.session.name,"Logged out",`${DB.session.role} session`,""); const {error}=await supabaseClient.auth.signOut(); if(error){console.error("Logout error:",error);toast("Unable to log out. Please try again.");return;} DB.session=null; save(); go("login"); };
+  const lo=document.getElementById("logoutBtn"); if(lo) lo.onclick=async()=>{ await audit(DB.session.name,"Logged out",`${DB.session.role} session`,""); const {error}=await supabaseClient.auth.signOut(); if(error){console.error("Logout error:",error);toast("Unable to log out. Please try again.");return;} DB.session=null; adminAuditSyncState="idle"; save(); go("login"); };
   if(SELF_SERVICE_ROUTES.includes(route.name)){ bindScreen(); }
   else { bindAdminScreen(); }
 }
@@ -2895,14 +3048,21 @@ function buildNotifications(){
 }
 
 function screenAdminAudit(){
+  if(adminAuditSyncState!=="ready") return `
+  <div class="topbar"><div class="h2">Audit Log</div></div>
+  <div class="content"><div class="empty small">${adminAuditSyncState==="error"?'Could not refresh Audit Log.':'Loading Audit Log…'}</div>
+    ${adminAuditSyncState==="error"?'<button class="btn btn-ghost btn-block" id="retryAuditSync">Retry</button>':''}</div>`;
   return `
   <div class="topbar"><div class="h2">Audit Log</div></div>
   <div class="content">
-    ${DB.auditLogs.map(a=>`<div class="card card-tight" style="margin-bottom:8px;">
+    ${DB.auditLogs.map(a=>{
+      const worklog=a.action==="Added work log entry" && a.worklogId
+        ? DB.worklogs.find(w=>w.id===a.worklogId) : null;
+      return `<div class="card card-tight" style="margin-bottom:8px;${worklog?'cursor:pointer;':''}" ${worklog?`data-audit-worklog="${escapeHtml(worklog.id)}" role="button" tabindex="0"`:''}>
       <div class="row-between"><b class="small">${escapeHtml(a.actor)}</b><span class="tiny muted">${new Date(a.ts).toLocaleString()}</span></div>
       <div class="small">${escapeHtml(a.action)} <span class="muted">— ${escapeHtml(a.target)}</span></div>
       ${a.detail? `<div class="tiny muted" style="margin-top:2px;">${escapeHtml(a.detail)}</div>`:""}
-    </div>`).join("")}
+    </div>`;}).join("")}
   </div>`;
 }
 
@@ -2990,6 +3150,13 @@ function screenAdminSettings(){
 /* ---------------- Admin bindings ---------------- */
 function bindAdminScreen(){
   const $ = id=>document.getElementById(id);
+  if(route.name==="admin-audit" && adminAuditSyncState==="idle"){
+    adminAuditSyncState="loading";
+    syncTimeDataFromSupabase(DB.session.employeeId,DB.session.role==="Super Admin",true)
+      .then(()=>{adminAuditSyncState="ready";if(route.name==="admin-audit") render();})
+      .catch(error=>{console.error("Audit Log refresh error:",error);adminAuditSyncState="error";if(route.name==="admin-audit") render();});
+  }
+  if($("retryAuditSync")) $("retryAuditSync").onclick=()=>{adminAuditSyncState="idle";render();};
   if($("back")) $("back").onclick=()=>go(route.name==="admin-att-detail"?"admin-timesheets":route.name==="admin-employee-detail"?"admin-employees":"admin-dashboard");
 
   document.querySelectorAll("[data-nav]").forEach(b=> b.onclick = ()=> go(b.dataset.nav));
@@ -2997,6 +3164,15 @@ function bindAdminScreen(){
   document.querySelectorAll("[data-job2]").forEach(c=> c.onclick = ()=> go("admin-job-detail",{id:c.dataset.job2}));
   document.querySelectorAll("[data-att]").forEach(el=> el.onclick = ()=> go("admin-att-detail",{id:el.dataset.att}));
   document.querySelectorAll("[data-wl-detail]").forEach(el=> el.onclick = ()=> go("worklog-detail",{id:el.dataset.wlDetail, back:{name:route.name, params:route}}));
+  document.querySelectorAll("[data-audit-worklog]").forEach(el=>{
+    const open=()=>{
+      const id=el.dataset.auditWorklog;
+      if(!DB.worklogs.find(w=>w.id===id)){toast("Work entry is unavailable.");return;}
+      go("worklog-detail",{id,back:{name:"admin-audit"}});
+    };
+    el.onclick=open;
+    el.onkeydown=e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();open();}};
+  });
 
   if($("addEmp")) $("addEmp").onclick = ()=> modalAddEmployee();
   if($("addJob")) $("addJob").onclick = ()=> modalAddJob();
