@@ -536,112 +536,58 @@ async function syncAuditLogDataFromSupabase(employeeId,includeAllWorklogs=false)
  await syncAuditLogsFromSupabase(true);
  save();
 }
+async function fetchCoreTimeFromSupabase(employeeId,includeAll=false){
+ const attendanceQuery=supabaseClient.from("attendance").select("*");
+ const {data:attendanceRows,error:attendanceError}=await
+   (includeAll?attendanceQuery:attendanceQuery.eq("employee_id",employeeId))
+     .order("time_in",{ascending:!includeAll});
+ if(attendanceError){console.error("Attendance sync error:",attendanceError);throw attendanceError;}
+ const ids=attendanceRows.map(a=>a.id);
+ let breakRows=[];
+ if(ids.length){
+   const {data,error}=await supabaseClient.from("breaks").select("*")
+     .in("attendance_id",ids).order("start_time",{ascending:true});
+   if(error){console.error("Break sync error:",error);throw error;}
+   breakRows=data;
+ }
+ const timeQuery=supabaseClient.from("job_time_entries").select("*");
+ const {data:timeRows,error:timeError}=await
+   (includeAll?timeQuery:timeQuery.eq("employee_id",employeeId))
+     .order("start_time",{ascending:false});
+ if(timeError){console.error("Job time sync error:",timeError);throw timeError;}
+ const breaks=breakRows.map(b=>({
+   id:b.id,attendanceId:b.attendance_id,type:b.type,start:b.start_time,end:b.end_time,paid:b.paid,
+   gpsStart:{lat:b.gps_start_lat,lng:b.gps_start_lng},
+   gpsEnd:b.end_time?{lat:b.gps_end_lat,lng:b.gps_end_lng}:null
+ }));
+ const attendance=attendanceRows.map(a=>({
+   id:a.id,employeeId:a.employee_id,jobId:a.job_id,category:a.category,
+   timeIn:a.time_in,timeOut:a.time_out,photoIn:a.photo_in,photoOut:a.photo_out,
+   gpsIn:{lat:a.gps_in_lat,lng:a.gps_in_lng,address:a.gps_in_address},
+   gpsOut:a.time_out?{lat:a.gps_out_lat,lng:a.gps_out_lng,address:a.gps_out_address}:null,
+   geofence:a.geofence,device:a.device,grossMin:a.gross_minutes,
+   unpaidBreakMin:a.unpaid_break_minutes,paidBreakMin:a.paid_break_minutes,
+   netMin:a.net_minutes,status:a.status,source:a.source,summary:a.summary,
+   rejectionReason:a.rejection_reason,updatedAt:a.updated_at,
+   overtimeConfirmedAt:a.overtime_confirmed_at,
+   breakIds:breaks.filter(b=>b.attendanceId===a.id).map(b=>b.id)
+ }));
+ const jobTimeEntries=timeRows.map(t=>({
+   id:t.id,employeeId:t.employee_id,jobId:t.job_id,startTime:t.start_time,
+   endTime:t.end_time,durationSeconds:t.duration_seconds,endReason:t.end_reason,
+   switchedToJobId:t.switched_to_job_id
+ }));
+ return {attendance,breaks,jobTimeEntries};
+}
+async function syncCoreTimeFromSupabase(employeeId,includeAll=false){
+ Object.assign(DB,await fetchCoreTimeFromSupabase(employeeId,includeAll));
+ save();
+}
 async function syncTimeDataFromSupabase(employeeId, includeAllWorklogs=false){
 
-  const { data: attendanceRows, error: attendanceError } =
-    await supabaseClient
-      .from("attendance")
-      .select("*")
-      .eq("employee_id", employeeId)
-      .order("time_in", { ascending: true });
-
-  if(attendanceError){
-    console.error("Attendance sync error:", attendanceError);
-    throw attendanceError;
-  }
-
-  const attendanceIds = attendanceRows.map(a => a.id);
-
-  let breakRows = [];
-
-  if(attendanceIds.length){
-    const { data, error: breaksError } =
-      await supabaseClient
-        .from("breaks")
-        .select("*")
-        .in("attendance_id", attendanceIds)
-        .order("start_time", { ascending: true });
-
-    if(breaksError){
-      console.error("Break sync error:", breaksError);
-      throw breaksError;
-    }
-
-    breakRows = data;
-  }
-
-  DB.breaks = breakRows.map(b => ({
-    id: b.id,
-    attendanceId: b.attendance_id,
-    type: b.type,
-    start: b.start_time,
-    end: b.end_time,
-    paid: b.paid,
-    gpsStart: {
-      lat: b.gps_start_lat,
-      lng: b.gps_start_lng
-    },
-    gpsEnd: b.end_time ? {
-      lat: b.gps_end_lat,
-      lng: b.gps_end_lng
-    } : null
-  }));
-
-  DB.attendance = attendanceRows.map(a => ({
-    id: a.id,
-    employeeId: a.employee_id,
-    jobId: a.job_id,
-    category: a.category,
-    timeIn: a.time_in,
-    timeOut: a.time_out,
-    photoIn: a.photo_in,
-    photoOut: a.photo_out,
-
-    gpsIn: {
-      lat: a.gps_in_lat,
-      lng: a.gps_in_lng,
-      address: a.gps_in_address
-    },
-
-    gpsOut: a.time_out ? {
-      lat: a.gps_out_lat,
-      lng: a.gps_out_lng,
-      address: a.gps_out_address
-    } : null,
-
-    geofence: a.geofence,
-    device: a.device,
-    grossMin: a.gross_minutes,
-    unpaidBreakMin: a.unpaid_break_minutes,
-    paidBreakMin: a.paid_break_minutes,
-    netMin: a.net_minutes,
-    status: a.status,
-    source: a.source,
-    summary: a.summary,
-    rejectionReason:a.rejection_reason,
-    updatedAt: a.updated_at,
-    overtimeConfirmedAt: a.overtime_confirmed_at,
-
-    breakIds: DB.breaks
-      .filter(b => b.attendanceId === a.id)
-      .map(b => b.id)
-  }));
+ await syncCoreTimeFromSupabase(employeeId);
 
 await syncRosterJobsFromSupabase();
-
-// Load employee job time entries
-const { data: timeRows, error: timeError } = await supabaseClient
-  .from("job_time_entries").select("*").eq("employee_id",employeeId)
-  .order("start_time",{ascending:false});
-
-if(timeError){ console.error("Job time sync error:",timeError); throw timeError; }
-
-DB.jobTimeEntries = timeRows.map(t=>({
-  id:t.id, employeeId:t.employee_id, jobId:t.job_id,
-  startTime:t.start_time, endTime:t.end_time,
-  durationSeconds:t.duration_seconds, endReason:t.end_reason,
-  switchedToJobId:t.switched_to_job_id
-}));
 
 await syncWorklogsFromSupabase(employeeId,includeAllWorklogs);
 
@@ -702,43 +648,95 @@ save();
 );
 }
 async function syncAdminJobTimeEntries(){
-  const {data:attendanceRows,error:attendanceError}=await supabaseClient.from("attendance").select("*").order("time_in",{ascending:false});
-  if(attendanceError){console.error("Admin attendance sync error:",attendanceError);throw attendanceError;}
-
-  const ids=attendanceRows.map(a=>a.id);
-  let breakRows=[];
-  if(ids.length){
-    const {data,error}=await supabaseClient.from("breaks").select("*").in("attendance_id",ids).order("start_time",{ascending:true});
-    if(error){console.error("Admin break sync error:",error);throw error;}
-    breakRows=data;
-  }
-
-  DB.breaks=breakRows.map(b=>({
-    id:b.id,attendanceId:b.attendance_id,type:b.type,start:b.start_time,end:b.end_time,paid:b.paid,
-    gpsStart:{lat:b.gps_start_lat,lng:b.gps_start_lng},
-    gpsEnd:b.end_time?{lat:b.gps_end_lat,lng:b.gps_end_lng}:null
-  }));
-
-  DB.attendance=attendanceRows.map(a=>({
-    id:a.id,employeeId:a.employee_id,jobId:a.job_id,category:a.category,timeIn:a.time_in,timeOut:a.time_out,
-    photoIn:a.photo_in,photoOut:a.photo_out,
-    gpsIn:{lat:a.gps_in_lat,lng:a.gps_in_lng,address:a.gps_in_address},
-    gpsOut:a.time_out?{lat:a.gps_out_lat,lng:a.gps_out_lng,address:a.gps_out_address}:null,
-    geofence:a.geofence,device:a.device,grossMin:a.gross_minutes,
-    unpaidBreakMin:a.unpaid_break_minutes,paidBreakMin:a.paid_break_minutes,netMin:a.net_minutes,
-    status:a.status,source:a.source,summary:a.summary,rejectionReason:a.rejection_reason,
-    updatedAt:a.updated_at,overtimeConfirmedAt:a.overtime_confirmed_at,
-    breakIds:DB.breaks.filter(b=>b.attendanceId===a.id).map(b=>b.id)
-  }));
-
-  const {data,error}=await supabaseClient.from("job_time_entries").select("*").order("start_time",{ascending:false});
-  if(error){console.error("Admin job time sync error:",error);throw error;}
-  DB.jobTimeEntries=data.map(t=>({
-    id:t.id,employeeId:t.employee_id,jobId:t.job_id,startTime:t.start_time,endTime:t.end_time,
-    durationSeconds:t.duration_seconds,endReason:t.end_reason,switchedToJobId:t.switched_to_job_id
-  }));
-  save();
+ await syncCoreTimeFromSupabase(null,true);
 }
+
+const coreRealtime={channel:null,userId:null,employeeId:null,role:null,generation:0,
+  timer:null,revision:0,refreshing:false,pending:false,interrupted:false};
+function stopCoreRealtime(){
+  coreRealtime.generation++;
+  clearTimeout(coreRealtime.timer);
+  coreRealtime.timer=null;
+  const channel=coreRealtime.channel;
+  coreRealtime.channel=null;
+  coreRealtime.userId=coreRealtime.employeeId=coreRealtime.role=null;
+  coreRealtime.pending=coreRealtime.refreshing=coreRealtime.interrupted=false;
+  if(channel) supabaseClient.removeChannel(channel).then(status=>{
+    if(status!=="ok") console.error("Core Realtime removal status:",status);
+  }).catch(error=>console.error("Core Realtime removal error:",error));
+}
+function renderCoreTimeIfSafe(){
+  if(document.querySelector(".modal-bg")) return;
+  if(["emp-home","history","timesheet","admin-dashboard","admin-live","admin-timesheets"].includes(route.name)) render();
+}
+function scheduleCoreTimeRefresh(){
+  if(!coreRealtime.channel || !DB.session || DB.session.employeeId!==coreRealtime.employeeId || DB.session.role!==coreRealtime.role) return;
+  coreRealtime.revision++;
+  coreRealtime.pending=true;
+  clearTimeout(coreRealtime.timer);
+  coreRealtime.timer=setTimeout(refreshCoreTimeFromRealtime,300);
+}
+async function refreshCoreTimeFromRealtime(){
+  coreRealtime.timer=null;
+  if(!coreRealtime.pending || coreRealtime.refreshing || !coreRealtime.channel) return;
+  coreRealtime.pending=false;
+  coreRealtime.refreshing=true;
+  const generation=coreRealtime.generation,revision=coreRealtime.revision;
+  const employeeId=coreRealtime.employeeId,role=coreRealtime.role;
+  try{
+    const snapshot=await fetchCoreTimeFromSupabase(employeeId,isAdminRole(role));
+    if(generation!==coreRealtime.generation || revision!==coreRealtime.revision ||
+       DB.session?.employeeId!==employeeId || DB.session?.role!==role) return;
+    Object.assign(DB,snapshot);
+    save();
+    renderCoreTimeIfSafe();
+  }catch(error){
+    if(generation===coreRealtime.generation) console.error("Core Realtime sync error:",error);
+  }finally{
+    if(generation===coreRealtime.generation){
+      coreRealtime.refreshing=false;
+      if(coreRealtime.pending){
+        clearTimeout(coreRealtime.timer);
+        coreRealtime.timer=setTimeout(refreshCoreTimeFromRealtime,300);
+      }
+    }
+  }
+}
+function startCoreRealtime(user,profile){
+  if(!user?.id || !profile?.id || DB.session?.employeeId!==profile.id || DB.session?.role!==profile.permission) return;
+  if(coreRealtime.channel && coreRealtime.userId===user.id &&
+     coreRealtime.employeeId===profile.id && coreRealtime.role===profile.permission) return;
+  stopCoreRealtime();
+  const generation=coreRealtime.generation;
+  coreRealtime.userId=user.id;
+  coreRealtime.employeeId=profile.id;
+  coreRealtime.role=profile.permission;
+  const global=isAdminRole(profile.permission);
+  let channel=supabaseClient.channel(`core-time-${user.id}`);
+  for(const table of ["attendance","breaks","job_time_entries"]){
+    for(const event of ["INSERT","UPDATE"]){
+      const options={event,schema:"public",table};
+      if(!global && table!=="breaks") options.filter=`employee_id=eq.${profile.id}`;
+      channel=channel.on("postgres_changes",options,()=>{
+        if(generation===coreRealtime.generation) scheduleCoreTimeRefresh();
+      });
+    }
+  }
+  coreRealtime.channel=channel;
+  channel.subscribe(status=>{
+    if(generation!==coreRealtime.generation) return;
+    if(status==="SUBSCRIBED"){
+      if(coreRealtime.interrupted) scheduleCoreTimeRefresh();
+      coreRealtime.interrupted=false;
+    }else if(["CHANNEL_ERROR","TIMED_OUT","CLOSED"].includes(status)){
+      coreRealtime.interrupted=true;
+      console.error("Core Realtime channel status:",status);
+    }
+  });
+}
+document.addEventListener("visibilitychange",()=>{
+  if(document.visibilityState==="visible" && coreRealtime.channel) scheduleCoreTimeRefresh();
+});
 
 function isAdminRole(perm){ return perm && perm!=="Employee"; }
 /* Which admin tabs each permission level can see */
@@ -1214,6 +1212,7 @@ async function boot(){
    DB.session={role:profile.permission,employeeId:profile.id,name:profile.name};
    save();
    route={name:isAdminRole(profile.permission)?firstAllowedTab(profile.permission):"emp-home"};
+   startCoreRealtime(user,profile);
  }catch(error){
    console.error("Session restore error:",error);
    DB.session=null;
@@ -1298,6 +1297,8 @@ function bindLogin(){
     );
 
     save();
+
+    startCoreRealtime(authData.user,profile);
 
     go(
       isAdminRole(profile.permission)
@@ -1527,7 +1528,7 @@ async function startJobTracking(jobId){
     });
 
     if(error){console.error("Attendance start error:",error);toast("Could not clock in.");return;}
-    DB.attendance.push(att);
+    if(!DB.attendance.some(a=>a.id===att.id)) DB.attendance.push(att);
   }
 
   const {data,error}=await supabaseClient.from("job_time_entries").insert({
@@ -1536,7 +1537,7 @@ async function startJobTracking(jobId){
 
   if(error){console.error(error);toast("Could not start job.");return;}
 
-  DB.jobTimeEntries.unshift({
+  if(!DB.jobTimeEntries.some(e=>e.id===data.id)) DB.jobTimeEntries.unshift({
     id:data.id,employeeId:data.employee_id,jobId:data.job_id,
     startTime:data.start_time,endTime:data.end_time
   });
@@ -1654,7 +1655,7 @@ if(attendanceError){
   return;
 }
 
-DB.attendance.push(att);
+if(!DB.attendance.some(a=>a.id===att.id)) DB.attendance.push(att);
 
 audit(
   emp.name,
@@ -1717,8 +1718,8 @@ if(breakStartError){
   return;
 }
 
-DB.breaks.push(brk);
-att.breakIds.push(brk.id);
+if(!DB.breaks.some(b=>b.id===brk.id)) DB.breaks.push(brk);
+if(!att.breakIds.includes(brk.id)) att.breakIds.push(brk.id);
       audit(emp.name,"Start Break",jobName(att.jobId),rule.name); save();
       go("emp-home"); toast(`${rule.name} started`);
     }, "Starting a break");
@@ -2280,6 +2281,7 @@ function bindScreen(){
     return;
   }
 
+  stopCoreRealtime();
   DB.session = null;
   save();
   go("login");
@@ -2478,7 +2480,7 @@ function renderAdminShell(){
 }
 function bindAdminShell(){
   document.querySelectorAll("[data-nav]").forEach(b=> b.onclick = ()=> go(b.dataset.nav));
-  const lo=document.getElementById("logoutBtn"); if(lo) lo.onclick=async()=>{ await audit(DB.session.name,"Logged out",`${DB.session.role} session`,""); const {error}=await supabaseClient.auth.signOut(); if(error){console.error("Logout error:",error);toast("Unable to log out. Please try again.");return;} DB.session=null; adminAuditSyncState="idle"; save(); go("login"); };
+  const lo=document.getElementById("logoutBtn"); if(lo) lo.onclick=async()=>{ await audit(DB.session.name,"Logged out",`${DB.session.role} session`,""); const {error}=await supabaseClient.auth.signOut(); if(error){console.error("Logout error:",error);toast("Unable to log out. Please try again.");return;} stopCoreRealtime(); DB.session=null; adminAuditSyncState="idle"; save(); go("login"); };
   if(SELF_SERVICE_ROUTES.includes(route.name)){ bindScreen(); }
   else { bindAdminScreen(); }
 }
@@ -4088,6 +4090,11 @@ setInterval(()=>{
     SUPABASE_PUBLISHABLE_KEY
   );
 
+  supabaseClient.auth.onAuthStateChange((event,session)=>{
+    if(event==="SIGNED_OUT" || (coreRealtime.channel && session?.user?.id && session.user.id!==coreRealtime.userId)){
+      stopCoreRealtime();
+    }
+  });
   console.log("Supabase client connected.");
   boot();
 </script>
