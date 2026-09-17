@@ -50,6 +50,9 @@
   .btn-sm{padding:9px 12px;font-size:13px;border-radius:9px;}
   .row{display:flex;align-items:center;}
   .row-between{display:flex;align-items:center;justify-content:space-between;}
+  .settings-checkbox-row{display:flex;align-items:center;gap:12px;width:100%;margin:0;}
+  .settings-checkbox-row span{flex:1;min-width:0;}
+  .settings-checkbox-row input[type="checkbox"]{width:18px;height:18px;flex:none;margin:0;padding:0;}
   .col{display:flex;flex-direction:column;}
   .gap-8{gap:8px;} .gap-12{gap:12px;} .gap-16{gap:16px;}
   .muted{color:var(--muted);}
@@ -2951,10 +2954,10 @@ function screenAdminSettings(){
 
     <div class="h3" style="margin-bottom:8px;">ATTENDANCE RULES</div>
     <div class="card col gap-12" style="margin-bottom:16px;">
-      <label class="row-between small" style="margin:0;"><span>Require photo</span><input type="checkbox" id="reqPhoto" ${s.requirePhoto?'checked':''}></label>
-      <label class="row-between small" style="margin:0;"><span>Require GPS</span><input type="checkbox" id="reqGps" ${s.requireGPS?'checked':''}></label>
-      <label class="row-between small" style="margin:0;"><span>Enforce geofence (block clock-in outside zone)</span><input type="checkbox" id="reqGeo" ${s.geofenceEnforced?'checked':''}></label>
-      <label class="row-between small" style="margin:0;"><span>Allow gallery photo upload</span><input type="checkbox" id="reqGallery" ${s.galleryUploadAllowed?'checked':''}></label>
+      <label class="settings-checkbox-row small"><span>Require photo</span><input type="checkbox" id="reqPhoto" ${s.requirePhoto?'checked':''}></label>
+      <label class="settings-checkbox-row small"><span>Require GPS</span><input type="checkbox" id="reqGps" ${s.requireGPS?'checked':''}></label>
+      <label class="settings-checkbox-row small"><span>Enforce geofence (block clock-in outside zone)</span><input type="checkbox" id="reqGeo" ${s.geofenceEnforced?'checked':''}></label>
+      <label class="settings-checkbox-row small"><span>Allow gallery photo upload</span><input type="checkbox" id="reqGallery" ${s.galleryUploadAllowed?'checked':''}></label>
       <div class="row-between small"><span class="muted">Late threshold</span><b>${s.lateThresholdMin} min</b></div>
       <div class="row-between small"><span class="muted">Overtime after</span><b>${s.overtimeThresholdHrs}h/day</b></div>
       <div class="row-between small"><span class="muted">Auto clock-out after</span><b>${s.autoClockOutHrs}h</b></div>
@@ -2972,7 +2975,7 @@ function screenAdminSettings(){
 
     <div class="h3" style="margin-bottom:8px;">NOTIFICATIONS</div>
     <div class="card col" style="margin-bottom:16px;padding:4px 16px;">
-      ${Object.entries(NOTIFICATION_LABELS).map(([k,label],i)=>`<label class="row-between small" style="margin:0;padding:12px 0;${i>0?'border-top:1px solid var(--line);':''}"><span style="padding-right:16px;">${label}</span><input type="checkbox" data-notif="${k}" style="flex-shrink:0;" ${s.notifications[k]?'checked':''}></label>`).join("")}
+      ${Object.entries(NOTIFICATION_LABELS).map(([k,label],i)=>`<label class="settings-checkbox-row small" style="padding:12px 0;${i>0?'border-top:1px solid var(--line);':''}"><span>${label}</span><input type="checkbox" data-notif="${k}" ${s.notifications[k]?'checked':''}></label>`).join("")}
     </div>
     <button class="btn btn-ghost btn-block" id="viewPrivacyAdmin">View Employee Privacy Notice</button>
 
