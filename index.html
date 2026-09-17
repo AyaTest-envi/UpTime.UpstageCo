@@ -459,10 +459,27 @@ async function syncCompanySettings(){
   companyName:s.company_name,timezone:s.timezone,workWeekStart:s.work_week_start,
   standardHours:Number(s.standard_hours),workStartTime:s.work_start_time,
   lateThresholdMin:s.late_threshold_minutes,overtimeStartTime:s.overtime_start_time,
-  overtimeGraceMinutes:s.overtime_grace_minutes,requirePhoto:s.require_photo,
+  overtimeGraceMinutes:s.overtime_grace_minutes,
+  overtimeThresholdHrs:Number(s.overtime_threshold_hours),
+  autoClockOutHrs:Number(s.auto_clock_out_hours),requirePhoto:s.require_photo,
   requireGPS:s.require_gps,geofenceEnforced:s.geofence_enforced,
   galleryUploadAllowed:s.gallery_upload_allowed,backgroundTracking:s.background_tracking
  };
+}
+async function updateCompanySetting(column,value,localKey){
+ try{
+  const {data,error}=await supabaseClient.from("company_settings")
+   .update({[column]:value,updated_at:nowISO()}).eq("id",1).select("id").single();
+  if(error || !data) throw error || new Error("Company settings row was not updated");
+  DB.settings[localKey]=value;
+  save();
+  toast("Company setting saved");
+  return true;
+ }catch(error){
+  console.error("Company setting update error:",error);
+  toast("Could not save company setting");
+  return false;
+ }
 }
 async function syncTimeDataFromSupabase(employeeId){
 
@@ -3107,10 +3124,18 @@ function bindAdminScreen(){
   if($("ackBtn")) $("ackBtn").onclick = ()=> go("admin-settings");
 
   document.querySelectorAll("[data-notif]").forEach(cb=> cb.onchange = ()=>{ DB.settings.notifications[cb.dataset.notif]=cb.checked; save(); });
-  if($("reqPhoto")) $("reqPhoto").onchange = ()=>{ DB.settings.requirePhoto=$("reqPhoto").checked; save(); };
-  if($("reqGps")) $("reqGps").onchange = ()=>{ DB.settings.requireGPS=$("reqGps").checked; save(); };
-  if($("reqGeo")) $("reqGeo").onchange = ()=>{ DB.settings.geofenceEnforced=$("reqGeo").checked; save(); toast("Geofence enforcement " + ($("reqGeo").checked?"enabled":"disabled")); };
-  if($("reqGallery")) $("reqGallery").onchange = ()=>{ DB.settings.galleryUploadAllowed=$("reqGallery").checked; save(); };
+  [["reqPhoto","require_photo","requirePhoto"],["reqGps","require_gps","requireGPS"],
+   ["reqGeo","geofence_enforced","geofenceEnforced"],["reqGallery","gallery_upload_allowed","galleryUploadAllowed"]]
+   .forEach(([id,column,key])=>{
+    const cb=$(id);
+    if(cb) cb.onchange=async()=>{
+     const value=cb.checked;
+     cb.disabled=true;
+     const saved=await updateCompanySetting(column,value,key);
+     if(!saved) cb.checked=DB.settings[key];
+     cb.disabled=false;
+    };
+   });
 
   if($("runReport")) $("runReport").onclick = runReport;
   if($("runPayroll")) $("runPayroll").onclick = ()=>{
