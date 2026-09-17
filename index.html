@@ -506,16 +506,35 @@ async function syncRosterJobsFromSupabase(){
    assigned:assignmentRows.filter(a=>a.job_id===j.id).map(a=>a.employee_id)
  }));
 }
-async function syncWorklogsFromSupabase(employeeId, includeAllWorklogs=false){
+async function fetchWorklogsFromSupabase(employeeId, includeAllWorklogs=false){
  const query=supabaseClient.from("worklogs").select("*");
  const {data,error}=await (includeAllWorklogs?query:query.eq("employee_id",employeeId))
    .order("start_time",{ascending:true});
  if(error){console.error("Worklog sync error:",error);throw error;}
- DB.worklogs=data.map(w=>({
+ return data.map(w=>({
    id:w.id,attendanceId:w.attendance_id,employeeId:w.employee_id,jobId:w.job_id,
    task:w.task,start:w.start_time,finish:w.finish_time,notes:w.notes,
    photos:w.photos,photoData:w.photo_data,photoPath:w.photo_path
  }));
+}
+async function syncWorklogsFromSupabase(employeeId, includeAllWorklogs=false){
+ DB.worklogs=await fetchWorklogsFromSupabase(employeeId,includeAllWorklogs);
+}
+async function fetchCorrectionsFromSupabase(){
+ const {data,error}=await supabaseClient.from("correction_requests").select("*")
+   .order("created_at",{ascending:false});
+ if(error){console.error("Correction request sync error:",error);throw error;}
+ return data.map(c=>({
+   id:c.id,attendanceId:c.attendance_id,employeeId:c.employee_id,
+   type:c.request_type,originalTimeIn:c.original_time_in,
+   originalTimeOut:c.original_time_out,requestedTimeIn:c.requested_time_in,
+   requestedTimeOut:c.requested_time_out,reason:c.reason,status:c.status,
+   reviewedBy:c.reviewed_by,reviewedAt:c.reviewed_at,createdAt:c.created_at
+ }));
+}
+async function syncCorrectionsFromSupabase(){
+ DB.correctionRequests=await fetchCorrectionsFromSupabase();
+ save();
 }
 async function syncAuditLogsFromSupabase(required=false){
  const {data,error}=await supabaseClient.from("audit_logs").select("*")
@@ -613,21 +632,7 @@ DB.jobChangeHistory = jobHistoryRows.map(h => ({
   ts: h.created_at
 }));
 
-const {data:correctionRows,error:correctionError}=await supabaseClient
-  .from("correction_requests").select("*").order("created_at",{ascending:false});
-
-if(correctionError){
-  console.error("Correction request sync error:",correctionError);
-  throw correctionError;
-}
-
-DB.correctionRequests=correctionRows.map(c=>({
-  id:c.id,attendanceId:c.attendance_id,employeeId:c.employee_id,
-  type:c.request_type,originalTimeIn:c.original_time_in,
-  originalTimeOut:c.original_time_out,requestedTimeIn:c.requested_time_in,
-  requestedTimeOut:c.requested_time_out,reason:c.reason,status:c.status,
-  reviewedBy:c.reviewed_by,reviewedAt:c.reviewed_at,createdAt:c.created_at
-}));
+await syncCorrectionsFromSupabase();
 
 await syncAuditLogsFromSupabase();
 
@@ -653,10 +658,15 @@ async function syncAdminJobTimeEntries(){
 
 const coreRealtime={channel:null,userId:null,employeeId:null,role:null,generation:0,
   timer:null,revision:0,refreshing:false,pending:false,interrupted:false};
+const supportRealtime={timer:null,revision:0,refreshing:false,corrections:false,worklogs:false,renderTimer:null};
 function stopCoreRealtime(){
   coreRealtime.generation++;
   clearTimeout(coreRealtime.timer);
+  clearTimeout(supportRealtime.timer);
+  clearTimeout(supportRealtime.renderTimer);
   coreRealtime.timer=null;
+  supportRealtime.timer=supportRealtime.renderTimer=null;
+  supportRealtime.refreshing=supportRealtime.corrections=supportRealtime.worklogs=false;
   const channel=coreRealtime.channel;
   coreRealtime.channel=null;
   coreRealtime.userId=coreRealtime.employeeId=coreRealtime.role=null;
@@ -665,9 +675,15 @@ function stopCoreRealtime(){
     if(status!=="ok") console.error("Core Realtime removal status:",status);
   }).catch(error=>console.error("Core Realtime removal error:",error));
 }
-function renderCoreTimeIfSafe(){
+function renderRealtimeIfSafe(){
+  if(coreRealtime.pending || coreRealtime.refreshing || supportRealtime.refreshing ||
+     supportRealtime.corrections || supportRealtime.worklogs) return;
   if(document.querySelector(".modal-bg")) return;
-  if(["emp-home","history","timesheet","admin-dashboard","admin-live","admin-timesheets"].includes(route.name)) render();
+  if(["emp-home","history","timesheet","worklog","admin-dashboard","admin-live","admin-timesheets"].includes(route.name)) render();
+}
+function scheduleRealtimeRender(){
+  clearTimeout(supportRealtime.renderTimer);
+  supportRealtime.renderTimer=setTimeout(renderRealtimeIfSafe,200);
 }
 function scheduleCoreTimeRefresh(){
   if(!coreRealtime.channel || !DB.session || DB.session.employeeId!==coreRealtime.employeeId || DB.session.role!==coreRealtime.role) return;
@@ -689,7 +705,6 @@ async function refreshCoreTimeFromRealtime(){
        DB.session?.employeeId!==employeeId || DB.session?.role!==role) return;
     Object.assign(DB,snapshot);
     save();
-    renderCoreTimeIfSafe();
   }catch(error){
     if(generation===coreRealtime.generation) console.error("Core Realtime sync error:",error);
   }finally{
@@ -699,6 +714,50 @@ async function refreshCoreTimeFromRealtime(){
         clearTimeout(coreRealtime.timer);
         coreRealtime.timer=setTimeout(refreshCoreTimeFromRealtime,300);
       }
+      scheduleRealtimeRender();
+    }
+  }
+}
+function scheduleSupportRefresh(group){
+  if(!coreRealtime.channel || !DB.session || DB.session.employeeId!==coreRealtime.employeeId || DB.session.role!==coreRealtime.role) return;
+  supportRealtime[group]=true;
+  supportRealtime.revision++;
+  clearTimeout(supportRealtime.timer);
+  supportRealtime.timer=setTimeout(refreshSupportFromRealtime,300);
+}
+async function refreshSupportFromRealtime(){
+  supportRealtime.timer=null;
+  if(supportRealtime.refreshing || !coreRealtime.channel) return;
+  const corrections=supportRealtime.corrections,worklogs=supportRealtime.worklogs;
+  if(!corrections && !worklogs) return;
+  supportRealtime.corrections=supportRealtime.worklogs=false;
+  supportRealtime.refreshing=true;
+  const generation=coreRealtime.generation,revision=supportRealtime.revision;
+  const employeeId=coreRealtime.employeeId,role=coreRealtime.role;
+  try{
+    const [correctionRows,worklogRows]=await Promise.all([
+      corrections?fetchCorrectionsFromSupabase():Promise.resolve(null),
+      worklogs?fetchWorklogsFromSupabase(employeeId,role==="Super Admin"):Promise.resolve(null)
+    ]);
+    if(generation!==coreRealtime.generation || revision!==supportRealtime.revision ||
+       DB.session?.employeeId!==employeeId || DB.session?.role!==role) return;
+    if(corrections) DB.correctionRequests=correctionRows;
+    if(worklogs) DB.worklogs=worklogRows;
+    save();
+  }catch(error){
+    if(generation===coreRealtime.generation) console.error("Supporting Realtime sync error:",error);
+  }finally{
+    if(generation===coreRealtime.generation){
+      if(revision!==supportRealtime.revision){
+        supportRealtime.corrections ||= corrections;
+        supportRealtime.worklogs ||= worklogs;
+      }
+      supportRealtime.refreshing=false;
+      if(supportRealtime.corrections || supportRealtime.worklogs){
+        clearTimeout(supportRealtime.timer);
+        supportRealtime.timer=setTimeout(refreshSupportFromRealtime,300);
+      }
+      scheduleRealtimeRender();
     }
   }
 }
@@ -722,11 +781,29 @@ function startCoreRealtime(user,profile){
       });
     }
   }
+  for(const event of ["INSERT","UPDATE"]){
+    const options={event,schema:"public",table:"correction_requests"};
+    if(profile.permission!=="Super Admin") options.filter=`employee_id=eq.${profile.id}`;
+    channel=channel.on("postgres_changes",options,()=>{
+      if(generation!==coreRealtime.generation) return;
+      scheduleSupportRefresh("corrections");
+      if(event==="UPDATE") scheduleCoreTimeRefresh();
+    });
+  }
+  const worklogOptions={event:"INSERT",schema:"public",table:"worklogs"};
+  if(profile.permission!=="Super Admin") worklogOptions.filter=`employee_id=eq.${profile.id}`;
+  channel=channel.on("postgres_changes",worklogOptions,()=>{
+    if(generation===coreRealtime.generation) scheduleSupportRefresh("worklogs");
+  });
   coreRealtime.channel=channel;
   channel.subscribe(status=>{
     if(generation!==coreRealtime.generation) return;
     if(status==="SUBSCRIBED"){
-      if(coreRealtime.interrupted) scheduleCoreTimeRefresh();
+      if(coreRealtime.interrupted){
+        scheduleCoreTimeRefresh();
+        scheduleSupportRefresh("corrections");
+        scheduleSupportRefresh("worklogs");
+      }
       coreRealtime.interrupted=false;
     }else if(["CHANNEL_ERROR","TIMED_OUT","CLOSED"].includes(status)){
       coreRealtime.interrupted=true;
@@ -735,7 +812,11 @@ function startCoreRealtime(user,profile){
   });
 }
 document.addEventListener("visibilitychange",()=>{
-  if(document.visibilityState==="visible" && coreRealtime.channel) scheduleCoreTimeRefresh();
+  if(document.visibilityState==="visible" && coreRealtime.channel){
+    scheduleCoreTimeRefresh();
+    scheduleSupportRefresh("corrections");
+    scheduleSupportRefresh("worklogs");
+  }
 });
 
 function isAdminRole(perm){ return perm && perm!=="Employee"; }
@@ -835,6 +916,7 @@ async function recordJobHistory(jobId, action, detail){
 /* ---------------- Router / State ---------------- */
 let route = {name:"login"};
 let adminAuditSyncState="idle";
+let adminAuditSyncRequest=0,adminAuditRefreshQueue=Promise.resolve();
 let authBootComplete=false;
 let toastTimer = null;
 function toast(msg){
@@ -847,6 +929,7 @@ function toast(msg){
 function go(name, params={}){
   if(route.name==="worklog-add" && name!=="worklog-add") clearWorklogPhotoSelection();
   if(route.name==="worklog-detail" && (name!=="worklog-detail" || route.id!==params.id)) clearWorklogDetailPhoto();
+  if(name==="admin-audit") adminAuditSyncState="idle";
   route = {name, ...params}; render(); window.scrollTo(0,0);
 }
 
@@ -2074,7 +2157,7 @@ function modalRequestCorrection(attId){
 const {data,error}=await supabaseClient.from("correction_requests").insert(correction).select().single();
 if(error){console.error("Correction request save error:",error);toast("Could not submit correction request.");return;}
 
-DB.correctionRequests.push({
+if(!DB.correctionRequests.some(r=>r.id===data.id)) DB.correctionRequests.push({
   id:data.id,attendanceId:data.attendance_id,employeeId:data.employee_id,type:data.request_type,
   originalTimeIn:data.original_time_in,originalTimeOut:data.original_time_out,
   requestedTimeIn:data.requested_time_in,requestedTimeOut:data.requested_time_out,
@@ -2389,7 +2472,7 @@ if(worklogError){
 }
 
 worklogInserted=true;
-DB.worklogs.push(worklog);
+if(!DB.worklogs.some(w=>w.id===worklog.id)) DB.worklogs.push(worklog);
       let auditSaved=false;
       try{auditSaved=await audit(emp.name,"Added work log entry",jobName(jobId),task,worklog.id);}
       catch(auditError){console.error("Worklog audit error:",{worklogId,error:auditError});}
@@ -3028,7 +3111,7 @@ function screenAdminAudit(){
   <div class="content"><div class="empty small">${adminAuditSyncState==="error"?'Could not refresh Audit Log.':'Loading Audit Log…'}</div>
     ${adminAuditSyncState==="error"?'<button class="btn btn-ghost btn-block" id="retryAuditSync">Retry</button>':''}</div>`;
   return `
-  <div class="topbar"><div class="h2">Audit Log</div></div>
+  <div class="topbar"><div class="h2">Audit Log</div><button class="btn btn-ghost btn-sm" id="refreshAudit">Refresh</button></div>
   <div class="content">
     ${DB.auditLogs.map(a=>{
       const worklog=a.action==="Added work log entry" && a.worklogId
@@ -3127,11 +3210,26 @@ function bindAdminScreen(){
   const $ = id=>document.getElementById(id);
   if(route.name==="admin-audit" && adminAuditSyncState==="idle"){
     adminAuditSyncState="loading";
-    syncAuditLogDataFromSupabase(DB.session.employeeId,DB.session.role==="Super Admin")
-      .then(()=>{adminAuditSyncState="ready";if(route.name==="admin-audit") render();})
-      .catch(error=>{console.error("Audit Log refresh error:",error);adminAuditSyncState="error";if(route.name==="admin-audit") render();});
+    const request=++adminAuditSyncRequest;
+    const previous=adminAuditRefreshQueue;
+    adminAuditRefreshQueue=previous.catch(()=>{}).then(async()=>{
+      if(request!==adminAuditSyncRequest || route.name!=="admin-audit") return;
+      await syncAuditLogDataFromSupabase(DB.session.employeeId,DB.session.role==="Super Admin");
+    });
+    adminAuditRefreshQueue.then(()=>{
+      if(request===adminAuditSyncRequest && route.name==="admin-audit"){
+        adminAuditSyncState="ready";render();
+      }
+    }).catch(error=>{
+      if(request===adminAuditSyncRequest){
+        console.error("Audit Log refresh error:",error);
+        adminAuditSyncState="error";
+        if(route.name==="admin-audit") render();
+      }
+    });
   }
   if($("retryAuditSync")) $("retryAuditSync").onclick=()=>{adminAuditSyncState="idle";render();};
+  if($("refreshAudit")) $("refreshAudit").onclick=()=>{adminAuditSyncState="idle";render();};
   if($("back")) $("back").onclick=()=>go(route.name==="admin-att-detail"?"admin-timesheets":route.name==="admin-employee-detail"?"admin-employees":"admin-dashboard");
 
   document.querySelectorAll("[data-nav]").forEach(b=> b.onclick = ()=> go(b.dataset.nav));
