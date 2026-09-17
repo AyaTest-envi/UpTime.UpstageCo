@@ -484,7 +484,59 @@ async function updateCompanySetting(column,value,localKey){
   return false;
  }
 }
-async function syncTimeDataFromSupabase(employeeId, includeAllWorklogs=false, requireAuditSync=false){
+async function syncRosterJobsFromSupabase(){
+ const {data:employeeRows,error:employeeError}=await supabaseClient.from("employees")
+   .select("*").order("name",{ascending:true});
+ if(employeeError){console.error("Employee sync error:",employeeError);throw employeeError;}
+ DB.employees=employeeRows.map(e=>({
+   id:e.id,empId:e.emp_id,name:e.name,role:e.role,status:e.status,email:e.email,
+   department:e.department,employmentType:e.employment_type,payCategory:e.pay_category,
+   hourlyRate:e.hourly_rate,manager:e.manager,defaultLocation:e.default_location,
+   permission:e.permission,fieldRole:e.field_role,userId:e.user_id
+ }));
+ const {data:assignmentRows,error:assignmentError}=await supabaseClient.from("job_assignments")
+   .select("job_id, employee_id");
+ if(assignmentError){console.error("Job assignment sync error:",assignmentError);throw assignmentError;}
+ const {data:jobRows,error:jobsError}=await supabaseClient.from("jobs").select("*");
+ if(jobsError){console.error("Jobs sync error:",jobsError);throw jobsError;}
+ DB.jobs=jobRows.map(j=>({
+   id:j.id,number:j.number,name:j.name,client:j.client,venue:j.venue,
+   location:j.location,start:j.start_date,end:j.end_date,manager:j.manager,
+   status:j.status,notes:j.notes,
+   assigned:assignmentRows.filter(a=>a.job_id===j.id).map(a=>a.employee_id)
+ }));
+}
+async function syncWorklogsFromSupabase(employeeId, includeAllWorklogs=false){
+ const query=supabaseClient.from("worklogs").select("*");
+ const {data,error}=await (includeAllWorklogs?query:query.eq("employee_id",employeeId))
+   .order("start_time",{ascending:true});
+ if(error){console.error("Worklog sync error:",error);throw error;}
+ DB.worklogs=data.map(w=>({
+   id:w.id,attendanceId:w.attendance_id,employeeId:w.employee_id,jobId:w.job_id,
+   task:w.task,start:w.start_time,finish:w.finish_time,notes:w.notes,
+   photos:w.photos,photoData:w.photo_data,photoPath:w.photo_path
+ }));
+}
+async function syncAuditLogsFromSupabase(required=false){
+ const {data,error}=await supabaseClient.from("audit_logs").select("*")
+   .order("created_at",{ascending:false});
+ if(error){
+   console.error("Audit log sync error:",error);
+   if(required) throw error;
+   return;
+ }
+ DB.auditLogs=data.map(a=>({
+   id:a.id,actor:a.actor,action:a.action,target:a.target,
+   detail:a.detail,worklogId:a.worklog_id||null,userId:a.user_id,ts:a.created_at
+ }));
+}
+async function syncAuditLogDataFromSupabase(employeeId,includeAllWorklogs=false){
+ await syncRosterJobsFromSupabase();
+ await syncWorklogsFromSupabase(employeeId,includeAllWorklogs);
+ await syncAuditLogsFromSupabase(true);
+ save();
+}
+async function syncTimeDataFromSupabase(employeeId, includeAllWorklogs=false){
 
   const { data: attendanceRows, error: attendanceError } =
     await supabaseClient
@@ -575,35 +627,7 @@ async function syncTimeDataFromSupabase(employeeId, includeAllWorklogs=false, re
       .map(b => b.id)
   }));
 
-// Load all employees from Supabase
-const { data: employeeRows, error: employeeSyncError } =
-  await supabaseClient
-    .from("employees")
-    .select("*")
-    .order("name", { ascending: true });
-
-if(employeeSyncError){
-  console.error("Employee sync error:", employeeSyncError);
-  throw employeeSyncError;
-}
-
-DB.employees = employeeRows.map(e => ({
-  id: e.id,
-  empId: e.emp_id,
-  name: e.name,
-  role: e.role,
-  status: e.status,
-  email: e.email,
-  department: e.department,
-  employmentType: e.employment_type,
-  payCategory: e.pay_category,
-  hourlyRate: e.hourly_rate,
-  manager: e.manager,
-  defaultLocation: e.default_location,
-  permission: e.permission,
-  fieldRole: e.field_role,
-  userId: e.user_id
-}));
+await syncRosterJobsFromSupabase();
 
 // Load employee job time entries
 const { data: timeRows, error: timeError } = await supabaseClient
@@ -619,83 +643,7 @@ DB.jobTimeEntries = timeRows.map(t=>({
   switchedToJobId:t.switched_to_job_id
 }));
 
-  const { data: assignmentRows, error: assignmentError } =
-  await supabaseClient
-    .from("job_assignments")
-    .select("job_id, employee_id");
-
-if(assignmentError){
-  console.error("Job assignment sync error:", assignmentError);
-  throw assignmentError;
-}
-
-// Jobs assigned specifically to the currently logged-in employee
-const assignedJobIds = assignmentRows
-  .filter(a => a.employee_id === employeeId)
-  .map(a => a.job_id);
-const { data: jobRows, error: jobsError } =
-  await supabaseClient
-    .from("jobs")
-    .select("*");
-
-if(jobsError){
-  console.error("Jobs sync error:", jobsError);
-  throw jobsError;
-}
-
-DB.jobs = jobRows.map(j => ({
-  id: j.id,
-  number: j.number,
-  name: j.name,
-  client: j.client,
-  venue: j.venue,
-  location: j.location,
-  start: j.start_date,
-  end: j.end_date,
-  manager: j.manager,
-  status: j.status,
-  notes: j.notes,
-  
-  assigned: assignmentRows
-  .filter(a => a.job_id === j.id)
-  .map(a => a.employee_id)
-}));
-const worklogQuery=supabaseClient.from("worklogs").select("*");
-const { data: worklogRows, error: worklogSyncError } =
-  await (includeAllWorklogs ? worklogQuery : worklogQuery.eq("employee_id", employeeId))
-    .order("start_time", { ascending: true });
-
-if(worklogSyncError){
-  console.error("Worklog sync error:", worklogSyncError);
-  throw worklogSyncError;
-}
-
-DB.worklogs = worklogRows.map(w => ({
-  id: w.id,
-  attendanceId: w.attendance_id,
-  employeeId: w.employee_id,
-  jobId: w.job_id,
-  task: w.task,
-  start: w.start_time,
-  finish: w.finish_time,
-  notes: w.notes,
-  photos: w.photos,
-  photoData: w.photo_data,
-  photoPath: w.photo_path
-}));
-DB.worklogs = worklogRows.map(w => ({
-  id: w.id,
-  attendanceId: w.attendance_id,
-  employeeId: w.employee_id,
-  jobId: w.job_id,
-  task: w.task,
-  start: w.start_time,
-  finish: w.finish_time,
-  notes: w.notes,
-  photos: w.photos,
-  photoData: w.photo_data,
-  photoPath: w.photo_path
-}));
+await syncWorklogsFromSupabase(employeeId,includeAllWorklogs);
 
 // Load permanent job change history
 const { data: jobHistoryRows, error: jobHistoryError } =
@@ -735,18 +683,7 @@ DB.correctionRequests=correctionRows.map(c=>({
   reviewedBy:c.reviewed_by,reviewedAt:c.reviewed_at,createdAt:c.created_at
 }));
 
-const {data:auditRows,error:auditError}=await supabaseClient
-  .from("audit_logs").select("*").order("created_at",{ascending:false});
-
-if(auditError){
-  console.error("Audit log sync error:",auditError);
-  if(requireAuditSync) throw auditError;
-}else{
-  DB.auditLogs=auditRows.map(a=>({
-    id:a.id,actor:a.actor,action:a.action,target:a.target,
-    detail:a.detail,worklogId:a.worklog_id||null,userId:a.user_id,ts:a.created_at
-  }));
-}
+await syncAuditLogsFromSupabase();
 
 save();
 
@@ -900,6 +837,7 @@ async function recordJobHistory(jobId, action, detail){
 /* ---------------- Router / State ---------------- */
 let route = {name:"login"};
 let adminAuditSyncState="idle";
+let authBootComplete=false;
 let toastTimer = null;
 function toast(msg){
   const el = document.createElement("div");
@@ -1245,6 +1183,47 @@ function screenLogin(){
     </div>
   </div>`;
 }
+function loadAuthenticatedProfile(userId){
+ return supabaseClient.from("employees")
+   .select("id, emp_id, name, email, permission, status")
+   .eq("user_id",userId).single();
+}
+async function syncInitialDataForProfile(profile){
+ await syncCompanySettings();
+ await syncTimeDataFromSupabase(profile.id,profile.permission==="Super Admin");
+ if(isAdminRole(profile.permission)) await syncAdminJobTimeEntries();
+}
+async function boot(){
+ DB.session=null;
+ adminAuditSyncState="idle";
+ try{
+   const {data:{user},error:userError}=await supabaseClient.auth.getUser();
+   if(userError || !user){
+     if(userError && userError.name!=="AuthSessionMissingError") console.error("Session validation error:",userError);
+     save();
+     return;
+   }
+   const {data:profile,error:profileError}=await loadAuthenticatedProfile(user.id);
+   if(profileError || !profile || profile.status==="disabled"){
+     console.error("Session profile validation error:",profileError || "Profile unavailable or disabled");
+     if(!profile || profile.status==="disabled") await supabaseClient.auth.signOut();
+     save();
+     return;
+   }
+   await syncInitialDataForProfile(profile);
+   DB.session={role:profile.permission,employeeId:profile.id,name:profile.name};
+   save();
+   route={name:isAdminRole(profile.permission)?firstAllowedTab(profile.permission):"emp-home"};
+ }catch(error){
+   console.error("Session restore error:",error);
+   DB.session=null;
+   save();
+   toast("Unable to load attendance data. Please try again.");
+ }finally{
+   authBootComplete=true;
+   render();
+ }
+}
 function bindLogin(){
 
   document.getElementById("loginBtn").onclick = async ()=>{
@@ -1281,11 +1260,7 @@ function bindLogin(){
     }
 
     const { data: profile, error: profileError } =
-      await supabaseClient
-        .from("employees")
-        .select("id, emp_id, name, email, permission, status")
-        .eq("user_id", authData.user.id)
-        .single();
+      await loadAuthenticatedProfile(authData.user.id);
 
     if(profileError || !profile){
       console.error("Profile lookup error:", profileError);
@@ -1302,10 +1277,8 @@ function bindLogin(){
 
     adminAuditSyncState="idle";
     try{
-  await syncCompanySettings();
-  await syncTimeDataFromSupabase(profile.id,profile.permission==="Super Admin");
-  if(isAdminRole(profile.permission)) await syncAdminJobTimeEntries();
-}catch(error){
+      await syncInitialDataForProfile(profile);
+    }catch(error){
   console.error("Initial data sync failed:", error);
   toast("Unable to load attendance data. Please try again.");
   await supabaseClient.auth.signOut();
@@ -3152,7 +3125,7 @@ function bindAdminScreen(){
   const $ = id=>document.getElementById(id);
   if(route.name==="admin-audit" && adminAuditSyncState==="idle"){
     adminAuditSyncState="loading";
-    syncTimeDataFromSupabase(DB.session.employeeId,DB.session.role==="Super Admin",true)
+    syncAuditLogDataFromSupabase(DB.session.employeeId,DB.session.role==="Super Admin")
       .then(()=>{adminAuditSyncState="ready";if(route.name==="admin-audit") render();})
       .catch(error=>{console.error("Audit Log refresh error:",error);adminAuditSyncState="error";if(route.name==="admin-audit") render();});
   }
@@ -4091,8 +4064,7 @@ function exportPDF(){
 }
 
 /* ---------------- boot ---------------- */
-window.addEventListener("resize", render);
-render();
+window.addEventListener("resize",()=>{if(authBootComplete) render();});
 setInterval(()=>{
  const el = document.getElementById("statusTimer");
  if(!el) return;
@@ -4117,6 +4089,7 @@ setInterval(()=>{
   );
 
   console.log("Supabase client connected.");
+  boot();
 </script>
 
 
