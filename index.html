@@ -1439,6 +1439,12 @@ function statusPill(st){
   if(st==="break") return `<span class="pill pill-warn"><span class="dot dot-warn"></span> On Break</span>`;
   return `<span class="pill pill-muted"><span class="dot dot-muted"></span> Not Working</span>`;
 }
+function employeeVisibleJobs(empId,activeJobId){
+  const jobs=DB.jobs.filter(j=>j.assigned.includes(empId)&&j.status!=="Completed");
+  const activeJob=DB.jobs.find(j=>j.id===activeJobId);
+  if(activeJob && !jobs.some(j=>j.id===activeJob.id)) jobs.unshift(activeJob);
+  return jobs;
+}
 
 function screenEmpHome(){
   const emp = currentEmployee();
@@ -1455,7 +1461,7 @@ function screenEmpHome(){
   }
   const activeJobEntry=(DB.jobTimeEntries||[]).find(e=>e.employeeId===emp.id&&!e.endTime);
   const job=activeJobEntry?DB.jobs.find(j=>j.id===activeJobEntry.jobId):null;
-  const assignedJobs=DB.jobs.filter(j=>j.assigned.includes(emp.id)&&j.status!=="Completed");
+  const visibleJobs=employeeVisibleJobs(emp.id,activeJobEntry?.jobId);
   const hour = new Date().getHours();
   const greeting = hour<12?"Good morning":hour<17?"Good afternoon":"Good evening";
   const firstName = emp.name.split(" ")[0];
@@ -1515,7 +1521,7 @@ function screenEmpHome(){
 
     <div class="row-between" style="margin-bottom:10px;"><div class="h3">TODAY'S WORK</div><a class="link small" id="goWorklog">Add +</a></div>
 
-${openAtt?assignedJobs.map(j=>{
+${(openAtt||activeJobEntry)?visibleJobs.filter(j=>openAtt||j.id===activeJobEntry.jobId).map(j=>{
   const active=activeJobEntry?.jobId===j.id;
   return `<div class="card card-tight" style="margin-bottom:8px;${active?"background:#effcf3;":""}">
     <div class="row-between"><div><b>${escapeHtml(j.name)}</b><div class="tiny muted">${escapeHtml(j.number||"")}</div></div></div>
@@ -1543,8 +1549,8 @@ ${todaysLogs.length? todaysLogs.map(w=>`
 
 function screenJobSelect(){
   const emp=currentEmployee();
-  const jobs=DB.jobs.filter(j=>j.assigned.includes(emp.id)&&j.status!=="Completed");
   const active=(DB.jobTimeEntries||[]).find(e=>e.employeeId===emp.id&&!e.endTime);
+  const jobs=employeeVisibleJobs(emp.id,active?.jobId);
 
   return `
   <div class="topbar"><button class="backbtn" id="back">← Back</button><div class="h2">Select Job</div><div style="width:40px"></div></div>
@@ -1568,6 +1574,9 @@ function screenJobSelect(){
 
 async function startJobTracking(jobId){
   const emp=currentEmployee(),job=DB.jobs.find(j=>j.id===jobId);
+  if(!job || !job.assigned.includes(emp.id) || job.status==="Completed"){
+    toast("This job is no longer available to start.");return;
+  }
   const att=empOpenAttendance(emp.id);
   if(att&&empOpenBreak(att.id)){toast("End your current break before starting or switching jobs.");return;}
   const active=(DB.jobTimeEntries||[]).find(e=>e.employeeId===emp.id&&!e.endTime);
@@ -1638,15 +1647,31 @@ async function closeJobAt(active,iso,reason="manual"){
   active.endTime=iso;active.durationSeconds=seconds;active.endReason=reason;save();
   return true;
 }
+async function closeCurrentJobAt(active,iso){
+  const seconds=Math.max(0,Math.floor((new Date(iso)-new Date(active.startTime))/1000));
+  const {data,error}=await supabaseClient.from("job_time_entries").update({
+    end_time:iso,duration_seconds:seconds,end_reason:"manual",updated_at:iso
+  }).eq("id",active.id).select().single();
+  if(error || !data?.end_time){console.error("Job close error:",error||"Updated row was not returned");return false;}
+  coreRealtime.revision++;
+  Object.assign(active,{
+    employeeId:data.employee_id,jobId:data.job_id,startTime:data.start_time,
+    endTime:data.end_time,durationSeconds:data.duration_seconds,endReason:data.end_reason,
+    switchedToJobId:data.switched_to_job_id
+  });
+  DB.jobTimeEntries=[active,...DB.jobTimeEntries.filter(e=>e.id!==active.id)];
+  save();
+  return true;
+}
 
 async function endJobTracking(jobId){
   const emp=currentEmployee(),att=empOpenAttendance(emp.id);
   if(att&&empOpenBreak(att.id)){toast("End your current break before ending a job.");return;}
-  const active=(DB.jobTimeEntries||[]).find(e=>e.jobId===jobId&&!e.endTime);
+  const active=(DB.jobTimeEntries||[]).find(e=>e.employeeId===emp.id&&e.jobId===jobId&&!e.endTime);
   if(!active){toast("No active job found.");return;}
 
   const iso=nowISO();
-  const ok=await closeJobAt(active,iso,"manual");
+  const ok=await closeCurrentJobAt(active,iso);
   if(!ok){toast("Could not end job.");return;}
 
   audit(currentEmployee().name,"Ended Job",jobName(jobId),`Duration: ${Math.floor((active.durationSeconds||0)/60)}m`);
@@ -3711,8 +3736,7 @@ function modalAddJob(){
       venue:wrap.querySelector("#njVenue").value, location:wrap.querySelector("#njLoc").value, start:wrap.querySelector("#njStart").value,
       end:wrap.querySelector("#njEnd").value, manager:wrap.querySelector("#njMgr").value, status:"Upcoming", notes:"", assigned:[], photo:njPhotoData,
       changeLog:[{actor:DB.session.name, ts:nowISO(), detail:"Job created."+(njPhotoData?" Reference photo attached.":"")}]};
-    DB.jobs.push(job);
-    const { error: jobCreateError } = await supabaseClient
+    const { data: savedJob, error: jobCreateError } = await supabaseClient
   .from("jobs")
   .insert({
     id: job.id,
@@ -3726,7 +3750,7 @@ function modalAddJob(){
     manager: job.manager,
     status: job.status,
     notes: job.notes
-  });
+  }).select().single();
 
 if(jobCreateError){
   console.error("Supabase job create error:", jobCreateError);
@@ -3734,7 +3758,13 @@ if(jobCreateError){
   return;
 }
 
-DB.jobs.push(job);
+DB.jobs.push({
+  id:savedJob.id, number:savedJob.number, name:savedJob.name,
+  client:savedJob.client, venue:savedJob.venue, location:savedJob.location,
+  start:savedJob.start_date||"", end:savedJob.end_date||"",
+  manager:savedJob.manager, status:savedJob.status, notes:savedJob.notes,
+  assigned:[], photo:njPhotoData, changeLog:job.changeLog
+});
 
 audit(
   DB.session.name,
