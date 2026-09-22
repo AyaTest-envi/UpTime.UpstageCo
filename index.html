@@ -161,13 +161,33 @@ function ausNow(){
   const v=Object.fromEntries(p.map(x=>[x.type,x.value]));
   return {year:+v.year,month:+v.month,day:+v.day,hour:+v.hour,minute:+v.minute,second:+v.second,time:`${v.hour}:${v.minute}:${v.second}`};
 }
-function workReminderType(){
-  const t=ausNow();
-  if(t.hour===10) return "break";
-  if(t.hour===14) return "lunch";
-  if(t.hour===16) return "timeout";
-  return null;
+const BREAK_DESCRIPTORS=[
+  {key:"morning-break",name:"Morning Break",aliases:["Morning Tea","Morning Tea (Smoko)"] ,minutes:20,paid:true,startMinute:600,endMinute:660,startLabel:"START BREAK",endLabel:"END BREAK"},
+  {key:"lunch",name:"Lunch",aliases:["Lunch"],minutes:30,paid:false,startMinute:780,endMinute:840,startLabel:"START LUNCH",endLabel:"END LUNCH"}
+];
+function sydneyDateKey(value=new Date()){
+  return new Intl.DateTimeFormat("en-CA",{timeZone:"Australia/Sydney",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date(value));
 }
+function currentBreakDescriptor(){
+  const t=ausNow(),minute=t.hour*60+t.minute;
+  return BREAK_DESCRIPTORS.find(b=>minute>=b.startMinute&&minute<b.endMinute)||null;
+}
+function breakDescriptorForType(type){
+  const normalized=String(type||"").trim().toLowerCase();
+  return BREAK_DESCRIPTORS.find(b=>b.name.toLowerCase()===normalized||b.aliases.some(a=>a.toLowerCase()===normalized))||null;
+}
+function breakTakenFromRows(empId,descriptor,dateKey,attendanceRows,breakRows){
+  const attendanceIds=new Set(attendanceRows.filter(a=>a.employeeId===empId).map(a=>a.id));
+  return breakRows.some(b=>attendanceIds.has(b.attendanceId)&&breakDescriptorForType(b.type)?.key===descriptor.key&&sydneyDateKey(b.start)===dateKey);
+}
+function currentBreakEligibility(empId,attendanceRows=DB.attendance,breakRows=DB.breaks){
+  const descriptor=currentBreakDescriptor(),dateKey=sydneyDateKey();
+  const att=attendanceRows.find(a=>a.employeeId===empId&&!a.timeOut);
+  const openBreak=att&&breakRows.find(b=>b.attendanceId===att.id&&!b.end);
+  const taken=descriptor?breakTakenFromRows(empId,descriptor,dateKey,attendanceRows,breakRows):false;
+  return {descriptor,dateKey,att,openBreak,taken,eligible:!!(descriptor&&att&&!openBreak&&!taken)};
+}
+function workReminderType(){ return currentBreakDescriptor()?.key||null; }
 function fmtTime(iso){ if(!iso) return "—"; return new Date(iso).toLocaleTimeString([], {hour:'numeric',minute:'2-digit'}); }
 function fmtDate(iso){ return new Date(iso).toLocaleDateString([], {weekday:'short',day:'numeric',month:'short'}); }
 function fmtDateShort(iso){ return new Date(iso).toLocaleDateString([], {day:'2-digit',month:'2-digit',year:'2-digit'}); }
@@ -177,25 +197,29 @@ function hm(totalMins){
   const h = Math.floor(totalMins/60), m = totalMins%60;
   return (h>0? h+"h ":"") + m+"m";
 }
-let workReminderSnoozeUntil=0;
+const workReminderSnoozeUntil={};
 let overtimeConfirmedDate="";
 const FOUR_PM_GRACE_MINUTES=10;
 
-function showBreakReminder(type){
-  if(document.getElementById("workReminder")) return;
-  const isLunch=type==="lunch",w=document.createElement("div");
+function breakSnoozeKey(empId,dateKey,type){return `${empId}|${dateKey}|${type}`;}
+function showBreakReminder(descriptor,empId,dateKey){
+  if(document.querySelector(".modal-bg")) return;
+  const isLunch=descriptor.key==="lunch",w=document.createElement("div");
   w.id="workReminder";w.className="modal-bg";
+  w.dataset.breakKey=descriptor.key;
   w.innerHTML=`<div class="modal" style="max-width:420px;text-align:center;">
-    <div class="h2">${isLunch?"Lunch Break Reminder":"Break Reminder"}</div>
+    <div class="h2">${isLunch?"Lunch Break Reminder":"Morning Break Reminder"}</div>
     <div style="font-size:18px;font-weight:600;line-height:1.45;margin:14px 0 20px;">
-      ${isLunch?"It's time to take your lunch break.":"It's time to take your break."}
+      ${isLunch?"It's time to take your lunch break.":"It's time to take your morning break."}
     </div>
-    <button class="btn btn-accent btn-block" id="reminderBreak">Start ${isLunch?"Lunch":"Break"}</button>
+    <button class="btn btn-accent btn-block" id="reminderBreak">${isLunch?"Start Lunch":"Start Break"}</button>
     <button class="btn btn-ghost btn-block" style="margin-top:8px;" id="reminderLater">Remind Me Later</button>
   </div>`;
   document.body.appendChild(w);
-  w.querySelector("#reminderBreak").onclick=()=>{w.remove();doStartBreak();};
-  w.querySelector("#reminderLater").onclick=()=>{workReminderSnoozeUntil=Date.now()+10*60*1000;w.remove();};
+  const t=ausNow(),remainingMs=Math.max(0,((descriptor.endMinute-(t.hour*60+t.minute))*60-t.second)*1000);
+  setTimeout(()=>{if(w.isConnected){w.remove();if(route.name==="emp-home")render();}},remainingMs+50);
+  w.querySelector("#reminderBreak").onclick=()=>{w.remove();doStartBreak(descriptor.key);};
+  w.querySelector("#reminderLater").onclick=()=>{workReminderSnoozeUntil[breakSnoozeKey(empId,dateKey,descriptor.key)]=Date.now()+10*60*1000;w.remove();};
 }
 function showFourPmReminder(emp,att,activeJob){
   if(document.getElementById("fourPmReminder")) return;
@@ -288,10 +312,12 @@ save();
 }
 function checkWorkReminders(){
   if(!DB.session) return;
+  const invalidated=invalidateStaleBreakModal();
   const emp=currentEmployee(),att=emp?empOpenAttendance(emp.id):null;
+  if(invalidated&&route.name==="emp-home") render();
   if(!emp||!att||empOpenBreak(att.id)) return;
 
-  const type=workReminderType(),cutoff=fourPmCutoffState();
+  const cutoff=fourPmCutoffState();
   if(att.overtimeConfirmedAt){
   const confirmedSydney=new Intl.DateTimeFormat("en-CA",{timeZone:"Australia/Sydney",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date(att.overtimeConfirmedAt));
   if(confirmedSydney===cutoff.today)overtimeConfirmedDate=cutoff.today;
@@ -313,8 +339,14 @@ if(cutoff.expired&&overtimeConfirmedDate!==cutoff.today){
   return;
 }
 
-  if(Date.now()<workReminderSnoozeUntil) return;
-  if(type==="break"||type==="lunch") showBreakReminder(type);
+  const eligibility=currentBreakEligibility(emp.id);
+  const startButton=document.getElementById("btnStartBreak");
+  const buttonMatches=eligibility.eligible ? !!startButton&&startButton.textContent.includes(eligibility.descriptor.startLabel) : !startButton;
+  if(route.name==="emp-home"&&!document.querySelector(".modal-bg")&&!buttonMatches) render();
+  if(!eligibility.eligible) return;
+  const snoozeKey=breakSnoozeKey(emp.id,eligibility.dateKey,eligibility.descriptor.key);
+  if(Date.now()<(workReminderSnoozeUntil[snoozeKey]||0)) return;
+  showBreakReminder(eligibility.descriptor,emp.id,eligibility.dateKey);
 }
 setInterval(checkWorkReminders,60*1000);
 
@@ -484,27 +516,32 @@ async function updateCompanySetting(column,value,localKey){
   return false;
  }
 }
+async function fetchJobsFromSupabase(){
+ const [jobsResult,assignmentsResult]=await Promise.all([
+   supabaseClient.from("jobs").select("*"),
+   supabaseClient.from("job_assignments").select("job_id, employee_id")
+ ]);
+ if(jobsResult.error){console.error("Jobs sync error:",jobsResult.error);throw jobsResult.error;}
+ if(assignmentsResult.error){console.error("Job assignment sync error:",assignmentsResult.error);throw assignmentsResult.error;}
+ return jobsResult.data.map(j=>({
+   id:j.id,number:j.number,name:j.name,client:j.client,venue:j.venue,
+   location:j.location,start:j.start_date,end:j.end_date,manager:j.manager,
+   status:j.status,notes:j.notes,
+   assigned:assignmentsResult.data.filter(a=>a.job_id===j.id).map(a=>a.employee_id)
+ }));
+}
 async function syncRosterJobsFromSupabase(){
  const {data:employeeRows,error:employeeError}=await supabaseClient.from("employees")
    .select("*").order("name",{ascending:true});
  if(employeeError){console.error("Employee sync error:",employeeError);throw employeeError;}
+ const jobs=await fetchJobsFromSupabase();
  DB.employees=employeeRows.map(e=>({
    id:e.id,empId:e.emp_id,name:e.name,role:e.role,status:e.status,email:e.email,
    department:e.department,employmentType:e.employment_type,payCategory:e.pay_category,
    hourlyRate:e.hourly_rate,manager:e.manager,defaultLocation:e.default_location,
    permission:e.permission,fieldRole:e.field_role,userId:e.user_id
  }));
- const {data:assignmentRows,error:assignmentError}=await supabaseClient.from("job_assignments")
-   .select("job_id, employee_id");
- if(assignmentError){console.error("Job assignment sync error:",assignmentError);throw assignmentError;}
- const {data:jobRows,error:jobsError}=await supabaseClient.from("jobs").select("*");
- if(jobsError){console.error("Jobs sync error:",jobsError);throw jobsError;}
- DB.jobs=jobRows.map(j=>({
-   id:j.id,number:j.number,name:j.name,client:j.client,venue:j.venue,
-   location:j.location,start:j.start_date,end:j.end_date,manager:j.manager,
-   status:j.status,notes:j.notes,
-   assigned:assignmentRows.filter(a=>a.job_id===j.id).map(a=>a.employee_id)
- }));
+ DB.jobs=jobs;
 }
 async function fetchWorklogsFromSupabase(employeeId, includeAllWorklogs=false){
  const query=supabaseClient.from("worklogs").select("*");
@@ -554,6 +591,33 @@ async function syncAuditLogDataFromSupabase(employeeId,includeAllWorklogs=false)
  await syncWorklogsFromSupabase(employeeId,includeAllWorklogs);
  await syncAuditLogsFromSupabase(true);
  save();
+}
+async function refreshEmployeeBreaksFromSupabase(employeeId){
+ const {data:attendanceRows,error:attendanceError}=await supabaseClient.from("attendance")
+   .select("id,employee_id,time_in,time_out").eq("employee_id",employeeId);
+ if(attendanceError) throw attendanceError;
+ const ids=attendanceRows.map(a=>a.id);
+ let breakRows=[];
+ if(ids.length){
+   const {data,error}=await supabaseClient.from("breaks").select("*").in("attendance_id",ids);
+   if(error) throw error;
+   breakRows=data;
+ }
+ const attendance=attendanceRows.map(a=>({id:a.id,employeeId:a.employee_id,timeIn:a.time_in,timeOut:a.time_out}));
+ const breaks=breakRows.map(b=>({
+   id:b.id,attendanceId:b.attendance_id,type:b.type,start:b.start_time,end:b.end_time,paid:b.paid,
+   gpsStart:{lat:b.gps_start_lat,lng:b.gps_start_lng},
+   gpsEnd:b.end_time?{lat:b.gps_end_lat,lng:b.gps_end_lng}:null
+ }));
+ const employeeAttendanceIds=new Set([
+   ...DB.attendance.filter(a=>a.employeeId===employeeId).map(a=>a.id),...ids
+ ]);
+ DB.breaks=[...DB.breaks.filter(b=>!employeeAttendanceIds.has(b.attendanceId)),...breaks];
+ DB.attendance.filter(a=>a.employeeId===employeeId).forEach(a=>{
+   a.breakIds=breaks.filter(b=>b.attendanceId===a.id).map(b=>b.id);
+ });
+ save();
+ return {attendance,breaks};
 }
 async function fetchCoreTimeFromSupabase(employeeId,includeAll=false){
  const attendanceQuery=supabaseClient.from("attendance").select("*");
@@ -659,14 +723,19 @@ async function syncAdminJobTimeEntries(){
 const coreRealtime={channel:null,userId:null,employeeId:null,role:null,generation:0,
   timer:null,revision:0,refreshing:false,pending:false,interrupted:false};
 const supportRealtime={timer:null,revision:0,refreshing:false,corrections:false,worklogs:false,renderTimer:null};
+const jobsRealtime={timer:null,revision:0,refreshing:false,dirty:false};
+let jobActionInProgress=0;
 function stopCoreRealtime(){
   coreRealtime.generation++;
   clearTimeout(coreRealtime.timer);
   clearTimeout(supportRealtime.timer);
   clearTimeout(supportRealtime.renderTimer);
+  clearTimeout(jobsRealtime.timer);
   coreRealtime.timer=null;
+  jobsRealtime.timer=null;
   supportRealtime.timer=supportRealtime.renderTimer=null;
   supportRealtime.refreshing=supportRealtime.corrections=supportRealtime.worklogs=false;
+  jobsRealtime.refreshing=jobsRealtime.dirty=false;
   const channel=coreRealtime.channel;
   coreRealtime.channel=null;
   coreRealtime.userId=coreRealtime.employeeId=coreRealtime.role=null;
@@ -677,9 +746,11 @@ function stopCoreRealtime(){
 }
 function renderRealtimeIfSafe(){
   if(coreRealtime.pending || coreRealtime.refreshing || supportRealtime.refreshing ||
-     supportRealtime.corrections || supportRealtime.worklogs) return;
+     supportRealtime.corrections || supportRealtime.worklogs || jobsRealtime.refreshing ||
+     jobsRealtime.dirty || jobActionInProgress) return;
   if(document.querySelector(".modal-bg")) return;
-  if(["emp-home","history","timesheet","worklog","admin-dashboard","admin-live","admin-timesheets"].includes(route.name)) render();
+  const readOnlyJobDetail=route.name==="admin-job-detail" && DB.jobs.find(j=>j.id===route.id)?.status==="Completed";
+  if(readOnlyJobDetail || ["emp-home","history","timesheet","worklog","admin-dashboard","admin-live","admin-timesheets","admin-jobs"].includes(route.name)) render();
 }
 function scheduleRealtimeRender(){
   clearTimeout(supportRealtime.renderTimer);
@@ -691,6 +762,14 @@ function scheduleCoreTimeRefresh(){
   coreRealtime.pending=true;
   clearTimeout(coreRealtime.timer);
   coreRealtime.timer=setTimeout(refreshCoreTimeFromRealtime,300);
+}
+function invalidateStaleBreakModal(){
+  const modal=document.querySelector("#workReminder[data-break-key],#startBreakModal[data-break-key]");
+  const emp=currentEmployee();
+  if(!modal||!emp) return false;
+  const eligibility=currentBreakEligibility(emp.id);
+  if(!eligibility.eligible||eligibility.descriptor.key!==modal.dataset.breakKey){modal.remove();return true;}
+  return false;
 }
 async function refreshCoreTimeFromRealtime(){
   coreRealtime.timer=null;
@@ -704,6 +783,7 @@ async function refreshCoreTimeFromRealtime(){
     if(generation!==coreRealtime.generation || revision!==coreRealtime.revision ||
        DB.session?.employeeId!==employeeId || DB.session?.role!==role) return;
     Object.assign(DB,snapshot);
+    invalidateStaleBreakModal();
     save();
   }catch(error){
     if(generation===coreRealtime.generation) console.error("Core Realtime sync error:",error);
@@ -761,6 +841,39 @@ async function refreshSupportFromRealtime(){
     }
   }
 }
+function scheduleJobsRefresh(){
+  if(!coreRealtime.channel || !DB.session || DB.session.employeeId!==coreRealtime.employeeId || DB.session.role!==coreRealtime.role) return;
+  jobsRealtime.revision++;
+  jobsRealtime.dirty=true;
+  clearTimeout(jobsRealtime.timer);
+  jobsRealtime.timer=setTimeout(refreshJobsFromRealtime,300);
+}
+async function refreshJobsFromRealtime(){
+  jobsRealtime.timer=null;
+  if(!jobsRealtime.dirty || jobsRealtime.refreshing || !coreRealtime.channel) return;
+  jobsRealtime.dirty=false;
+  jobsRealtime.refreshing=true;
+  const generation=coreRealtime.generation,revision=jobsRealtime.revision;
+  const employeeId=coreRealtime.employeeId,role=coreRealtime.role;
+  try{
+    const jobs=await fetchJobsFromSupabase();
+    if(generation!==coreRealtime.generation || revision!==jobsRealtime.revision ||
+       DB.session?.employeeId!==employeeId || DB.session?.role!==role) return;
+    DB.jobs=jobs;
+    save();
+  }catch(error){
+    if(generation===coreRealtime.generation) console.error("Jobs Realtime sync error:",error);
+  }finally{
+    if(generation===coreRealtime.generation){
+      jobsRealtime.refreshing=false;
+      if(jobsRealtime.dirty){
+        clearTimeout(jobsRealtime.timer);
+        jobsRealtime.timer=setTimeout(refreshJobsFromRealtime,300);
+      }
+      scheduleRealtimeRender();
+    }
+  }
+}
 function startCoreRealtime(user,profile){
   if(!user?.id || !profile?.id || DB.session?.employeeId!==profile.id || DB.session?.role!==profile.permission) return;
   if(coreRealtime.channel && coreRealtime.userId===user.id &&
@@ -795,6 +908,11 @@ function startCoreRealtime(user,profile){
   channel=channel.on("postgres_changes",worklogOptions,()=>{
     if(generation===coreRealtime.generation) scheduleSupportRefresh("worklogs");
   });
+  for(const event of ["INSERT","UPDATE"]){
+    channel=channel.on("postgres_changes",{event,schema:"public",table:"jobs"},()=>{
+      if(generation===coreRealtime.generation) scheduleJobsRefresh();
+    });
+  }
   coreRealtime.channel=channel;
   channel.subscribe(status=>{
     if(generation!==coreRealtime.generation) return;
@@ -803,6 +921,7 @@ function startCoreRealtime(user,profile){
         scheduleCoreTimeRefresh();
         scheduleSupportRefresh("corrections");
         scheduleSupportRefresh("worklogs");
+        scheduleJobsRefresh();
       }
       coreRealtime.interrupted=false;
     }else if(["CHANNEL_ERROR","TIMED_OUT","CLOSED"].includes(status)){
@@ -816,6 +935,7 @@ document.addEventListener("visibilitychange",()=>{
     scheduleCoreTimeRefresh();
     scheduleSupportRefresh("corrections");
     scheduleSupportRefresh("worklogs");
+    scheduleJobsRefresh();
   }
 });
 
@@ -1423,6 +1543,10 @@ function bindEmployeeShell(){
   document.querySelectorAll("[data-nav]").forEach(b=> b.onclick = ()=> go(b.dataset.nav));
   bindScreen();
 }
+async function runJobAction(action){
+  jobActionInProgress++;
+  try{await action();}finally{jobActionInProgress--;scheduleRealtimeRender();}
+}
 
 function attStatusPill(status){
   return ({
@@ -1434,9 +1558,9 @@ function attStatusPill(status){
     corrected: '<span class="pill pill-warn">Corrected</span>',
   })[status] || `<span class="pill pill-muted">${status}</span>`;
 }
-function statusPill(st){
+function statusPill(st,activeBreakLabel="On Break"){
   if(st==="working") return `<span class="pill pill-ok"><span class="dot dot-ok"></span> Working</span>`;
-  if(st==="break") return `<span class="pill pill-warn"><span class="dot dot-warn"></span> On Break</span>`;
+  if(st==="break") return `<span class="pill pill-warn" style="font-size:14px;"><span class="dot dot-warn"></span> ${activeBreakLabel}</span>`;
   return `<span class="pill pill-muted"><span class="dot dot-muted"></span> Not Working</span>`;
 }
 function employeeVisibleJobs(empId,activeJobId){
@@ -1451,6 +1575,11 @@ function screenEmpHome(){
   const st = empStatus(emp.id);
   const openAtt = empOpenAttendance(emp.id);
   const openBrk = openAtt ? empOpenBreak(openAtt.id) : null;
+  const breakEligibility=st==="working"?currentBreakEligibility(emp.id):null;
+  const activeBreakDescriptor=openBrk?breakDescriptorForType(openBrk.type):null;
+  const activeBreakIsLunch=activeBreakDescriptor?.key==="lunch";
+  const activeBreakLabel=activeBreakIsLunch?"On Lunch":"On Break";
+  const activeBreakStartedLabel=activeBreakIsLunch?"Lunch started":"Break started";
   const weekStart = startOfWeek();
   const weekMin = weeklyNetMinutes(emp.id, weekStart);
   let todayMin = todayNetMinutes(emp.id);
@@ -1475,7 +1604,7 @@ function screenEmpHome(){
   const breakSecs = openBrk ? Math.floor((Date.now()-new Date(openBrk.start).getTime())/1000) : 0;
 
   return `
-  <div class="topbar"><div class="h2">${greeting}, ${escapeHtml(firstName)}</div><div class="row gap-8" style="align-items:center;">${st==="break"?`<span id="statusTimer" data-since="${openBrk.start}" class="tiny" style="font-family:ui-monospace,Menlo,Consolas,monospace;font-weight:700;color:var(--warn);">${hmsLive(breakSecs)}</span>`:""}${statusPill(st)}</div></div>
+  <div class="topbar"><div class="h2">${greeting}, ${escapeHtml(firstName)}</div><div class="row gap-8" style="align-items:center;justify-content:center;">${st==="break"?`<span id="statusTimer" data-since="${openBrk.start}" style="font-family:ui-monospace,Menlo,Consolas,monospace;font-size:15px;font-weight:700;color:var(--warn);">${hmsLive(breakSecs)}</span>`:""}${statusPill(st,activeBreakLabel)}</div></div>
   <div class="content">
     <div class="card" style="margin-bottom:14px;">
       <div class="row-between">
@@ -1490,22 +1619,17 @@ function screenEmpHome(){
       </div>
     </div>
 
-    <div class="grid2" style="margin-bottom:16px;">
-      <div class="kpi"><div class="num">${hm(todayMin)}</div><div class="lab">Today</div></div>
-      <div class="kpi"><div class="num">${hm(weekMin)}</div><div class="lab">This week</div></div>
-    </div>
-
     <div class="col gap-12" style="margin-bottom:20px;">
       ${st==="off" ? `
         <button class="btn btn-accent btn-block btn-lg" id="btnTimeIn">🟢 TIME IN</button>
       `: st==="working" ? `
-        <div class="grid2">
-          <button class="btn btn-warn btn-lg" id="btnStartBreak">☕ START BREAK</button>
+        ${breakEligibility?.eligible?`<div class="grid2">
+          <button class="btn btn-warn btn-lg" id="btnStartBreak">☕ ${breakEligibility.descriptor.startLabel}</button>
           <button class="btn btn-danger btn-lg" id="btnTimeOut">🔴 TIME OUT</button>
-        </div>
+        </div>`:`<button class="btn btn-danger btn-block btn-lg" id="btnTimeOut">🔴 TIME OUT</button>`}
       `: `
-        <button class="btn btn-ok btn-block btn-lg" id="btnEndBreak">▶️ END BREAK</button>
-        <div class="tiny muted" style="text-align:center;">On break since ${fmtTime(openBrk.start)}</div>
+        <button class="btn btn-ok btn-block btn-lg" id="btnEndBreak">▶️ ${activeBreakDescriptor?.endLabel||"END BREAK"}</button>
+        <div class="muted" style="text-align:center;font-size:14px;font-weight:600;margin-top:10px;">${activeBreakStartedLabel} ${fmtTime(openBrk.start)}</div>
       `}
     </div>
 
@@ -1572,30 +1696,116 @@ function screenJobSelect(){
   </div>`;
 }
 
-async function startJobTracking(jobId){
-  const emp=currentEmployee(),job=DB.jobs.find(j=>j.id===jobId);
-  if(!job || !job.assigned.includes(emp.id) || job.status==="Completed"){
-    toast("This job is no longer available to start.");return;
+async function fetchAuthoritativeStartJobState(jobId,employeeId){
+  const [jobResult,assignmentResult,openEntriesResult]=await Promise.all([
+    supabaseClient.from("jobs").select("id, name, status").eq("id",jobId).maybeSingle(),
+    supabaseClient.from("job_assignments").select("job_id, employee_id")
+      .eq("job_id",jobId).eq("employee_id",employeeId).maybeSingle(),
+    supabaseClient.from("job_time_entries")
+      .select("id, employee_id, job_id, start_time, end_time, duration_seconds, end_reason, switched_to_job_id")
+      .eq("employee_id",employeeId).is("end_time",null).limit(2)
+  ]);
+  const error=jobResult.error||assignmentResult.error||openEntriesResult.error;
+  if(error) throw error;
+  if(openEntriesResult.data.length>1) throw new Error("Multiple open job time entries found");
+  const row=openEntriesResult.data[0];
+  return {
+    job:jobResult.data,
+    assigned:!!assignmentResult.data,
+    active:row?{
+      id:row.id,employeeId:row.employee_id,jobId:row.job_id,
+      startTime:row.start_time,endTime:row.end_time,
+      durationSeconds:row.duration_seconds,endReason:row.end_reason,
+      switchedToJobId:row.switched_to_job_id
+    }:null
+  };
+}
+async function reconcileJobsAfterRejectedStart(){
+  try{
+    const jobs=await fetchJobsFromSupabase();
+    jobsRealtime.revision++;
+    DB.jobs=jobs;
+    save();
+    if(["emp-home","job-select"].includes(route.name)) render();
+  }catch(error){
+    console.error("Jobs reconciliation after rejected start error:",error);
   }
+}
+function reconcileAuthoritativeOpenJobEntry(employeeId,active){
+  coreRealtime.revision++;
+  DB.jobTimeEntries=[
+    ...(active?[active]:[]),
+    ...DB.jobTimeEntries.filter(e=>e.id!==active?.id&&(e.employeeId!==employeeId||e.endTime))
+  ];
+  save();
+}
+
+async function startJobTracking(jobId){
+  if(navigator.onLine===false){
+    toast("You're offline. Reconnect and try again.");return;
+  }
+  const emp=currentEmployee();
   const att=empOpenAttendance(emp.id);
   if(att&&empOpenBreak(att.id)){toast("End your current break before starting or switching jobs.");return;}
-  const active=(DB.jobTimeEntries||[]).find(e=>e.employeeId===emp.id&&!e.endTime);
+  let state;
+  try{
+    state=await fetchAuthoritativeStartJobState(jobId,emp.id);
+  }catch(error){
+    console.error("Start Job validation error:",error);
+    toast("Could not verify this job. Please try again.");return;
+  }
+  if(!state.job || !state.assigned || state.job.status==="Completed"){
+    await reconcileJobsAfterRejectedStart();
+    toast(!state.assigned?"This job is no longer assigned or available.":"This job is no longer available to start.");
+    return;
+  }
+  let active=state.active;
+  const job=DB.jobs.find(j=>j.id===jobId)||state.job;
   const openAtt=DB.attendance.find(a=>a.employeeId===emp.id&&!a.timeOut);
   const ts=new Date(),iso=ts.toISOString();
 
   if(active&&active.jobId!==jobId){
     const oldJob=DB.jobs.find(j=>j.id===active.jobId);
+    const confirmedActiveId=active.id;
     const time=ts.toLocaleTimeString("en-GB",{hour12:false});
     if(!await showSwitchJobConfirm(oldJob?.name||"current",time))return;
 
-    const seconds=Math.max(0,Math.floor((ts-new Date(active.startTime))/1000));
-    const {error}=await supabaseClient.from("job_time_entries").update({
-      end_time:iso,duration_seconds:seconds,end_reason:"switched_job",
-      switched_to_job_id:jobId,updated_at:iso
-    }).eq("id",active.id);
+    try{
+      state=await fetchAuthoritativeStartJobState(jobId,emp.id);
+    }catch(error){
+      console.error("Start Job validation error:",error);
+      toast("Could not verify this job. Please try again.");return;
+    }
+    if(!state.job || !state.assigned || state.job.status==="Completed"){
+      await reconcileJobsAfterRejectedStart();
+      toast(!state.assigned?"This job is no longer assigned or available.":"This job is no longer available to start.");
+      return;
+    }
+    active=state.active;
+    if(active&&active.id!==confirmedActiveId){
+      reconcileAuthoritativeOpenJobEntry(emp.id,active);
+      toast("Your active job changed. Please try again.");return;
+    }
+    if(!active){
+      reconcileAuthoritativeOpenJobEntry(emp.id,null);
+    }else if(active.jobId===jobId){
+      reconcileAuthoritativeOpenJobEntry(emp.id,active);
+      toast("This job is already active.");return;
+    }
 
-    if(error){console.error(error);toast("Could not stop current job.");return;}
-    active.endTime=iso;active.durationSeconds=seconds;
+    if(active){
+      reconcileAuthoritativeOpenJobEntry(emp.id,active);
+      const seconds=Math.max(0,Math.floor((ts-new Date(active.startTime))/1000));
+      const {error}=await supabaseClient.from("job_time_entries").update({
+        end_time:iso,duration_seconds:seconds,end_reason:"switched_job",
+        switched_to_job_id:jobId,updated_at:iso
+      }).eq("id",active.id);
+
+      if(error){console.error(error);toast("Could not stop current job.");return;}
+      active.endTime=iso;active.durationSeconds=seconds;
+    }
+  }else{
+    reconcileAuthoritativeOpenJobEntry(emp.id,active);
   }
 
   if(active?.jobId===jobId){toast("This job is already active.");return;}
@@ -1785,27 +1995,45 @@ save();
     }, "Timing in");
   };
 }
-function doStartBreak(){
-  const emp = currentEmployee(); const att = empOpenAttendance(emp.id);
-  const rules = DB.settings.breakRules;
-  const optionsHtml = rules.map(r=>`<option value="${r.id}">${escapeHtml(r.name)} (${r.minutes} min, ${r.paid?'paid':'unpaid'})</option>`).join("");
+function validBreakStart(empId,expectedKey){
+  const eligibility=currentBreakEligibility(empId);
+  return eligibility.eligible&&(!expectedKey||eligibility.descriptor.key===expectedKey)?eligibility:null;
+}
+function rejectBreakStart(descriptor){
+  toast(`${descriptor?.name||"Break"} is no longer available to start.`);
+  if(route.name==="emp-home") render();
+}
+function doStartBreak(expectedKey=null){
+  const emp=currentEmployee();
+  const initial=emp&&validBreakStart(emp.id,expectedKey);
+  const descriptor=initial?.descriptor||BREAK_DESCRIPTORS.find(b=>b.key===expectedKey);
+  if(!initial){rejectBreakStart(descriptor);return;}
   const wrap = document.createElement("div"); wrap.className="modal-bg";
+  wrap.id="startBreakModal";wrap.dataset.breakKey=descriptor.key;
   wrap.innerHTML = `<div class="modal">
-    <div class="h2" style="margin-bottom:14px;">Start Break</div>
-    <div class="field"><label>Break type</label><select id="brkType">${optionsHtml}</select></div>
-    <button class="btn btn-warn btn-block btn-lg" id="brkGo">Start Break</button>
+    <div class="h2" style="margin-bottom:14px;">${descriptor.name}</div>
+    <div class="card card-tight small" style="margin-bottom:14px;">
+      <div class="row-between"><span class="muted">Duration</span><b>${descriptor.minutes} minutes</b></div>
+      <div class="row-between" style="margin-top:6px;"><span class="muted">Payment</span><b>${descriptor.paid?"Paid":"Unpaid"}</b></div>
+    </div>
+    <button class="btn btn-warn btn-block btn-lg" id="brkGo">${descriptor.startLabel}</button>
     <button class="btn btn-ghost btn-block" style="margin-top:8px;" id="brkCancel">Cancel</button>
   </div>`;
   document.body.appendChild(wrap);
   wrap.querySelector("#brkCancel").onclick=()=>wrap.remove();
   wrap.querySelector("#brkGo").onclick= ()=>{
-    const ruleId = wrap.querySelector("#brkType").value;
-    const rule = rules.find(r=>r.id===ruleId);
+    if(!validBreakStart(emp.id,descriptor.key)){wrap.remove();rejectBreakStart(descriptor);return;}
     wrap.remove();
     requireLocation(async (pos)=>{
+      if(!validBreakStart(emp.id,descriptor.key)){rejectBreakStart(descriptor);return;}
+      let snapshot;
+      try{snapshot=await refreshEmployeeBreaksFromSupabase(emp.id);}
+      catch(error){console.error("Break eligibility refresh error:",error);toast("Break eligibility could not be confirmed. Please try again.");return;}
+      const authoritative=currentBreakEligibility(emp.id,snapshot.attendance,snapshot.breaks);
+      if(!authoritative.eligible||authoritative.descriptor.key!==descriptor.key){rejectBreakStart(descriptor);return;}
       const gpsStart = {lat:pos.lat,lng:pos.lng,accuracy:pos.accuracy};
-      const brk = {id:uid("brk"), attendanceId:att.id, type:rule.name, start:nowISO(), end:null, paid:rule.paid, plannedMinutes:rule.minutes, gpsStart, gpsEnd:null};
-      const { error: breakStartError } = await supabaseClient
+      const brk = {id:uid("brk"), attendanceId:authoritative.att.id, type:descriptor.name, start:nowISO(), end:null, paid:descriptor.paid, plannedMinutes:descriptor.minutes, gpsStart, gpsEnd:null};
+      const { data:savedBreak, error: breakStartError } = await supabaseClient
   .from("breaks")
   .insert({
     id: brk.id,
@@ -1818,7 +2046,7 @@ function doStartBreak(){
     gps_start_lng: brk.gpsStart?.lng ?? null,
     gps_end_lat: brk.gpsEnd?.lat ?? null,
     gps_end_lng: brk.gpsEnd?.lng ?? null
-  });
+  }).select().single();
 
 if(breakStartError){
   console.error("Supabase break-start error:", breakStartError);
@@ -1826,25 +2054,34 @@ if(breakStartError){
   return;
 }
 
-if(!DB.breaks.some(b=>b.id===brk.id)) DB.breaks.push(brk);
-if(!att.breakIds.includes(brk.id)) att.breakIds.push(brk.id);
-      audit(emp.name,"Start Break",jobName(att.jobId),rule.name); save();
-      go("emp-home"); toast(`${rule.name} started`);
+coreRealtime.revision++;
+const confirmedBreak={
+  id:savedBreak.id,attendanceId:savedBreak.attendance_id,type:savedBreak.type,
+  start:savedBreak.start_time,end:savedBreak.end_time,paid:savedBreak.paid,
+  plannedMinutes:descriptor.minutes,gpsStart:{lat:savedBreak.gps_start_lat,lng:savedBreak.gps_start_lng},gpsEnd:null
+};
+DB.breaks=[confirmedBreak,...DB.breaks.filter(b=>b.id!==confirmedBreak.id)];
+const currentAtt=DB.attendance.find(a=>a.id===confirmedBreak.attendanceId);
+if(currentAtt&&!currentAtt.breakIds.includes(confirmedBreak.id)) currentAtt.breakIds.push(confirmedBreak.id);
+      audit(emp.name,"Start Break",jobName(currentAtt?.jobId),descriptor.name); save();
+      go("emp-home"); toast(`${descriptor.name} started`);
     }, "Starting a break");
   };
 }
 function doEndBreak(){
   const emp = currentEmployee(); const att = empOpenAttendance(emp.id); const brk = empOpenBreak(att.id);
   requireLocation(async(pos)=>{
-    brk.end = nowISO(); brk.gpsEnd = {lat:pos.lat,lng:pos.lng,accuracy:pos.accuracy};
-    const { error: breakEndError } = await supabaseClient
+    const end=nowISO(),gpsEnd={lat:pos.lat,lng:pos.lng,accuracy:pos.accuracy};
+    const { data:savedBreak, error: breakEndError } = await supabaseClient
   .from("breaks")
   .update({
-    end_time: brk.end,
-    gps_end_lat: brk.gpsEnd?.lat ?? null,
-    gps_end_lng: brk.gpsEnd?.lng ?? null
+    end_time:end,
+    gps_end_lat:gpsEnd.lat,
+    gps_end_lng:gpsEnd.lng
   })
-  .eq("id", brk.id);
+  .eq("id", brk.id)
+  .select()
+  .single();
 
 if(breakEndError){
   console.error("Supabase break-end error:", breakEndError);
@@ -1852,15 +2089,24 @@ if(breakEndError){
   return;
 }
 
+coreRealtime.revision++;
+const confirmedBreak={
+  id:savedBreak.id,attendanceId:savedBreak.attendance_id,type:savedBreak.type,
+  start:savedBreak.start_time,end:savedBreak.end_time,paid:savedBreak.paid,
+  gpsStart:{lat:savedBreak.gps_start_lat,lng:savedBreak.gps_start_lng},
+  gpsEnd:{lat:savedBreak.gps_end_lat,lng:savedBreak.gps_end_lng,accuracy:gpsEnd.accuracy}
+};
+DB.breaks=[confirmedBreak,...DB.breaks.filter(b=>b.id!==confirmedBreak.id)];
 audit(
   emp.name,
   "End Break",
   jobName(att.jobId),
-  `${brk.type} - ${hm(mins(new Date(brk.end)-new Date(brk.start)))}`
+  `${confirmedBreak.type} - ${hm(mins(new Date(confirmedBreak.end)-new Date(confirmedBreak.start)))}`
 );
 
 save();
-    go("emp-home"); toast(`Break ended — ${hm(mins(new Date(brk.end)-new Date(brk.start)))}`);
+    const endedBreakLabel=breakDescriptorForType(confirmedBreak.type)?.key==="lunch"?"Lunch":"Break";
+    go("emp-home"); toast(`${endedBreakLabel} ended — ${hm(mins(new Date(confirmedBreak.end)-new Date(confirmedBreak.start)))}`);
   }, "Ending your break");
 }
 function showTimeOutConfirm(jobName,time){
@@ -2349,8 +2595,8 @@ function bindScreen(){
     if(w?.photoPath) loadWorklogDetailPhoto(w);
     else if(worklogDetailPhoto.id) clearWorklogDetailPhoto();
   }
-  document.querySelectorAll("[data-start-job]").forEach(b=>b.onclick=()=>startJobTracking(b.dataset.startJob));
-  document.querySelectorAll("[data-end-job]").forEach(b=>b.onclick=()=>endJobTracking(b.dataset.endJob));
+  document.querySelectorAll("[data-start-job]").forEach(b=>b.onclick=()=>runJobAction(()=>startJobTracking(b.dataset.startJob)));
+  document.querySelectorAll("[data-end-job]").forEach(b=>b.onclick=()=>runJobAction(()=>endJobTracking(b.dataset.endJob)));
   if($("back") && SELF_SERVICE_ROUTES.includes(route.name)) $("back").onclick = ()=> {
     if(route.name==="emp-att-detail") go("history");
     else if(route.name==="worklog-detail") go(route.back?.name||"worklog", route.back?.params||{});
@@ -2366,7 +2612,7 @@ function bindScreen(){
   if($("tsNextWeek")) $("tsNextWeek").onclick = ()=> { if((route.weekOffset||0)<0) go("timesheet",{weekOffset:(route.weekOffset||0)+1}); };
   if($("btnTimeIn")) $("btnTimeIn").onclick = ()=> go("job-select");
   document.querySelectorAll("[data-job]").forEach(b=> b.onclick = ()=> doTimeIn(b.dataset.job));
-  if($("btnStartBreak")) $("btnStartBreak").onclick = doStartBreak;
+  if($("btnStartBreak")) $("btnStartBreak").onclick = ()=>doStartBreak();
   if($("btnEndBreak")) $("btnEndBreak").onclick = doEndBreak;
   if($("btnTimeOut")) $("btnTimeOut").onclick = doTimeOut;
   if($("goWorklog")) $("goWorklog").onclick = ()=> go("worklog-add");
@@ -2706,6 +2952,8 @@ function screenAdminEmployeeDetail(){
   const e = DB.employees.find(x=>x.id===route.id);
   const recs = DB.attendance.filter(a=>a.employeeId===e.id).sort((a,b)=>new Date(b.timeIn)-new Date(a.timeIn));
   const weekMin = weeklyNetMinutes(e.id, startOfWeek());
+  const activeAtt=empOpenAttendance(e.id),activeBreak=activeAtt?empOpenBreak(activeAtt.id):null;
+  const activeBreakLabel=breakDescriptorForType(activeBreak?.type)?.key==="lunch"?"On Lunch":"On Break";
   const canManage = DB.session.role!=="Manager";
   const canSeeRate = DB.session.role==="Admin"||DB.session.role==="Super Admin"||DB.session.role==="Payroll";
   return `
@@ -2727,7 +2975,7 @@ function screenAdminEmployeeDetail(){
     </div>
     <div class="grid2" style="margin-bottom:16px;">
       <div class="kpi"><div class="num">${hm(weekMin)}</div><div class="lab">Hours this week</div></div>
-      <div class="kpi"><div class="num">${statusPill(empStatus(e.id))}</div><div class="lab">Current status</div></div>
+      <div class="kpi"><div class="num">${statusPill(empStatus(e.id),activeBreakLabel)}</div><div class="lab">Current status</div></div>
     </div>
     ${canManage? `<div class="flexwrap" style="margin-bottom:16px;">
       <button class="btn btn-ghost btn-sm" id="resetPin">Reset PIN</button>
@@ -3276,8 +3524,8 @@ function bindAdminScreen(){
   if($("addJob")) $("addJob").onclick = ()=> modalAddJob();
   if($("editJob")) $("editJob").onclick = ()=> modalEditJob(route.id);
   if($("addJobEmp")) $("addJobEmp").onclick = ()=> modalAssignEmployeeToJob(route.id);
-  document.querySelectorAll("[data-start-job]").forEach(b=>b.onclick=()=>startJobTracking(b.dataset.startJob));
-  document.querySelectorAll("[data-end-job]").forEach(b=>b.onclick=()=>endJobTracking(b.dataset.endJob));
+  document.querySelectorAll("[data-start-job]").forEach(b=>b.onclick=()=>runJobAction(()=>startJobTracking(b.dataset.startJob)));
+  document.querySelectorAll("[data-end-job]").forEach(b=>b.onclick=()=>runJobAction(()=>endJobTracking(b.dataset.endJob)));
   document.querySelectorAll("[data-remove-emp]").forEach(b => {
   b.onclick = async ()=>{
     const j = DB.jobs.find(x=>x.id===route.id);
@@ -3758,13 +4006,14 @@ if(jobCreateError){
   return;
 }
 
-DB.jobs.push({
+const createdJob={
   id:savedJob.id, number:savedJob.number, name:savedJob.name,
   client:savedJob.client, venue:savedJob.venue, location:savedJob.location,
   start:savedJob.start_date||"", end:savedJob.end_date||"",
   manager:savedJob.manager, status:savedJob.status, notes:savedJob.notes,
   assigned:[], photo:njPhotoData, changeLog:job.changeLog
-});
+};
+DB.jobs=[createdJob,...DB.jobs.filter(j=>j.id!==createdJob.id)];
 
 audit(
   DB.session.name,
@@ -3832,7 +4081,7 @@ const updatedJob = {
   status: wrap.querySelector("#ejStatus").value
 };
 
-const { error: jobUpdateError } = await supabaseClient
+const { data: savedJob, error: jobUpdateError } = await supabaseClient
   .from("jobs")
   .update({
     number: updatedJob.number,
@@ -3845,7 +4094,9 @@ const { error: jobUpdateError } = await supabaseClient
     manager: updatedJob.manager,
     status: updatedJob.status
   })
-  .eq("id", j.id);
+  .eq("id", j.id)
+  .select()
+  .single();
 
 if(jobUpdateError){
   console.error("Supabase job update error:", jobUpdateError);
@@ -3853,7 +4104,18 @@ if(jobUpdateError){
   return;
 }
 
-Object.assign(j, updatedJob);
+const currentIndex=DB.jobs.findIndex(x=>x.id===j.id);
+const currentJob=DB.jobs[currentIndex];
+Object.assign(j,{
+  id:savedJob.id,number:savedJob.number,name:savedJob.name,
+  client:savedJob.client,venue:savedJob.venue,location:savedJob.location,
+  start:savedJob.start_date||"",end:savedJob.end_date||"",
+  manager:savedJob.manager,status:savedJob.status,notes:savedJob.notes,
+  assigned:currentJob?.assigned||j.assigned||[]
+});
+const jobsWithoutEdited=DB.jobs.filter(x=>x.id!==j.id);
+jobsWithoutEdited.splice(currentIndex<0?jobsWithoutEdited.length:Math.min(currentIndex,jobsWithoutEdited.length),0,j);
+DB.jobs=jobsWithoutEdited;
 
 const changed = Object.keys(before).filter(
   k => String(before[k] || "") !== String(j[k] || "")
