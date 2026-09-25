@@ -525,9 +525,6 @@ function startOfWeek(d=new Date()){
   const dt = new Date(d); const day = (dt.getDay()+6)%7; // Monday start
   dt.setHours(0,0,0,0); dt.setDate(dt.getDate()-day); return dt;
 }
-function thursdayOfWeek(weekStart){
-  const t = new Date(weekStart); t.setDate(weekStart.getDate()+3); t.setHours(23,59,59,999); return t;
-}
 function sameDay(a,b){ const x=new Date(a),y=new Date(b); return x.toDateString()===y.toDateString(); }
 function initials(name){ return name.split(" ").map(s=>s[0]).slice(0,2).join("").toUpperCase(); }
 function escapeHtml(s){ return (s||"").replace(/[&<>"]/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
@@ -637,7 +634,7 @@ function seed(){
   employees.push(superAdmin);
   auditLogs.push({id:uid("aud"), actor:"System", action:"Seed data generated", target:"Database", detail:"Demo dataset created for Upstage Co.", ts:nowISO()});
 
-  return {employees, jobs, attendance, breaks:breaksStore, worklogs, timesheets, correctionRequests:[], auditLogs, settings, notifications:[], session:null};
+  return {employees, jobs, projects:[], attendance, breaks:breaksStore, worklogs, timesheets, correctionRequests:[], auditLogs, settings, notifications:[], session:null};
 }
 
 function loadDB(){
@@ -680,24 +677,28 @@ async function updateCompanySetting(column,value,localKey){
  }
 }
 async function fetchJobsFromSupabase(){
- const [jobsResult,assignmentsResult]=await Promise.all([
+ const [jobsResult,assignmentsResult,projectsResult]=await Promise.all([
    supabaseClient.from("jobs").select("*"),
-   supabaseClient.from("job_assignments").select("job_id, employee_id")
+   supabaseClient.from("job_assignments").select("job_id, employee_id"),
+   supabaseClient.from("projects").select("id, name")
  ]);
  if(jobsResult.error){console.error("Jobs sync error:",jobsResult.error);throw jobsResult.error;}
  if(assignmentsResult.error){console.error("Job assignment sync error:",assignmentsResult.error);throw assignmentsResult.error;}
- return jobsResult.data.map(j=>({
+ if(projectsResult.error) console.error("Project metadata sync error:",projectsResult.error);
+ const jobs=jobsResult.data.map(j=>({
    id:j.id,number:j.number,name:j.name,client:j.client,venue:j.venue,
    location:j.location,start:j.start_date,end:j.end_date,manager:j.manager,
-   status:j.status,notes:j.notes,
+   status:j.status,notes:j.notes,projectId:j.project_id||null,
+   isProjectDefault:j.is_project_default===true,
    assigned:assignmentsResult.data.filter(a=>a.job_id===j.id).map(a=>a.employee_id)
  }));
+ return {jobs,projects:projectsResult.error?[]:projectsResult.data.map(p=>({id:p.id,name:p.name}))};
 }
 async function syncRosterJobsFromSupabase(){
  const {data:employeeRows,error:employeeError}=await supabaseClient.from("employees")
    .select("*").order("name",{ascending:true});
  if(employeeError){console.error("Employee sync error:",employeeError);throw employeeError;}
- const jobs=await fetchJobsFromSupabase();
+ const {jobs,projects}=await fetchJobsFromSupabase();
  DB.employees=employeeRows.map(e=>({
    id:e.id,empId:e.emp_id,name:e.name,role:e.role,status:e.status,email:e.email,
    department:e.department,employmentType:e.employment_type,payCategory:e.pay_category,
@@ -705,6 +706,7 @@ async function syncRosterJobsFromSupabase(){
    permission:e.permission,fieldRole:e.field_role,userId:e.user_id
  }));
  DB.jobs=jobs;
+ DB.projects=projects;
 }
 async function fetchWorklogsFromSupabase(employeeId, includeAllWorklogs=false){
  const query=supabaseClient.from("worklogs").select("*");
@@ -889,6 +891,7 @@ const coreRealtime={channel:null,userId:null,employeeId:null,role:null,generatio
   timer:null,revision:0,refreshing:false,pending:false,interrupted:false};
 const supportRealtime={timer:null,revision:0,refreshing:false,corrections:false,worklogs:false,renderTimer:null};
 const jobsRealtime={timer:null,revision:0,refreshing:false,dirty:false};
+const workRecapExpandedGroups=new Set();
 let jobActionInProgress=0;
 function stopCoreRealtime(){
   coreRealtime.generation++;
@@ -905,6 +908,7 @@ function stopCoreRealtime(){
   coreRealtime.channel=null;
   coreRealtime.userId=coreRealtime.employeeId=coreRealtime.role=null;
   coreRealtime.pending=coreRealtime.refreshing=coreRealtime.interrupted=false;
+  workRecapExpandedGroups.clear();
   overtimeConfirmedDate="";
   fourPmDecisionOffer.key="";fourPmDecisionOffer.responseDeadline=0;fourPmDecisionOffer.processing=false;
   document.getElementById("fourPmReminder")?.remove();
@@ -1040,10 +1044,11 @@ async function refreshJobsFromRealtime(){
   const generation=coreRealtime.generation,revision=jobsRealtime.revision;
   const employeeId=coreRealtime.employeeId,role=coreRealtime.role;
   try{
-    const jobs=await fetchJobsFromSupabase();
+    const {jobs,projects}=await fetchJobsFromSupabase();
     if(generation!==coreRealtime.generation || revision!==jobsRealtime.revision ||
        DB.session?.employeeId!==employeeId || DB.session?.role!==role) return;
     DB.jobs=jobs;
+    DB.projects=projects;
     save();
   }catch(error){
     if(generation===coreRealtime.generation) console.error("Jobs Realtime sync error:",error);
@@ -1786,12 +1791,31 @@ function screenEmpHome(){
   const greeting = hour<12?"Good morning":hour<17?"Good afternoon":"Good evening";
   const firstName = emp.name.split(" ")[0];
 
-  const todaysLogs = DB.worklogs.filter(w=>w.employeeId===emp.id && sameDay(w.start,new Date()));
-  const recentAtt = DB.attendance.filter(a=>a.employeeId===emp.id).sort((a,b)=>new Date(b.timeIn)-new Date(a.timeIn)).slice(0,3);
-  const issues = DB.attendance.filter(a=>a.employeeId===emp.id && a.status==="submitted").length;
-  const rejectedCount = DB.attendance.filter(a=>a.employeeId===emp.id && a.status==="rejected").length;
-  const draftCount = DB.attendance.filter(a=>a.employeeId===emp.id && a.status==="draft").length;
-
+  const todayKey=sydneyDateKey();
+  const todaysJobEntries=(DB.jobTimeEntries||[])
+    .filter(e=>e.employeeId===emp.id&&e.startTime&&e.endTime&&e.id!==activeJobEntry?.id&&sydneyDateKey(e.startTime)===todayKey)
+    .sort((a,b)=>new Date(b.startTime)-new Date(a.startTime));
+  const todaysLogs = DB.worklogs.filter(w=>w.employeeId===emp.id && sydneyDateKey(w.start)===todayKey);
+  const projectsById=new Map((DB.projects||[]).map(project=>[project.id,project]));
+  const jobRecapGroups=[...todaysJobEntries.reduce((groups,entry)=>{
+    const job=DB.jobs.find(j=>j.id===entry.jobId);
+    const project=job?.projectId?projectsById.get(job.projectId):null;
+    const key=project?`project:${project.id}`:`job:${entry.jobId}`;
+    if(!groups.has(key)) groups.set(key,{id:key,name:project?.name||job?.name||jobName(entry.jobId),projectId:project?.id||null,jobs:new Map(),sessions:[],totalSeconds:0});
+    const group=groups.get(key);
+    const displayName=project&&job?.isProjectDefault?project.name:(job?.name||jobName(entry.jobId));
+    group.jobs.set(entry.jobId,{name:displayName,isProjectDefault:!!(project&&job?.isProjectDefault)});
+    const recordedSeconds=Number.isFinite(Number(entry.durationSeconds))
+      ? Math.max(0,Number(entry.durationSeconds))
+      : Math.max(0,Math.floor((new Date(entry.endTime)-new Date(entry.startTime))/1000));
+    group.sessions.push({...entry,displayName,recordedSeconds});
+    group.totalSeconds+=recordedSeconds;
+    return groups;
+  },new Map()).values()];
+  const formatJobDuration=seconds=>{
+    const totalMinutes=Math.round(seconds/60),hours=Math.floor(totalMinutes/60),minutes=totalMinutes%60;
+    return hours?`${hours}h ${String(minutes).padStart(2,"0")}m`:`${minutes}m`;
+  };
   const breakSecs = openBrk ? Math.floor((Date.now()-new Date(openBrk.start).getTime())/1000) : 0;
 
   return `
@@ -1824,16 +1848,6 @@ function screenEmpHome(){
       `}
     </div>
 
-    ${rejectedCount>0 ? `<div class="card card-tight" style="border-color:var(--danger);margin-bottom:12px;" >
-      <div class="row gap-8"><span class="dot dot-danger"></span><div class="small"><b>${rejectedCount}</b> ${rejectedCount>1?'entries need':'entry needs'} correction — check History.</div></div>
-    </div>`:""}
-    ${draftCount>0 ? `<div class="card card-tight" style="border-color:var(--line);margin-bottom:12px;" >
-      <div class="row-between"><div class="small"><b>${draftCount}</b> completed ${draftCount>1?'shifts':'shift'} not yet submitted.</div><a class="link small" id="goSubmit">Timesheet →</a></div>
-    </div>`:""}
-    ${issues>0 ? `<div class="card card-tight" style="border-color:var(--warn);margin-bottom:16px;" >
-      <div class="row gap-8"><span class="dot dot-warn"></span><div class="small"><b>${issues}</b> timesheet ${issues>1?'entries':'entry'} awaiting admin approval.</div></div>
-    </div>`:""}
-
     <div class="row-between" style="margin-bottom:10px;"><div class="h3">TODAY'S WORK</div><a class="link small" id="goWorklog">Add +</a></div>
 
 ${(openAtt||activeJobEntry)?renderedJobs.filter(j=>openAtt||j.id===activeJobEntry.jobId).map(j=>{
@@ -1844,21 +1858,32 @@ ${(openAtt||activeJobEntry)?renderedJobs.filter(j=>openAtt||j.id===activeJobEntr
   </div>`;
 }).join(""):""}
 
-${todaysLogs.length? todaysLogs.map(w=>`
-  <div class="card card-tight" style="margin-bottom:8px;">
-    <div class="row-between"><b class="small">${escapeHtml(jobName(w.jobId))}</b><span class="tiny muted">${fmtTime(w.start)}${w.finish?fmtTime(w.finish):" now"}</span></div>
-    <div class="small muted" style="margin-top:2px;">${escapeHtml(w.task)}</div>
-  </div>`).join("") : !openAtt?`<div class="empty small">No work logged yet today.</div>`:""}
+${jobRecapGroups.map(group=>`
+  <details class="card card-tight" style="margin-bottom:8px;" data-work-recap-key="${escapeHtml(group.id)}" ${workRecapExpandedGroups.has(group.id)?"open":""}>
+    <summary style="cursor:pointer;">
+      <span class="row-between" style="display:inline-flex;width:calc(100% - 18px);vertical-align:top;gap:12px;">
+        <span style="min-width:0;"><b class="small">${escapeHtml(group.name)}</b>${group.projectId&&!(group.jobs.size===1&&[...group.jobs.values()][0].isProjectDefault)?`<span class="tiny muted" style="display:block;margin-top:2px;white-space:normal;">Jobs: ${[...group.jobs.values()].sort((a,b)=>Number(b.isProjectDefault)-Number(a.isProjectDefault)).map(job=>escapeHtml(job.name)).join(", ")}</span>`:""}</span>
+        <b class="small" style="white-space:nowrap;">${formatJobDuration(group.totalSeconds)}</b>
+      </span>
+    </summary>
+    <div class="col gap-8" style="margin-top:10px;padding-top:8px;border-top:1px solid var(--line);">
+      ${[...group.sessions].sort((a,b)=>new Date(a.startTime)-new Date(b.startTime)).map(session=>`
+        <div class="row-between tiny" style="gap:10px;">
+          <b style="min-width:0;">${escapeHtml(session.displayName)}</b>
+          <span class="muted" style="margin-left:auto;white-space:nowrap;">${fmtTime(session.startTime)} – ${fmtTime(session.endTime)}</span>
+          <b style="white-space:nowrap;">${formatJobDuration(session.recordedSeconds)}</b>
+        </div>`).join("")}
+    </div>
+  </details>`).join("")}
 
-    <div class="row-between" style="margin:18px 0 10px;"><div class="h3">RECENT ATTENDANCE</div><a class="link small" id="goHistory">View all</a></div>
-    ${recentAtt.map(a=>`
-      <div class="card card-tight" style="margin-bottom:8px;">
-        <div class="row-between">
-          <div class="small"><b>${fmtDate(a.timeIn)}</b> · ${escapeHtml(jobName(a.jobId))}</div>
-          ${attStatusPill(a.status)}
-        </div>
-        <div class="tiny muted" style="margin-top:3px;">${fmtTime(a.timeIn)} → ${a.timeOut?fmtTime(a.timeOut):'—'}</div>
-      </div>`).join("")}
+${todaysLogs.length?`<details class="card card-tight" style="margin-bottom:8px;" data-work-recap-key="manual-work" ${workRecapExpandedGroups.has("manual-work")?"open":""}>
+  <summary style="cursor:pointer;"><span class="row-between" style="display:inline-flex;width:calc(100% - 18px);vertical-align:top;gap:12px;"><span><b class="small">Other / Manual Work</b><span class="tiny muted" style="display:block;margin-top:2px;">${todaysLogs.length} ${todaysLogs.length===1?"entry":"entries"}</span></span></span></summary>
+  <div class="col gap-8" style="margin-top:10px;padding-top:8px;border-top:1px solid var(--line);">
+    ${todaysLogs.map(w=>`<div class="row-between tiny" style="gap:10px;"><span style="min-width:0;"><b>${escapeHtml(w.task)}</b><span class="muted" style="display:block;">${escapeHtml(jobName(w.jobId))}</span></span><span class="muted" style="white-space:nowrap;">${fmtTime(w.start)}${w.finish?` – ${fmtTime(w.finish)}`:" – now"}</span></div>`).join("")}
+  </div>
+</details>`:""}
+${!jobRecapGroups.length&&!todaysLogs.length&&!activeJobEntry?`<div class="empty small">No work logged yet today.</div>`:""}
+
   </div>`;
 }
 
@@ -1913,9 +1938,10 @@ async function fetchAuthoritativeStartJobState(jobId,employeeId){
 }
 async function reconcileJobsAfterRejectedStart(){
   try{
-    const jobs=await fetchJobsFromSupabase();
+    const {jobs,projects}=await fetchJobsFromSupabase();
     jobsRealtime.revision++;
     DB.jobs=jobs;
+    DB.projects=projects;
     save();
     if(["emp-home","job-select"].includes(route.name)) render();
   }catch(error){
@@ -2574,80 +2600,8 @@ function screenEmpAttDetail(){
       <div class="card card-tight" style="margin-bottom:16px;background:var(--panel-2);"><div class="row-between small"><b>Total break time consumed</b><b>${hm((a.unpaidBreakMin||0)+(a.paidBreakMin||0))}</b></div></div>`:""}
     ${a.summary? `<div class="card col" style="margin:16px 0;"><div class="muted small" style="margin-bottom:4px;">Work summary</div><div class="small">${escapeHtml(a.summary)}</div></div>`:""}
 
-    ${openReq? `<div class="card" style="border-color:var(--warn);margin-top:10px;"><b class="small">Correction request pending</b><div class="small muted" style="margin-top:4px;">${openReq.requestedTimeIn?`Requested new clock-in: ${fmtTime(openReq.requestedTimeIn)}<br>`:""}${openReq.requestedTimeOut?`Requested new clock-out: ${fmtTime(openReq.requestedTimeOut)}<br>`:""}Reason: ${escapeHtml(openReq.reason)}</div><div class="tiny muted" style="margin-top:4px;">Awaiting admin review.</div></div>`
-    : (a.status==="approved"||a.status==="submitted"||a.status==="rejected") ? `<button class="btn btn-ghost btn-block" style="margin-top:10px;" id="reqCorrection">Request Correction</button>` : ""}
+    ${openReq? `<div class="card" style="border-color:var(--warn);margin-top:10px;"><b class="small">Correction request pending</b><div class="small muted" style="margin-top:4px;">${openReq.requestedTimeIn?`Requested new clock-in: ${fmtTime(openReq.requestedTimeIn)}<br>`:""}${openReq.requestedTimeOut?`Requested new clock-out: ${fmtTime(openReq.requestedTimeOut)}<br>`:""}Reason: ${escapeHtml(openReq.reason)}</div><div class="tiny muted" style="margin-top:4px;">Awaiting admin review.</div></div>`:""}
   </div>`;
-}
-
-function modalRequestCorrection(attId){
-  const a = DB.attendance.find(x=>x.id===attId);
-  const wrap = document.createElement("div"); wrap.className="modal-bg";
-  wrap.innerHTML = `<div class="modal">
-    <div class="h2" style="margin-bottom:6px;">Request Correction</div>
-    <div class="muted small" style="margin-bottom:14px;">Forgot to clock in/out, or a time looks wrong? Tell your admin what it should be.</div>
-    <div class="field"><label>What needs correcting?</label>
-      <select id="reqType">
-        <option value="timeIn">Time In</option>
-        <option value="timeOut" selected>Time Out</option>
-        <option value="both">Both Time In &amp; Time Out</option>
-      </select>
-    </div>
-    <div class="field" id="reqTimeInField"><label>Correct Time In</label><input type="time" id="reqTimeIn" value="${a.timeIn? new Date(a.timeIn).toTimeString().slice(0,5):''}"></div>
-    <div class="field" id="reqTimeOutField"><label>Correct Time Out</label><input type="time" id="reqTimeOut" value="${a.timeOut? new Date(a.timeOut).toTimeString().slice(0,5):''}"></div>
-    <div class="field"><label>Reason</label><textarea id="reqReason" rows="3" placeholder="e.g. Forgot to clock out, left site at 4:30pm"></textarea></div>
-    <div class="tiny muted" style="margin-bottom:12px;">Attendance corrections for this week are due by <b>Thursday, ${fmtDateShort(thursdayOfWeek(startOfWeek(new Date(a.timeIn))))}</b>.</div>
-    <button class="btn btn-accent btn-block btn-lg" id="reqSend">Send to Admin</button>
-    <button class="btn btn-ghost btn-block" style="margin-top:8px;" id="reqCancel">Cancel</button>
-  </div>`;
-  document.body.appendChild(wrap);
-  function syncFields(){
-    const t = wrap.querySelector("#reqType").value;
-    wrap.querySelector("#reqTimeInField").style.display = (t==="timeIn"||t==="both") ? "" : "none";
-    wrap.querySelector("#reqTimeOutField").style.display = (t==="timeOut"||t==="both") ? "" : "none";
-  }
-  wrap.querySelector("#reqType").onchange = syncFields;
-  syncFields();
-  wrap.querySelector("#reqCancel").onclick=()=>wrap.remove();
-  wrap.querySelector("#reqSend").onclick=async()=>{
-    const type = wrap.querySelector("#reqType").value;
-    const reason = wrap.querySelector("#reqReason").value;
-    const timeInVal = wrap.querySelector("#reqTimeIn").value;
-    const timeOutVal = wrap.querySelector("#reqTimeOut").value;
-    if(!reason){ toast("Please add a reason"); return; }
-    if((type==="timeIn"||type==="both") && !timeInVal){ toast("Enter the correct Time In"); return; }
-    if((type==="timeOut"||type==="both") && !timeOutVal){ toast("Enter the correct Time Out"); return; }
-    let requestedTimeIn = null, requestedTimeOut = null;
-    if(type==="timeIn"||type==="both"){
-      const [h,m] = timeInVal.split(":").map(Number);
-      const d = new Date(a.timeIn); d.setHours(h,m,0,0);
-      requestedTimeIn = d.toISOString();
-    }
-    if(type==="timeOut"||type==="both"){
-      const [h,m] = timeOutVal.split(":").map(Number);
-      const d = new Date(a.timeOut||a.timeIn); d.setHours(h,m,0,0);
-      requestedTimeOut = d.toISOString();
-    }
-    const emp = currentEmployee();
-   const correction={
-  id:uid("cr"),attendance_id:a.id,employee_id:emp.id,request_type:type,
-  original_time_in:a.timeIn,original_time_out:a.timeOut,
-  requested_time_in:requestedTimeIn||null,requested_time_out:requestedTimeOut||null,
-  reason,status:"pending"
-};
-const {data,error}=await supabaseClient.from("correction_requests").insert(correction).select().single();
-if(error){console.error("Correction request save error:",error);toast("Could not submit correction request.");return;}
-
-if(!DB.correctionRequests.some(r=>r.id===data.id)) DB.correctionRequests.push({
-  id:data.id,attendanceId:data.attendance_id,employeeId:data.employee_id,type:data.request_type,
-  originalTimeIn:data.original_time_in,originalTimeOut:data.original_time_out,
-  requestedTimeIn:data.requested_time_in,requestedTimeOut:data.requested_time_out,
-  reason:data.reason,status:data.status,createdAt:data.created_at
-});
-    const typeLabel = type==="both"?"Time In & Time Out":type==="timeIn"?"Time In":"Time Out";
-    const detail = `${typeLabel} correction requested.${requestedTimeIn?` New Time In: ${fmtTime(requestedTimeIn)}.`:""}${requestedTimeOut?` New Time Out: ${fmtTime(requestedTimeOut)}.`:""} Reason: ${reason}`;
-    audit(emp.name,"Requested correction",jobName(a.jobId),detail);
-    save(); wrap.remove(); toast("Correction request sent to admin"); go("emp-att-detail",{id:attId});
-  };
 }
 
 function screenTimesheet(){
@@ -2656,18 +2610,6 @@ function screenTimesheet(){
   const weekStart = new Date(startOfWeek()); weekStart.setDate(weekStart.getDate()+weekOffset*7);
   const week = empRecordsForWeek(emp.id, weekStart).filter(a=>a.timeOut);
   const totalNet = week.reduce((s,a)=>s+(a.netMin||0),0);
-  const draftCount = week.filter(a=>a.status==="draft").length;
-  const allApproved = week.length>0 && week.every(a=>a.status==="approved");
-  const anySubmitted = week.some(a=>a.status==="submitted");
-  const anyRejected = week.some(a=>a.status==="rejected");
-  let bannerStatus = '<span class="pill pill-muted">In progress</span>';
-  if(allApproved) bannerStatus = '<span class="pill pill-ok">All approved</span>';
-  else if(anyRejected) bannerStatus = '<span class="pill pill-danger">Needs correction — rejected</span>';
-  else if(anySubmitted) bannerStatus = '<span class="pill pill-warn">Submitted — awaiting approval</span>';
-  else if(draftCount>0) bannerStatus = '<span class="pill pill-muted">Draft — not yet submitted</span>';
-  const deadline = thursdayOfWeek(weekStart);
-  const pastDeadline = new Date() > deadline;
-  const needsAction = draftCount>0 || anyRejected;
   const weekEnd = new Date(weekStart); weekEnd.setDate(weekEnd.getDate()+6);
   const weekLabel = weekOffset===0? "This week" : weekOffset===-1? "Last week" : `${fmtDateShort(weekStart)} – ${fmtDateShort(weekEnd)}`;
   return `
@@ -2681,14 +2623,7 @@ function screenTimesheet(){
     <div class="card" style="margin-bottom:16px;">
       <div class="muted small">Week of ${fmtDateShort(weekStart)}</div>
       <div class="flowbig" style="margin:6px 0;">${hm(totalNet)}</div>
-      <div class="small">${bannerStatus}</div>
-      <div class="tiny" style="margin-top:8px;color:${pastDeadline && needsAction ? 'var(--danger)':'var(--muted)'};">
-        ${pastDeadline && needsAction ? '⚠️ Past this week\'s deadline — ' : ''}Submissions and correction requests for this week are due by <b>Thursday, ${fmtDateShort(deadline)}</b>.
-      </div>
-      <div class="grid2" style="margin-top:14px;gap:10px;">
-        ${draftCount>0? `<button class="btn btn-accent" id="submitTs">Submit ${draftCount} Day${draftCount>1?'s':''}</button>`:'<div></div>'}
-        <button class="btn btn-ghost" id="openCorrectionCalendar">📅 Request Correction</button>
-      </div>
+      <div class="small muted">Read-only attendance history</div>
     </div>
     <div class="row-between" style="margin-bottom:8px;"><div class="h3">ALL SHIFTS — ${weekLabel.toUpperCase()}</div>${week.length>1?`<span class="tiny muted">Bulk view — ${week.length} days</span>`:""}</div>
     <table>
@@ -2702,67 +2637,9 @@ function screenTimesheet(){
       </tr>`).join("")}
       ${week.length===0?`<tr><td colspan="7" class="muted" style="text-align:center;padding:20px;">No completed shifts this week</td></tr>`:""}
     </table>
-    <div class="tiny muted" style="margin-top:14px;">Approved records are locked. Use "Request Correction" to pick any day this week from a calendar. Use the weekly list or Previous/Next week to review and act on multiple days at once.</div>
+    <div class="tiny muted" style="margin-top:14px;">Select a shift to view its recorded attendance and break details.</div>
   </div>`;
 }
-function modalBulkSubmitSummary(){
-  const emp = currentEmployee();
-  const weekOffset = route.weekOffset||0;
-  const weekStart = new Date(startOfWeek()); weekStart.setDate(weekStart.getDate()+weekOffset*7);
-  const drafts = empRecordsForWeek(emp.id, weekStart).filter(a=>a.status==="draft");
-  const totalNet = drafts.reduce((s,a)=>s+(a.netMin||0),0);
-  const wrap = document.createElement("div"); wrap.className="modal-bg";
-  wrap.innerHTML = `<div class="modal">
-    <div class="h2" style="margin-bottom:6px;">Submit for Approval</div>
-    <div class="muted small" style="margin-bottom:14px;">Review the ${drafts.length} day${drafts.length>1?'s':''} below before sending to your admin.</div>
-    <div class="col gap-8" style="margin-bottom:14px;">
-      ${drafts.map(a=>`<div class="card card-tight"><div class="row-between small"><b>${fmtDate(a.timeIn)}</b><span>${hm(a.netMin||0)}</span></div><div class="tiny muted">${escapeHtml(jobName(a.jobId))} · ${fmtTime(a.timeIn)}–${a.timeOut?fmtTime(a.timeOut):'—'}</div></div>`).join("")}
-    </div>
-    <div class="row-between card-tight" style="background:var(--panel-2);border-radius:10px;margin-bottom:16px;"><span class="small muted">Total for submission</span><b>${hm(totalNet)}</b></div>
-    <button class="btn btn-accent btn-block btn-lg" id="bulkSubmitConfirm">Confirm &amp; Submit</button>
-    <button class="btn btn-ghost btn-block" style="margin-top:8px;" id="bulkSubmitCancel">Cancel</button>
-  </div>`;
-  document.body.appendChild(wrap);
-  wrap.querySelector("#bulkSubmitCancel").onclick=()=>wrap.remove();
-  wrap.querySelector("#bulkSubmitConfirm").onclick=async()=>{
-    const ids=drafts.map(a=>a.id);
-const {error}=await supabaseClient.from("attendance").update({
-  status:"submitted",updated_at:nowISO()
-}).in("id",ids);
-
-if(error){console.error("Timesheet submit error:",error);toast("Could not submit timesheet.");return;}
-
-drafts.forEach(a=>a.status="submitted");
-    audit(emp.name,"Submitted timesheet for approval","Weekly timesheet",`${drafts.length} day(s), week of ${fmtDateShort(weekStart)}`);
-    save(); wrap.remove(); toast("Timesheet submitted for approval"); go("timesheet",{weekOffset});
-  };
-}
-function modalCorrectionCalendar(){
-  const emp = currentEmployee();
-  const weekOffset = route.weekOffset||0;
-  const weekStart = new Date(startOfWeek()); weekStart.setDate(weekStart.getDate()+weekOffset*7);
-  const days = Array.from({length:7}, (_,i)=>{ const d=new Date(weekStart); d.setDate(d.getDate()+i); return d; });
-  const dayNames = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
-  const wrap = document.createElement("div"); wrap.className="modal-bg";
-  wrap.innerHTML = `<div class="modal">
-    <div class="h2" style="margin-bottom:6px;">Request Correction</div>
-    <div class="muted small" style="margin-bottom:14px;">Pick the day you need corrected.</div>
-    <div class="grid3" style="gap:8px;">
-      ${days.map((d,i)=>{
-        const att = DB.attendance.find(a=>a.employeeId===emp.id && sameDay(a.timeIn,d));
-        const disabled = !att;
-        return `<button class="btn ${disabled?'btn-ghost':'btn-accent'} btn-sm" style="flex-direction:column;padding:12px 6px;${disabled?'opacity:.4;':''}" data-cal-day="${att?att.id:''}" ${disabled?'disabled':''}>
-          <span style="font-weight:800;">${dayNames[i]}</span><span class="tiny">${d.getDate()}</span>
-        </button>`;
-      }).join("")}
-    </div>
-    <button class="btn btn-ghost btn-block" style="margin-top:16px;" id="calCancel">Cancel</button>
-  </div>`;
-  document.body.appendChild(wrap);
-  wrap.querySelector("#calCancel").onclick=()=>wrap.remove();
-  wrap.querySelectorAll("[data-cal-day]").forEach(b=> b.onclick = ()=>{ const attId=b.dataset.calDay; wrap.remove(); modalRequestCorrection(attId); });
-}
-
 function screenProfile(){
   const emp = currentEmployee();
   return `
@@ -2799,6 +2676,12 @@ function screenPrivacy(){
 /* ---------------- Screen event binding (employee) ---------------- */
 function bindScreen(){
   const $ = id=>document.getElementById(id);
+  document.querySelectorAll("details[data-work-recap-key]").forEach(details=>{
+    details.ontoggle=()=>{
+      if(details.open) workRecapExpandedGroups.add(details.dataset.workRecapKey);
+      else workRecapExpandedGroups.delete(details.dataset.workRecapKey);
+    };
+  });
   if(route.name==="worklog-detail"){
     const w=DB.worklogs.find(x=>x.id===route.id);
     if(w?.photoPath) loadWorklogDetailPhoto(w);
@@ -2814,9 +2697,6 @@ function bindScreen(){
   };
   if($("back") && route.name==="privacy" && !isAdminRole(DB.session?.role)) $("back").onclick = ()=> go("profile");
   document.querySelectorAll("[data-emp-att]").forEach(el=> el.onclick = ()=> go("emp-att-detail",{id:el.dataset.empAtt}));
-  if($("reqCorrection")) $("reqCorrection").onclick = ()=> modalRequestCorrection(route.id);
-  if($("submitTs")) $("submitTs").onclick = ()=> modalBulkSubmitSummary();
-  if($("openCorrectionCalendar")) $("openCorrectionCalendar").onclick = ()=> modalCorrectionCalendar();
   if($("tsPrevWeek")) $("tsPrevWeek").onclick = ()=> go("timesheet",{weekOffset:(route.weekOffset||0)-1});
   if($("tsNextWeek")) $("tsNextWeek").onclick = ()=> { if((route.weekOffset||0)<0) go("timesheet",{weekOffset:(route.weekOffset||0)+1}); };
   if($("btnTimeIn")) $("btnTimeIn").onclick = ()=> go("job-select");
@@ -2825,8 +2705,6 @@ function bindScreen(){
   if($("btnEndBreak")) $("btnEndBreak").onclick = doEndBreak;
   if($("btnTimeOut")) $("btnTimeOut").onclick = doTimeOut;
   if($("goWorklog")) $("goWorklog").onclick = ()=> go("worklog-add");
-  if($("goHistory")) $("goHistory").onclick = ()=> go("history");
-  if($("goSubmit")) $("goSubmit").onclick = ()=> go("timesheet");
   if($("addWl")) $("addWl").onclick = ()=> go("worklog-add");
   if($("viewPrivacy")) $("viewPrivacy").onclick = ()=> { PRIVACY_FROM_LOGIN=false; go("privacy"); };
   if($("logoutBtn")) $("logoutBtn").onclick = async () => {
