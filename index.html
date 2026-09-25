@@ -469,23 +469,21 @@ function checkWorkReminders(){
   invalidateStaleFourPmReminder();
   const emp=currentEmployee(),att=emp?empOpenAttendance(emp.id):null;
   if(invalidated&&route.name==="emp-home") render();
-  if(!emp||!att){fourPmDecisionOffer.key="";fourPmDecisionOffer.responseDeadline=0;return;}
+  if(!emp||!att){overtimeConfirmedDate="";fourPmDecisionOffer.key="";fourPmDecisionOffer.responseDeadline=0;return;}
   if(empOpenBreak(att.id)) return;
 
   syncPostJobOtReminder();
   if(postJobOtPendingState()) return;
 
   const cutoff=fourPmCutoffState();
-  if(att.overtimeConfirmedAt){
-  const confirmedSydney=new Intl.DateTimeFormat("en-CA",{timeZone:"Australia/Sydney",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date(att.overtimeConfirmedAt));
-  if(confirmedSydney===cutoff.today)overtimeConfirmedDate=cutoff.today;
-}
-if(cutoff.prompt&&overtimeConfirmedDate!==cutoff.today){
+  const confirmedToday=att.overtimeConfirmedAt&&sydneyDateKey(att.overtimeConfirmedAt)===cutoff.today;
+  overtimeConfirmedDate=confirmedToday?cutoff.today:"";
+if(cutoff.prompt&&!confirmedToday){
   offerFourPmDecision(emp,att,cutoff);
   return;
 }
 
-if(cutoff.expired&&overtimeConfirmedDate!==cutoff.today){
+if(cutoff.expired&&!confirmedToday){
   const offerKey=`${att.id}|${cutoff.today}`;
   if(fourPmDecisionOffer.key!==offerKey||Date.now()<fourPmDecisionOffer.responseDeadline){
     offerFourPmDecision(emp,att,cutoff);
@@ -907,7 +905,9 @@ function stopCoreRealtime(){
   coreRealtime.channel=null;
   coreRealtime.userId=coreRealtime.employeeId=coreRealtime.role=null;
   coreRealtime.pending=coreRealtime.refreshing=coreRealtime.interrupted=false;
+  overtimeConfirmedDate="";
   fourPmDecisionOffer.key="";fourPmDecisionOffer.responseDeadline=0;fourPmDecisionOffer.processing=false;
+  document.getElementById("fourPmReminder")?.remove();
   postJobOtReminder.resolving=false;clearPostJobOtReminder();
   if(channel) supabaseClient.removeChannel(channel).then(status=>{
     if(status!=="ok") console.error("Core Realtime removal status:",status);
