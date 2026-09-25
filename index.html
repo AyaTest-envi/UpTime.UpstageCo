@@ -1779,6 +1779,9 @@ function screenEmpHome(){
   const activeJobEntry=(DB.jobTimeEntries||[]).find(e=>e.employeeId===emp.id&&!e.endTime);
   const job=activeJobEntry?DB.jobs.find(j=>j.id===activeJobEntry.jobId):null;
   const visibleJobs=employeeVisibleJobs(emp.id,activeJobEntry?.jobId);
+  const renderedJobs=activeJobEntry
+    ? [...visibleJobs.filter(j=>j.id===activeJobEntry.jobId),...visibleJobs.filter(j=>j.id!==activeJobEntry.jobId)]
+    : visibleJobs;
   const hour = new Date().getHours();
   const greeting = hour<12?"Good morning":hour<17?"Good afternoon":"Good evening";
   const firstName = emp.name.split(" ")[0];
@@ -1833,7 +1836,7 @@ function screenEmpHome(){
 
     <div class="row-between" style="margin-bottom:10px;"><div class="h3">TODAY'S WORK</div><a class="link small" id="goWorklog">Add +</a></div>
 
-${(openAtt||activeJobEntry)?visibleJobs.filter(j=>openAtt||j.id===activeJobEntry.jobId).map(j=>{
+${(openAtt||activeJobEntry)?renderedJobs.filter(j=>openAtt||j.id===activeJobEntry.jobId).map(j=>{
   const active=activeJobEntry?.jobId===j.id;
   return `<div class="card card-tight" style="margin-bottom:8px;${active?"background:#effcf3;":""}">
     <div class="row-between"><div><b>${escapeHtml(j.name)}</b><div class="tiny muted">${escapeHtml(j.number||"")}</div></div></div>
