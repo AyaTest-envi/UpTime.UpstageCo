@@ -161,13 +161,33 @@ function ausNow(){
   const v=Object.fromEntries(p.map(x=>[x.type,x.value]));
   return {year:+v.year,month:+v.month,day:+v.day,hour:+v.hour,minute:+v.minute,second:+v.second,time:`${v.hour}:${v.minute}:${v.second}`};
 }
-function workReminderType(){
-  const t=ausNow();
-  if(t.hour===10) return "break";
-  if(t.hour===14) return "lunch";
-  if(t.hour===16) return "timeout";
-  return null;
+const BREAK_DESCRIPTORS=[
+  {key:"morning-break",name:"Morning Break",aliases:["Morning Tea","Morning Tea (Smoko)"] ,minutes:20,paid:true,startMinute:600,endMinute:660,startLabel:"START BREAK",endLabel:"END BREAK"},
+  {key:"lunch",name:"Lunch",aliases:["Lunch"],minutes:30,paid:false,startMinute:780,endMinute:840,startLabel:"START LUNCH",endLabel:"END LUNCH"}
+];
+function sydneyDateKey(value=new Date()){
+  return new Intl.DateTimeFormat("en-CA",{timeZone:"Australia/Sydney",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date(value));
 }
+function currentBreakDescriptor(){
+  const t=ausNow(),minute=t.hour*60+t.minute;
+  return BREAK_DESCRIPTORS.find(b=>minute>=b.startMinute&&minute<b.endMinute)||null;
+}
+function breakDescriptorForType(type){
+  const normalized=String(type||"").trim().toLowerCase();
+  return BREAK_DESCRIPTORS.find(b=>b.name.toLowerCase()===normalized||b.aliases.some(a=>a.toLowerCase()===normalized))||null;
+}
+function breakTakenFromRows(empId,descriptor,dateKey,attendanceRows,breakRows){
+  const attendanceIds=new Set(attendanceRows.filter(a=>a.employeeId===empId).map(a=>a.id));
+  return breakRows.some(b=>attendanceIds.has(b.attendanceId)&&breakDescriptorForType(b.type)?.key===descriptor.key&&sydneyDateKey(b.start)===dateKey);
+}
+function currentBreakEligibility(empId,attendanceRows=DB.attendance,breakRows=DB.breaks){
+  const descriptor=currentBreakDescriptor(),dateKey=sydneyDateKey();
+  const att=attendanceRows.find(a=>a.employeeId===empId&&!a.timeOut);
+  const openBreak=att&&breakRows.find(b=>b.attendanceId===att.id&&!b.end);
+  const taken=descriptor?breakTakenFromRows(empId,descriptor,dateKey,attendanceRows,breakRows):false;
+  return {descriptor,dateKey,att,openBreak,taken,eligible:!!(descriptor&&att&&!openBreak&&!taken)};
+}
+function workReminderType(){ return currentBreakDescriptor()?.key||null; }
 function fmtTime(iso){ if(!iso) return "—"; return new Date(iso).toLocaleTimeString([], {hour:'numeric',minute:'2-digit'}); }
 function fmtDate(iso){ return new Date(iso).toLocaleDateString([], {weekday:'short',day:'numeric',month:'short'}); }
 function fmtDateShort(iso){ return new Date(iso).toLocaleDateString([], {day:'2-digit',month:'2-digit',year:'2-digit'}); }
@@ -177,31 +197,167 @@ function hm(totalMins){
   const h = Math.floor(totalMins/60), m = totalMins%60;
   return (h>0? h+"h ":"") + m+"m";
 }
-let workReminderSnoozeUntil=0;
+const workReminderSnoozeUntil={};
 let overtimeConfirmedDate="";
 const FOUR_PM_GRACE_MINUTES=10;
+const fourPmDecisionOffer={key:"",responseDeadline:0,processing:false};
+const postJobOtReminder={timer:null,key:"",resolving:false};
 
-function showBreakReminder(type){
-  if(document.getElementById("workReminder")) return;
-  const isLunch=type==="lunch",w=document.createElement("div");
+function postJobOtPendingState(){
+  const emp=currentEmployee();
+  if(!emp) return null;
+  const att=empOpenAttendance(emp.id);
+  if(!att?.otReconfirmJobTimeEntryId||!att.otReconfirmDeadline) return null;
+  if(empOpenBreak(att.id)) return null;
+  if((DB.jobTimeEntries||[]).some(e=>e.employeeId===emp.id&&!e.endTime)) return null;
+  const deadline=new Date(att.otReconfirmDeadline);
+  if(Number.isNaN(deadline.getTime())) return null;
+  return {emp,att,jobTimeEntryId:att.otReconfirmJobTimeEntryId,deadline,
+    key:`${att.id}|${att.otReconfirmJobTimeEntryId}|${att.otReconfirmDeadline}`};
+}
+function clearPostJobOtReminder(removeModal=true){
+  clearTimeout(postJobOtReminder.timer);
+  postJobOtReminder.timer=null;postJobOtReminder.key="";
+  if(removeModal) document.getElementById("postJobOtReminder")?.remove();
+}
+function invalidateStalePostJobOtReminder(){
+  const pending=postJobOtPendingState(),modal=document.getElementById("postJobOtReminder");
+  if(pending?.key===postJobOtReminder.key && (!modal||modal.dataset.pendingKey===pending.key)) return false;
+  const changed=!!modal||!!postJobOtReminder.timer||!!postJobOtReminder.key;
+  clearPostJobOtReminder();
+  if(!pending) postJobOtReminder.resolving=false;
+  return changed;
+}
+async function reconcilePostJobOtCore(){
+  const employeeId=DB.session?.employeeId,role=DB.session?.role;
+  if(!employeeId) return false;
+  const revision=++coreRealtime.revision,generation=coreRealtime.generation;
+  try{
+    const snapshot=await fetchCoreTimeFromSupabase(employeeId,isAdminRole(role));
+    if(generation!==coreRealtime.generation||revision!==coreRealtime.revision||
+       DB.session?.employeeId!==employeeId||DB.session?.role!==role) return false;
+    Object.assign(DB,snapshot);invalidateStaleBreakModal();invalidateStalePostJobOtReminder();save();
+    return true;
+  }catch(error){console.error("Post-job OT reconciliation error:",error);return false;}
+}
+async function applyPostJobOtAutoTimeout(capturedKey){
+  const pending=postJobOtPendingState();
+  if(!pending||pending.key!==capturedKey||postJobOtReminder.resolving) return;
+  if(navigator.onLine===false) return;
+  postJobOtReminder.resolving=true;
+  let failed=false;
+  const retry=()=>{
+    failed=true;clearTimeout(postJobOtReminder.timer);
+    postJobOtReminder.timer=setTimeout(()=>{postJobOtReminder.timer=null;applyPostJobOtAutoTimeout(capturedKey);},15000);
+  };
+  try{
+    const {data,error}=await supabaseClient.rpc("apply_post_job_ot_auto_timeout",{
+      p_attendance_id:pending.att.id,p_job_time_entry_id:pending.jobTimeEntryId
+    }).single();
+    if(error) throw error;
+    const reconciled=await reconcilePostJobOtCore();
+    if(!reconciled) retry();
+    if(data?.applied){
+      audit(pending.emp.name,"Automatic Post-job OT Time Out",jobName(pending.att.jobId),`No response by ${fmtTime(pending.att.otReconfirmDeadline)}.`);
+      toast("Shift automatically ended at the overtime deadline.");
+    }else if(postJobOtPendingState()?.key===capturedKey) retry();
+  }catch(error){
+    failed=true;console.error("Post-job OT automatic Time Out error:",error);
+    retry();
+  }finally{
+    postJobOtReminder.resolving=false;
+    if(!failed) syncPostJobOtReminder();
+    scheduleRealtimeRender();
+  }
+}
+async function resolvePostJobOt(pending,action,gps=null,address=null,summary=""){
+  const current=postJobOtPendingState();
+  if(!current||current.key!==pending.key||postJobOtReminder.resolving) return;
+  postJobOtReminder.resolving=true;clearPostJobOtReminder();
+  try{
+    const {data,error}=await supabaseClient.rpc("resolve_post_job_ot_reconfirmation",{
+      p_attendance_id:pending.att.id,p_job_time_entry_id:pending.jobTimeEntryId,p_action:action,
+      p_gps_out_lat:gps?.lat??null,p_gps_out_lng:gps?.lng??null,
+      p_gps_out_address:address,p_summary:summary
+    }).single();
+    if(error) throw error;
+    await reconcilePostJobOtCore();
+    if(data?.applied){
+      if(action==="track_ot") toast("Continuing work — overtime tracking confirmed.");
+      else{
+        audit(pending.emp.name,"Clock Out",jobName(pending.att.jobId),"Resolved post-job overtime reminder.");
+        toast("Time Out recorded");go("emp-home");
+      }
+    }else toast("Overtime status changed. Current attendance was refreshed.");
+  }catch(error){
+    console.error("Post-job OT resolution error:",error);
+    toast("Overtime response could not be saved. Please try again.");
+    await reconcilePostJobOtCore();
+  }finally{postJobOtReminder.resolving=false;syncPostJobOtReminder();scheduleRealtimeRender();}
+}
+function showPostJobOtReminder(pending){
+  if(document.querySelector(".modal-bg")) return;
+  const w=document.createElement("div");
+  w.id="postJobOtReminder";w.className="modal-bg";w.dataset.pendingKey=pending.key;
+  const deadline=pending.deadline.toLocaleTimeString("en-AU",{timeZone:"Australia/Sydney",hour:"numeric",minute:"2-digit",hour12:true});
+  w.innerHTML=`<div class="modal" style="max-width:440px;text-align:center;">
+    <div class="h2">Tracking OT — no active task detected.</div>
+    <div style="font-size:18px;font-weight:600;line-height:1.45;margin:14px 0 20px;">Time out at ${deadline}?</div>
+    <button class="btn btn-danger btn-block" id="postJobOtOut">Time Out</button>
+    <button class="btn btn-accent btn-block" style="margin-top:8px;" id="postJobOtContinue">Track OT</button>
+  </div>`;
+  document.body.appendChild(w);
+  w.querySelector("#postJobOtContinue").onclick=()=>resolvePostJobOt(pending,"track_ot");
+  w.querySelector("#postJobOtOut").onclick=()=>{
+    postJobOtReminder.resolving=true;w.remove();clearTimeout(postJobOtReminder.timer);postJobOtReminder.timer=null;
+    requireLocation(async pos=>{
+      const gps={lat:pos.lat,lng:pos.lng,accuracy:pos.accuracy};
+      const address=await reverseGeocode(pos.lat,pos.lng);
+      showWorkSummaryModal(summary=>{postJobOtReminder.resolving=false;resolvePostJobOt(pending,"time_out",gps,address,summary);});
+    },"Timing out",()=>{postJobOtReminder.resolving=false;syncPostJobOtReminder();});
+  };
+}
+function syncPostJobOtReminder(){
+  if(!DB.session){clearPostJobOtReminder();return;}
+  const pending=postJobOtPendingState();
+  if(!pending){clearPostJobOtReminder();return;}
+  if(postJobOtReminder.resolving) return;
+  if(postJobOtReminder.key!==pending.key||(!postJobOtReminder.timer&&!postJobOtReminder.resolving)){
+    clearPostJobOtReminder();postJobOtReminder.key=pending.key;
+    postJobOtReminder.timer=setTimeout(()=>{
+      postJobOtReminder.timer=null;applyPostJobOtAutoTimeout(pending.key);
+    },Math.max(0,pending.deadline.getTime()-Date.now()));
+  }
+  if(!postJobOtReminder.resolving&&!document.getElementById("postJobOtReminder")) showPostJobOtReminder(pending);
+}
+
+function breakSnoozeKey(empId,dateKey,type){return `${empId}|${dateKey}|${type}`;}
+function showBreakReminder(descriptor,empId,dateKey){
+  if(document.querySelector(".modal-bg")) return;
+  const isLunch=descriptor.key==="lunch",w=document.createElement("div");
   w.id="workReminder";w.className="modal-bg";
+  w.dataset.breakKey=descriptor.key;
   w.innerHTML=`<div class="modal" style="max-width:420px;text-align:center;">
-    <div class="h2">${isLunch?"Lunch Break Reminder":"Break Reminder"}</div>
+    <div class="h2">${isLunch?"Lunch Break Reminder":"Morning Break Reminder"}</div>
     <div style="font-size:18px;font-weight:600;line-height:1.45;margin:14px 0 20px;">
-      ${isLunch?"It's time to take your lunch break.":"It's time to take your break."}
+      ${isLunch?"It's time to take your lunch break.":"It's time to take your morning break."}
     </div>
-    <button class="btn btn-accent btn-block" id="reminderBreak">Start ${isLunch?"Lunch":"Break"}</button>
+    <button class="btn btn-accent btn-block" id="reminderBreak">${isLunch?"Start Lunch":"Start Break"}</button>
     <button class="btn btn-ghost btn-block" style="margin-top:8px;" id="reminderLater">Remind Me Later</button>
   </div>`;
   document.body.appendChild(w);
-  w.querySelector("#reminderBreak").onclick=()=>{w.remove();doStartBreak();};
-  w.querySelector("#reminderLater").onclick=()=>{workReminderSnoozeUntil=Date.now()+10*60*1000;w.remove();};
+  const t=ausNow(),remainingMs=Math.max(0,((descriptor.endMinute-(t.hour*60+t.minute))*60-t.second)*1000);
+  setTimeout(()=>{if(w.isConnected){w.remove();if(route.name==="emp-home")render();}},remainingMs+50);
+  w.querySelector("#reminderBreak").onclick=()=>{w.remove();doStartBreak(descriptor.key);};
+  w.querySelector("#reminderLater").onclick=()=>{workReminderSnoozeUntil[breakSnoozeKey(empId,dateKey,descriptor.key)]=Date.now()+10*60*1000;w.remove();};
 }
 function showFourPmReminder(emp,att,activeJob){
-  if(document.getElementById("fourPmReminder")) return;
+  if(document.getElementById("fourPmReminder")) return true;
+  if(document.querySelector(".modal-bg")) return false;
   const t=ausNow(),job=activeJob?jobName(activeJob.jobId):jobName(att.jobId),w=document.createElement("div");
   const displayTime=new Date().toLocaleTimeString("en-AU",{timeZone:"Australia/Sydney",hour:"numeric",minute:"2-digit",second:"2-digit",hour12:true});  
   w.id="fourPmReminder";w.className="modal-bg";
+  w.dataset.attendanceId=att.id;
   w.innerHTML=`<div class="modal" style="max-width:440px;text-align:center;">
     <div class="h2">Time to log out</div>
     <div style="font-size:18px;font-weight:600;line-height:1.45;margin:14px 0 20px;">
@@ -227,12 +383,14 @@ function showFourPmReminder(emp,att,activeJob){
     return;
   }
 
-  overtimeConfirmedDate=`${t.year}-${t.month}-${t.day}`;
+  overtimeConfirmedDate=sydneyDateKey(confirmedAt);
+  fourPmDecisionOffer.key="";fourPmDecisionOffer.responseDeadline=0;
   att.overtimeConfirmedAt=confirmedAt;
   save();
   w.remove();
   toast("Continuing work — time after 4 PM will be tracked as overtime.");
 };
+  return true;
 }
 function fourPmCutoffState(){
   const t=ausNow();
@@ -241,7 +399,7 @@ function fourPmCutoffState(){
   return {
     prompt:minsNow>=fourPm&&minsNow<fourPm+FOUR_PM_GRACE_MINUTES,
     expired:minsNow>=fourPm+FOUR_PM_GRACE_MINUTES,
-    today:`${t.year}-${t.month}-${t.day}`
+    today:sydneyDateKey()
   };
 }
 function fourPmSydneyISO(){
@@ -249,6 +407,25 @@ function fourPmSydneyISO(){
   const v=Object.fromEntries(parts.map(p=>[p.type,p.value]));
   const offset=(v.timeZoneName.match(/[+-]\d{2}:\d{2}/)||["+10:00"])[0];
   return new Date(`${v.year}-${v.month}-${v.day}T16:00:00${offset}`).toISOString();
+}
+function offerFourPmDecision(emp,att,cutoff){
+  const key=`${att.id}|${cutoff.today}`;
+  const activeJob=(DB.jobTimeEntries||[]).find(e=>e.employeeId===emp.id&&!e.endTime);
+  if(fourPmDecisionOffer.key===key){showFourPmReminder(emp,att,activeJob);return;}
+  if(!showFourPmReminder(emp,att,activeJob)) return;
+  const scheduledDeadline=new Date(fourPmSydneyISO()).getTime()+FOUR_PM_GRACE_MINUTES*60*1000;
+  fourPmDecisionOffer.key=key;
+  fourPmDecisionOffer.responseDeadline=Math.max(scheduledDeadline,Date.now()+FOUR_PM_GRACE_MINUTES*60*1000);
+}
+function invalidateStaleFourPmReminder(){
+  const modal=document.getElementById("fourPmReminder"),emp=currentEmployee();
+  if(!modal) return false;
+  const att=emp?empOpenAttendance(emp.id):null,cutoff=fourPmCutoffState();
+  const confirmedToday=att?.overtimeConfirmedAt&&
+    sydneyDateKey(att.overtimeConfirmedAt)===cutoff.today;
+  if(att?.id===modal.dataset.attendanceId&&!confirmedToday) return false;
+  modal.remove();fourPmDecisionOffer.key="";fourPmDecisionOffer.responseDeadline=0;
+  return true;
 }
 async function autoFourPmCutoff(emp,att){
   const cutoffISO=fourPmSydneyISO();
@@ -288,33 +465,51 @@ save();
 }
 function checkWorkReminders(){
   if(!DB.session) return;
+  const invalidated=invalidateStaleBreakModal();
+  invalidateStaleFourPmReminder();
   const emp=currentEmployee(),att=emp?empOpenAttendance(emp.id):null;
-  if(!emp||!att||empOpenBreak(att.id)) return;
+  if(invalidated&&route.name==="emp-home") render();
+  if(!emp||!att){overtimeConfirmedDate="";fourPmDecisionOffer.key="";fourPmDecisionOffer.responseDeadline=0;return;}
+  if(empOpenBreak(att.id)) return;
 
-  const type=workReminderType(),cutoff=fourPmCutoffState();
-  if(att.overtimeConfirmedAt){
-  const confirmedSydney=new Intl.DateTimeFormat("en-CA",{timeZone:"Australia/Sydney",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date(att.overtimeConfirmedAt));
-  if(confirmedSydney===cutoff.today)overtimeConfirmedDate=cutoff.today;
-}
-if(cutoff.prompt&&overtimeConfirmedDate!==cutoff.today){
-  const activeJob=(DB.jobTimeEntries||[]).find(e=>e.employeeId===emp.id&&!e.endTime);
-  showFourPmReminder(emp,att,activeJob);
+  syncPostJobOtReminder();
+  if(postJobOtPendingState()) return;
+
+  const cutoff=fourPmCutoffState();
+  const confirmedToday=att.overtimeConfirmedAt&&sydneyDateKey(att.overtimeConfirmedAt)===cutoff.today;
+  overtimeConfirmedDate=confirmedToday?cutoff.today:"";
+if(cutoff.prompt&&!confirmedToday){
+  offerFourPmDecision(emp,att,cutoff);
   return;
 }
 
-if(cutoff.expired&&overtimeConfirmedDate!==cutoff.today){
+if(cutoff.expired&&!confirmedToday){
+  const offerKey=`${att.id}|${cutoff.today}`;
+  if(fourPmDecisionOffer.key!==offerKey||Date.now()<fourPmDecisionOffer.responseDeadline){
+    offerFourPmDecision(emp,att,cutoff);
+    return;
+  }
+  if(fourPmDecisionOffer.processing) return;
+  fourPmDecisionOffer.processing=true;
   autoFourPmCutoff(emp,att).then(ok=>{
     if(ok){
+      fourPmDecisionOffer.key="";fourPmDecisionOffer.responseDeadline=0;
       toast("Shift automatically ended at 4:00 PM.");
       audit(emp.name,"Automatic 4 PM Time Out",jobName(att.jobId),"No response to 4 PM reminder within 10 minutes.");
       go("emp-home");
     }
-  });
+  }).finally(()=>{fourPmDecisionOffer.processing=false;});
   return;
 }
 
-  if(Date.now()<workReminderSnoozeUntil) return;
-  if(type==="break"||type==="lunch") showBreakReminder(type);
+  const eligibility=currentBreakEligibility(emp.id);
+  const startButton=document.getElementById("btnStartBreak");
+  const buttonMatches=eligibility.eligible ? !!startButton&&startButton.textContent.includes(eligibility.descriptor.startLabel) : !startButton;
+  if(route.name==="emp-home"&&!document.querySelector(".modal-bg")&&!buttonMatches) render();
+  if(!eligibility.eligible) return;
+  const snoozeKey=breakSnoozeKey(emp.id,eligibility.dateKey,eligibility.descriptor.key);
+  if(Date.now()<(workReminderSnoozeUntil[snoozeKey]||0)) return;
+  showBreakReminder(eligibility.descriptor,emp.id,eligibility.dateKey);
 }
 setInterval(checkWorkReminders,60*1000);
 
@@ -484,218 +679,165 @@ async function updateCompanySetting(column,value,localKey){
   return false;
  }
 }
-async function syncTimeDataFromSupabase(employeeId, includeAllWorklogs=false, requireAuditSync=false){
-
-  const { data: attendanceRows, error: attendanceError } =
-    await supabaseClient
-      .from("attendance")
-      .select("*")
-      .eq("employee_id", employeeId)
-      .order("time_in", { ascending: true });
-
-  if(attendanceError){
-    console.error("Attendance sync error:", attendanceError);
-    throw attendanceError;
-  }
-
-  const attendanceIds = attendanceRows.map(a => a.id);
-
-  let breakRows = [];
-
-  if(attendanceIds.length){
-    const { data, error: breaksError } =
-      await supabaseClient
-        .from("breaks")
-        .select("*")
-        .in("attendance_id", attendanceIds)
-        .order("start_time", { ascending: true });
-
-    if(breaksError){
-      console.error("Break sync error:", breaksError);
-      throw breaksError;
-    }
-
-    breakRows = data;
-  }
-
-  DB.breaks = breakRows.map(b => ({
-    id: b.id,
-    attendanceId: b.attendance_id,
-    type: b.type,
-    start: b.start_time,
-    end: b.end_time,
-    paid: b.paid,
-    gpsStart: {
-      lat: b.gps_start_lat,
-      lng: b.gps_start_lng
-    },
-    gpsEnd: b.end_time ? {
-      lat: b.gps_end_lat,
-      lng: b.gps_end_lng
-    } : null
-  }));
-
-  DB.attendance = attendanceRows.map(a => ({
-    id: a.id,
-    employeeId: a.employee_id,
-    jobId: a.job_id,
-    category: a.category,
-    timeIn: a.time_in,
-    timeOut: a.time_out,
-    photoIn: a.photo_in,
-    photoOut: a.photo_out,
-
-    gpsIn: {
-      lat: a.gps_in_lat,
-      lng: a.gps_in_lng,
-      address: a.gps_in_address
-    },
-
-    gpsOut: a.time_out ? {
-      lat: a.gps_out_lat,
-      lng: a.gps_out_lng,
-      address: a.gps_out_address
-    } : null,
-
-    geofence: a.geofence,
-    device: a.device,
-    grossMin: a.gross_minutes,
-    unpaidBreakMin: a.unpaid_break_minutes,
-    paidBreakMin: a.paid_break_minutes,
-    netMin: a.net_minutes,
-    status: a.status,
-    source: a.source,
-    summary: a.summary,
-    rejectionReason:a.rejection_reason,
-    updatedAt: a.updated_at,
-    overtimeConfirmedAt: a.overtime_confirmed_at,
-
-    breakIds: DB.breaks
-      .filter(b => b.attendanceId === a.id)
-      .map(b => b.id)
-  }));
-
-// Load all employees from Supabase
-const { data: employeeRows, error: employeeSyncError } =
-  await supabaseClient
-    .from("employees")
-    .select("*")
-    .order("name", { ascending: true });
-
-if(employeeSyncError){
-  console.error("Employee sync error:", employeeSyncError);
-  throw employeeSyncError;
+async function fetchJobsFromSupabase(){
+ const [jobsResult,assignmentsResult]=await Promise.all([
+   supabaseClient.from("jobs").select("*"),
+   supabaseClient.from("job_assignments").select("job_id, employee_id")
+ ]);
+ if(jobsResult.error){console.error("Jobs sync error:",jobsResult.error);throw jobsResult.error;}
+ if(assignmentsResult.error){console.error("Job assignment sync error:",assignmentsResult.error);throw assignmentsResult.error;}
+ return jobsResult.data.map(j=>({
+   id:j.id,number:j.number,name:j.name,client:j.client,venue:j.venue,
+   location:j.location,start:j.start_date,end:j.end_date,manager:j.manager,
+   status:j.status,notes:j.notes,
+   assigned:assignmentsResult.data.filter(a=>a.job_id===j.id).map(a=>a.employee_id)
+ }));
 }
-
-DB.employees = employeeRows.map(e => ({
-  id: e.id,
-  empId: e.emp_id,
-  name: e.name,
-  role: e.role,
-  status: e.status,
-  email: e.email,
-  department: e.department,
-  employmentType: e.employment_type,
-  payCategory: e.pay_category,
-  hourlyRate: e.hourly_rate,
-  manager: e.manager,
-  defaultLocation: e.default_location,
-  permission: e.permission,
-  fieldRole: e.field_role,
-  userId: e.user_id
-}));
-
-// Load employee job time entries
-const { data: timeRows, error: timeError } = await supabaseClient
-  .from("job_time_entries").select("*").eq("employee_id",employeeId)
-  .order("start_time",{ascending:false});
-
-if(timeError){ console.error("Job time sync error:",timeError); throw timeError; }
-
-DB.jobTimeEntries = timeRows.map(t=>({
-  id:t.id, employeeId:t.employee_id, jobId:t.job_id,
-  startTime:t.start_time, endTime:t.end_time,
-  durationSeconds:t.duration_seconds, endReason:t.end_reason,
-  switchedToJobId:t.switched_to_job_id
-}));
-
-  const { data: assignmentRows, error: assignmentError } =
-  await supabaseClient
-    .from("job_assignments")
-    .select("job_id, employee_id");
-
-if(assignmentError){
-  console.error("Job assignment sync error:", assignmentError);
-  throw assignmentError;
+async function syncRosterJobsFromSupabase(){
+ const {data:employeeRows,error:employeeError}=await supabaseClient.from("employees")
+   .select("*").order("name",{ascending:true});
+ if(employeeError){console.error("Employee sync error:",employeeError);throw employeeError;}
+ const jobs=await fetchJobsFromSupabase();
+ DB.employees=employeeRows.map(e=>({
+   id:e.id,empId:e.emp_id,name:e.name,role:e.role,status:e.status,email:e.email,
+   department:e.department,employmentType:e.employment_type,payCategory:e.pay_category,
+   hourlyRate:e.hourly_rate,manager:e.manager,defaultLocation:e.default_location,
+   permission:e.permission,fieldRole:e.field_role,userId:e.user_id
+ }));
+ DB.jobs=jobs;
 }
-
-// Jobs assigned specifically to the currently logged-in employee
-const assignedJobIds = assignmentRows
-  .filter(a => a.employee_id === employeeId)
-  .map(a => a.job_id);
-const { data: jobRows, error: jobsError } =
-  await supabaseClient
-    .from("jobs")
-    .select("*");
-
-if(jobsError){
-  console.error("Jobs sync error:", jobsError);
-  throw jobsError;
+async function fetchWorklogsFromSupabase(employeeId, includeAllWorklogs=false){
+ const query=supabaseClient.from("worklogs").select("*");
+ const {data,error}=await (includeAllWorklogs?query:query.eq("employee_id",employeeId))
+   .order("start_time",{ascending:true});
+ if(error){console.error("Worklog sync error:",error);throw error;}
+ return data.map(w=>({
+   id:w.id,attendanceId:w.attendance_id,employeeId:w.employee_id,jobId:w.job_id,
+   task:w.task,start:w.start_time,finish:w.finish_time,notes:w.notes,
+   photos:w.photos,photoData:w.photo_data,photoPath:w.photo_path
+ }));
 }
-
-DB.jobs = jobRows.map(j => ({
-  id: j.id,
-  number: j.number,
-  name: j.name,
-  client: j.client,
-  venue: j.venue,
-  location: j.location,
-  start: j.start_date,
-  end: j.end_date,
-  manager: j.manager,
-  status: j.status,
-  notes: j.notes,
-  
-  assigned: assignmentRows
-  .filter(a => a.job_id === j.id)
-  .map(a => a.employee_id)
-}));
-const worklogQuery=supabaseClient.from("worklogs").select("*");
-const { data: worklogRows, error: worklogSyncError } =
-  await (includeAllWorklogs ? worklogQuery : worklogQuery.eq("employee_id", employeeId))
-    .order("start_time", { ascending: true });
-
-if(worklogSyncError){
-  console.error("Worklog sync error:", worklogSyncError);
-  throw worklogSyncError;
+async function syncWorklogsFromSupabase(employeeId, includeAllWorklogs=false){
+ DB.worklogs=await fetchWorklogsFromSupabase(employeeId,includeAllWorklogs);
 }
+async function fetchCorrectionsFromSupabase(){
+ const {data,error}=await supabaseClient.from("correction_requests").select("*")
+   .order("created_at",{ascending:false});
+ if(error){console.error("Correction request sync error:",error);throw error;}
+ return data.map(c=>({
+   id:c.id,attendanceId:c.attendance_id,employeeId:c.employee_id,
+   type:c.request_type,originalTimeIn:c.original_time_in,
+   originalTimeOut:c.original_time_out,requestedTimeIn:c.requested_time_in,
+   requestedTimeOut:c.requested_time_out,reason:c.reason,status:c.status,
+   reviewedBy:c.reviewed_by,reviewedAt:c.reviewed_at,createdAt:c.created_at
+ }));
+}
+async function syncCorrectionsFromSupabase(){
+ DB.correctionRequests=await fetchCorrectionsFromSupabase();
+ save();
+}
+async function syncAuditLogsFromSupabase(required=false){
+ const {data,error}=await supabaseClient.from("audit_logs").select("*")
+   .order("created_at",{ascending:false});
+ if(error){
+   console.error("Audit log sync error:",error);
+   if(required) throw error;
+   return;
+ }
+ DB.auditLogs=data.map(a=>({
+   id:a.id,actor:a.actor,action:a.action,target:a.target,
+   detail:a.detail,worklogId:a.worklog_id||null,userId:a.user_id,ts:a.created_at
+ }));
+}
+async function syncAuditLogDataFromSupabase(employeeId,includeAllWorklogs=false){
+ await syncRosterJobsFromSupabase();
+ await syncWorklogsFromSupabase(employeeId,includeAllWorklogs);
+ await syncAuditLogsFromSupabase(true);
+ save();
+}
+async function refreshEmployeeBreaksFromSupabase(employeeId){
+ const {data:attendanceRows,error:attendanceError}=await supabaseClient.from("attendance")
+   .select("id,employee_id,time_in,time_out").eq("employee_id",employeeId);
+ if(attendanceError) throw attendanceError;
+ const ids=attendanceRows.map(a=>a.id);
+ let breakRows=[];
+ if(ids.length){
+   const {data,error}=await supabaseClient.from("breaks").select("*").in("attendance_id",ids);
+   if(error) throw error;
+   breakRows=data;
+ }
+ const attendance=attendanceRows.map(a=>({id:a.id,employeeId:a.employee_id,timeIn:a.time_in,timeOut:a.time_out}));
+ const breaks=breakRows.map(b=>({
+   id:b.id,attendanceId:b.attendance_id,type:b.type,start:b.start_time,end:b.end_time,paid:b.paid,
+   gpsStart:{lat:b.gps_start_lat,lng:b.gps_start_lng},
+   gpsEnd:b.end_time?{lat:b.gps_end_lat,lng:b.gps_end_lng}:null
+ }));
+ const employeeAttendanceIds=new Set([
+   ...DB.attendance.filter(a=>a.employeeId===employeeId).map(a=>a.id),...ids
+ ]);
+ DB.breaks=[...DB.breaks.filter(b=>!employeeAttendanceIds.has(b.attendanceId)),...breaks];
+ DB.attendance.filter(a=>a.employeeId===employeeId).forEach(a=>{
+   a.breakIds=breaks.filter(b=>b.attendanceId===a.id).map(b=>b.id);
+ });
+ save();
+ return {attendance,breaks};
+}
+async function fetchCoreTimeFromSupabase(employeeId,includeAll=false){
+ const attendanceQuery=supabaseClient.from("attendance").select("*");
+ const {data:attendanceRows,error:attendanceError}=await
+   (includeAll?attendanceQuery:attendanceQuery.eq("employee_id",employeeId))
+     .order("time_in",{ascending:!includeAll});
+ if(attendanceError){console.error("Attendance sync error:",attendanceError);throw attendanceError;}
+ const ids=attendanceRows.map(a=>a.id);
+ let breakRows=[];
+ if(ids.length){
+   const {data,error}=await supabaseClient.from("breaks").select("*")
+     .in("attendance_id",ids).order("start_time",{ascending:true});
+   if(error){console.error("Break sync error:",error);throw error;}
+   breakRows=data;
+ }
+ const timeQuery=supabaseClient.from("job_time_entries").select("*");
+ const {data:timeRows,error:timeError}=await
+   (includeAll?timeQuery:timeQuery.eq("employee_id",employeeId))
+     .order("start_time",{ascending:false});
+ if(timeError){console.error("Job time sync error:",timeError);throw timeError;}
+ const breaks=breakRows.map(b=>({
+   id:b.id,attendanceId:b.attendance_id,type:b.type,start:b.start_time,end:b.end_time,paid:b.paid,
+   gpsStart:{lat:b.gps_start_lat,lng:b.gps_start_lng},
+   gpsEnd:b.end_time?{lat:b.gps_end_lat,lng:b.gps_end_lng}:null
+ }));
+ const attendance=attendanceRows.map(a=>({
+   id:a.id,employeeId:a.employee_id,jobId:a.job_id,category:a.category,
+   timeIn:a.time_in,timeOut:a.time_out,photoIn:a.photo_in,photoOut:a.photo_out,
+   gpsIn:{lat:a.gps_in_lat,lng:a.gps_in_lng,address:a.gps_in_address},
+   gpsOut:a.time_out?{lat:a.gps_out_lat,lng:a.gps_out_lng,address:a.gps_out_address}:null,
+   geofence:a.geofence,device:a.device,grossMin:a.gross_minutes,
+   unpaidBreakMin:a.unpaid_break_minutes,paidBreakMin:a.paid_break_minutes,
+   netMin:a.net_minutes,status:a.status,source:a.source,summary:a.summary,
+    rejectionReason:a.rejection_reason,updatedAt:a.updated_at,
+    overtimeConfirmedAt:a.overtime_confirmed_at,
+    otReconfirmJobTimeEntryId:a.ot_reconfirm_job_time_entry_id,
+    otReconfirmDeadline:a.ot_reconfirm_deadline,
+    breakIds:breaks.filter(b=>b.attendanceId===a.id).map(b=>b.id)
+ }));
+ const jobTimeEntries=timeRows.map(t=>({
+   id:t.id,employeeId:t.employee_id,jobId:t.job_id,startTime:t.start_time,
+   endTime:t.end_time,durationSeconds:t.duration_seconds,endReason:t.end_reason,
+   switchedToJobId:t.switched_to_job_id
+ }));
+ return {attendance,breaks,jobTimeEntries};
+}
+async function syncCoreTimeFromSupabase(employeeId,includeAll=false){
+ Object.assign(DB,await fetchCoreTimeFromSupabase(employeeId,includeAll));
+ save();
+}
+async function syncTimeDataFromSupabase(employeeId, includeAllWorklogs=false){
 
-DB.worklogs = worklogRows.map(w => ({
-  id: w.id,
-  attendanceId: w.attendance_id,
-  employeeId: w.employee_id,
-  jobId: w.job_id,
-  task: w.task,
-  start: w.start_time,
-  finish: w.finish_time,
-  notes: w.notes,
-  photos: w.photos,
-  photoData: w.photo_data,
-  photoPath: w.photo_path
-}));
-DB.worklogs = worklogRows.map(w => ({
-  id: w.id,
-  attendanceId: w.attendance_id,
-  employeeId: w.employee_id,
-  jobId: w.job_id,
-  task: w.task,
-  start: w.start_time,
-  finish: w.finish_time,
-  notes: w.notes,
-  photos: w.photos,
-  photoData: w.photo_data,
-  photoPath: w.photo_path
-}));
+ await syncCoreTimeFromSupabase(employeeId);
+
+await syncRosterJobsFromSupabase();
+
+await syncWorklogsFromSupabase(employeeId,includeAllWorklogs);
 
 // Load permanent job change history
 const { data: jobHistoryRows, error: jobHistoryError } =
@@ -719,34 +861,9 @@ DB.jobChangeHistory = jobHistoryRows.map(h => ({
   ts: h.created_at
 }));
 
-const {data:correctionRows,error:correctionError}=await supabaseClient
-  .from("correction_requests").select("*").order("created_at",{ascending:false});
+await syncCorrectionsFromSupabase();
 
-if(correctionError){
-  console.error("Correction request sync error:",correctionError);
-  throw correctionError;
-}
-
-DB.correctionRequests=correctionRows.map(c=>({
-  id:c.id,attendanceId:c.attendance_id,employeeId:c.employee_id,
-  type:c.request_type,originalTimeIn:c.original_time_in,
-  originalTimeOut:c.original_time_out,requestedTimeIn:c.requested_time_in,
-  requestedTimeOut:c.requested_time_out,reason:c.reason,status:c.status,
-  reviewedBy:c.reviewed_by,reviewedAt:c.reviewed_at,createdAt:c.created_at
-}));
-
-const {data:auditRows,error:auditError}=await supabaseClient
-  .from("audit_logs").select("*").order("created_at",{ascending:false});
-
-if(auditError){
-  console.error("Audit log sync error:",auditError);
-  if(requireAuditSync) throw auditError;
-}else{
-  DB.auditLogs=auditRows.map(a=>({
-    id:a.id,actor:a.actor,action:a.action,target:a.target,
-    detail:a.detail,worklogId:a.worklog_id||null,userId:a.user_id,ts:a.created_at
-  }));
-}
+await syncAuditLogsFromSupabase();
 
 save();
 
@@ -765,43 +882,248 @@ save();
 );
 }
 async function syncAdminJobTimeEntries(){
-  const {data:attendanceRows,error:attendanceError}=await supabaseClient.from("attendance").select("*").order("time_in",{ascending:false});
-  if(attendanceError){console.error("Admin attendance sync error:",attendanceError);throw attendanceError;}
+ await syncCoreTimeFromSupabase(null,true);
+}
 
-  const ids=attendanceRows.map(a=>a.id);
-  let breakRows=[];
-  if(ids.length){
-    const {data,error}=await supabaseClient.from("breaks").select("*").in("attendance_id",ids).order("start_time",{ascending:true});
-    if(error){console.error("Admin break sync error:",error);throw error;}
-    breakRows=data;
-  }
-
-  DB.breaks=breakRows.map(b=>({
-    id:b.id,attendanceId:b.attendance_id,type:b.type,start:b.start_time,end:b.end_time,paid:b.paid,
-    gpsStart:{lat:b.gps_start_lat,lng:b.gps_start_lng},
-    gpsEnd:b.end_time?{lat:b.gps_end_lat,lng:b.gps_end_lng}:null
-  }));
-
-  DB.attendance=attendanceRows.map(a=>({
-    id:a.id,employeeId:a.employee_id,jobId:a.job_id,category:a.category,timeIn:a.time_in,timeOut:a.time_out,
-    photoIn:a.photo_in,photoOut:a.photo_out,
-    gpsIn:{lat:a.gps_in_lat,lng:a.gps_in_lng,address:a.gps_in_address},
-    gpsOut:a.time_out?{lat:a.gps_out_lat,lng:a.gps_out_lng,address:a.gps_out_address}:null,
-    geofence:a.geofence,device:a.device,grossMin:a.gross_minutes,
-    unpaidBreakMin:a.unpaid_break_minutes,paidBreakMin:a.paid_break_minutes,netMin:a.net_minutes,
-    status:a.status,source:a.source,summary:a.summary,rejectionReason:a.rejection_reason,
-    updatedAt:a.updated_at,overtimeConfirmedAt:a.overtime_confirmed_at,
-    breakIds:DB.breaks.filter(b=>b.attendanceId===a.id).map(b=>b.id)
-  }));
-
-  const {data,error}=await supabaseClient.from("job_time_entries").select("*").order("start_time",{ascending:false});
-  if(error){console.error("Admin job time sync error:",error);throw error;}
-  DB.jobTimeEntries=data.map(t=>({
-    id:t.id,employeeId:t.employee_id,jobId:t.job_id,startTime:t.start_time,endTime:t.end_time,
-    durationSeconds:t.duration_seconds,endReason:t.end_reason,switchedToJobId:t.switched_to_job_id
-  }));
+const coreRealtime={channel:null,userId:null,employeeId:null,role:null,generation:0,
+  timer:null,revision:0,refreshing:false,pending:false,interrupted:false};
+const supportRealtime={timer:null,revision:0,refreshing:false,corrections:false,worklogs:false,renderTimer:null};
+const jobsRealtime={timer:null,revision:0,refreshing:false,dirty:false};
+let jobActionInProgress=0;
+function stopCoreRealtime(){
+  coreRealtime.generation++;
+  clearTimeout(coreRealtime.timer);
+  clearTimeout(supportRealtime.timer);
+  clearTimeout(supportRealtime.renderTimer);
+  clearTimeout(jobsRealtime.timer);
+  coreRealtime.timer=null;
+  jobsRealtime.timer=null;
+  supportRealtime.timer=supportRealtime.renderTimer=null;
+  supportRealtime.refreshing=supportRealtime.corrections=supportRealtime.worklogs=false;
+  jobsRealtime.refreshing=jobsRealtime.dirty=false;
+  const channel=coreRealtime.channel;
+  coreRealtime.channel=null;
+  coreRealtime.userId=coreRealtime.employeeId=coreRealtime.role=null;
+  coreRealtime.pending=coreRealtime.refreshing=coreRealtime.interrupted=false;
+  overtimeConfirmedDate="";
+  fourPmDecisionOffer.key="";fourPmDecisionOffer.responseDeadline=0;fourPmDecisionOffer.processing=false;
+  document.getElementById("fourPmReminder")?.remove();
+  postJobOtReminder.resolving=false;clearPostJobOtReminder();
+  if(channel) supabaseClient.removeChannel(channel).then(status=>{
+    if(status!=="ok") console.error("Core Realtime removal status:",status);
+  }).catch(error=>console.error("Core Realtime removal error:",error));
+}
+function renderRealtimeIfSafe(){
+  if(coreRealtime.pending || coreRealtime.refreshing || supportRealtime.refreshing ||
+     supportRealtime.corrections || supportRealtime.worklogs || jobsRealtime.refreshing ||
+     jobsRealtime.dirty || jobActionInProgress) return;
+  if(document.querySelector(".modal-bg")) return;
+  const readOnlyJobDetail=route.name==="admin-job-detail" && DB.jobs.find(j=>j.id===route.id)?.status==="Completed";
+  if(readOnlyJobDetail || ["emp-home","history","timesheet","worklog","admin-dashboard","admin-live","admin-timesheets","admin-jobs"].includes(route.name)) render();
+}
+function scheduleRealtimeRender(){
+  clearTimeout(supportRealtime.renderTimer);
+  supportRealtime.renderTimer=setTimeout(renderRealtimeIfSafe,200);
+}
+function scheduleCoreTimeRefresh(){
+  if(!coreRealtime.channel || !DB.session || DB.session.employeeId!==coreRealtime.employeeId || DB.session.role!==coreRealtime.role) return;
+  coreRealtime.revision++;
+  coreRealtime.pending=true;
+  clearTimeout(coreRealtime.timer);
+  coreRealtime.timer=setTimeout(refreshCoreTimeFromRealtime,300);
+}
+function invalidateStaleBreakModal(){
+  const modal=document.querySelector("#workReminder[data-break-key],#startBreakModal[data-break-key]");
+  const emp=currentEmployee();
+  if(!modal||!emp) return false;
+  const eligibility=currentBreakEligibility(emp.id);
+  if(!eligibility.eligible||eligibility.descriptor.key!==modal.dataset.breakKey){modal.remove();return true;}
+  return false;
+}
+function applyFourPmAttendanceRealtime(payload){
+  const row=payload?.new,emp=currentEmployee();
+  if(!row?.id||!emp||row.employee_id!==emp.id) return;
+  const att=empOpenAttendance(emp.id);
+  if(!att||att.id!==row.id) return;
+  const confirmedDate=row.overtime_confirmed_at&&sydneyDateKey(row.overtime_confirmed_at);
+  if(confirmedDate!==fourPmCutoffState().today) return;
+  att.overtimeConfirmedAt=row.overtime_confirmed_at;
+  overtimeConfirmedDate=confirmedDate;
+  document.getElementById("fourPmReminder")?.remove();
+  fourPmDecisionOffer.key="";fourPmDecisionOffer.responseDeadline=0;
   save();
 }
+async function refreshCoreTimeFromRealtime(){
+  coreRealtime.timer=null;
+  if(!coreRealtime.pending || coreRealtime.refreshing || !coreRealtime.channel) return;
+  coreRealtime.pending=false;
+  coreRealtime.refreshing=true;
+  const generation=coreRealtime.generation,revision=coreRealtime.revision;
+  const employeeId=coreRealtime.employeeId,role=coreRealtime.role;
+  try{
+    const snapshot=await fetchCoreTimeFromSupabase(employeeId,isAdminRole(role));
+    if(generation!==coreRealtime.generation || revision!==coreRealtime.revision ||
+       DB.session?.employeeId!==employeeId || DB.session?.role!==role) return;
+    Object.assign(DB,snapshot);
+    invalidateStaleBreakModal();
+    invalidateStaleFourPmReminder();
+    invalidateStalePostJobOtReminder();
+    save();
+  }catch(error){
+    if(generation===coreRealtime.generation) console.error("Core Realtime sync error:",error);
+  }finally{
+    if(generation===coreRealtime.generation){
+      coreRealtime.refreshing=false;
+      if(coreRealtime.pending){
+        clearTimeout(coreRealtime.timer);
+        coreRealtime.timer=setTimeout(refreshCoreTimeFromRealtime,300);
+      }
+      syncPostJobOtReminder();scheduleRealtimeRender();
+    }
+  }
+}
+function scheduleSupportRefresh(group){
+  if(!coreRealtime.channel || !DB.session || DB.session.employeeId!==coreRealtime.employeeId || DB.session.role!==coreRealtime.role) return;
+  supportRealtime[group]=true;
+  supportRealtime.revision++;
+  clearTimeout(supportRealtime.timer);
+  supportRealtime.timer=setTimeout(refreshSupportFromRealtime,300);
+}
+async function refreshSupportFromRealtime(){
+  supportRealtime.timer=null;
+  if(supportRealtime.refreshing || !coreRealtime.channel) return;
+  const corrections=supportRealtime.corrections,worklogs=supportRealtime.worklogs;
+  if(!corrections && !worklogs) return;
+  supportRealtime.corrections=supportRealtime.worklogs=false;
+  supportRealtime.refreshing=true;
+  const generation=coreRealtime.generation,revision=supportRealtime.revision;
+  const employeeId=coreRealtime.employeeId,role=coreRealtime.role;
+  try{
+    const [correctionRows,worklogRows]=await Promise.all([
+      corrections?fetchCorrectionsFromSupabase():Promise.resolve(null),
+      worklogs?fetchWorklogsFromSupabase(employeeId,role==="Super Admin"):Promise.resolve(null)
+    ]);
+    if(generation!==coreRealtime.generation || revision!==supportRealtime.revision ||
+       DB.session?.employeeId!==employeeId || DB.session?.role!==role) return;
+    if(corrections) DB.correctionRequests=correctionRows;
+    if(worklogs) DB.worklogs=worklogRows;
+    save();
+  }catch(error){
+    if(generation===coreRealtime.generation) console.error("Supporting Realtime sync error:",error);
+  }finally{
+    if(generation===coreRealtime.generation){
+      if(revision!==supportRealtime.revision){
+        supportRealtime.corrections ||= corrections;
+        supportRealtime.worklogs ||= worklogs;
+      }
+      supportRealtime.refreshing=false;
+      if(supportRealtime.corrections || supportRealtime.worklogs){
+        clearTimeout(supportRealtime.timer);
+        supportRealtime.timer=setTimeout(refreshSupportFromRealtime,300);
+      }
+      scheduleRealtimeRender();
+    }
+  }
+}
+function scheduleJobsRefresh(){
+  if(!coreRealtime.channel || !DB.session || DB.session.employeeId!==coreRealtime.employeeId || DB.session.role!==coreRealtime.role) return;
+  jobsRealtime.revision++;
+  jobsRealtime.dirty=true;
+  clearTimeout(jobsRealtime.timer);
+  jobsRealtime.timer=setTimeout(refreshJobsFromRealtime,300);
+}
+async function refreshJobsFromRealtime(){
+  jobsRealtime.timer=null;
+  if(!jobsRealtime.dirty || jobsRealtime.refreshing || !coreRealtime.channel) return;
+  jobsRealtime.dirty=false;
+  jobsRealtime.refreshing=true;
+  const generation=coreRealtime.generation,revision=jobsRealtime.revision;
+  const employeeId=coreRealtime.employeeId,role=coreRealtime.role;
+  try{
+    const jobs=await fetchJobsFromSupabase();
+    if(generation!==coreRealtime.generation || revision!==jobsRealtime.revision ||
+       DB.session?.employeeId!==employeeId || DB.session?.role!==role) return;
+    DB.jobs=jobs;
+    save();
+  }catch(error){
+    if(generation===coreRealtime.generation) console.error("Jobs Realtime sync error:",error);
+  }finally{
+    if(generation===coreRealtime.generation){
+      jobsRealtime.refreshing=false;
+      if(jobsRealtime.dirty){
+        clearTimeout(jobsRealtime.timer);
+        jobsRealtime.timer=setTimeout(refreshJobsFromRealtime,300);
+      }
+      scheduleRealtimeRender();
+    }
+  }
+}
+function startCoreRealtime(user,profile){
+  if(!user?.id || !profile?.id || DB.session?.employeeId!==profile.id || DB.session?.role!==profile.permission) return;
+  if(coreRealtime.channel && coreRealtime.userId===user.id &&
+     coreRealtime.employeeId===profile.id && coreRealtime.role===profile.permission) return;
+  stopCoreRealtime();
+  const generation=coreRealtime.generation;
+  coreRealtime.userId=user.id;
+  coreRealtime.employeeId=profile.id;
+  coreRealtime.role=profile.permission;
+  const global=isAdminRole(profile.permission);
+  let channel=supabaseClient.channel(`core-time-${user.id}`);
+  for(const table of ["attendance","breaks","job_time_entries"]){
+    for(const event of ["INSERT","UPDATE"]){
+      const options={event,schema:"public",table};
+      if(!global && table!=="breaks") options.filter=`employee_id=eq.${profile.id}`;
+      channel=channel.on("postgres_changes",options,payload=>{
+        if(generation!==coreRealtime.generation) return;
+        if(table==="attendance"&&event==="UPDATE") applyFourPmAttendanceRealtime(payload);
+        scheduleCoreTimeRefresh();
+      });
+    }
+  }
+  for(const event of ["INSERT","UPDATE"]){
+    const options={event,schema:"public",table:"correction_requests"};
+    if(profile.permission!=="Super Admin") options.filter=`employee_id=eq.${profile.id}`;
+    channel=channel.on("postgres_changes",options,()=>{
+      if(generation!==coreRealtime.generation) return;
+      scheduleSupportRefresh("corrections");
+      if(event==="UPDATE") scheduleCoreTimeRefresh();
+    });
+  }
+  const worklogOptions={event:"INSERT",schema:"public",table:"worklogs"};
+  if(profile.permission!=="Super Admin") worklogOptions.filter=`employee_id=eq.${profile.id}`;
+  channel=channel.on("postgres_changes",worklogOptions,()=>{
+    if(generation===coreRealtime.generation) scheduleSupportRefresh("worklogs");
+  });
+  for(const event of ["INSERT","UPDATE"]){
+    channel=channel.on("postgres_changes",{event,schema:"public",table:"jobs"},()=>{
+      if(generation===coreRealtime.generation) scheduleJobsRefresh();
+    });
+  }
+  coreRealtime.channel=channel;
+  channel.subscribe(status=>{
+    if(generation!==coreRealtime.generation) return;
+    if(status==="SUBSCRIBED"){
+      if(coreRealtime.interrupted){
+        scheduleCoreTimeRefresh();
+        scheduleSupportRefresh("corrections");
+        scheduleSupportRefresh("worklogs");
+        scheduleJobsRefresh();
+      }
+      coreRealtime.interrupted=false;
+    }else if(["CHANNEL_ERROR","TIMED_OUT","CLOSED"].includes(status)){
+      coreRealtime.interrupted=true;
+      console.error("Core Realtime channel status:",status);
+    }
+  });
+}
+document.addEventListener("visibilitychange",()=>{
+  if(document.visibilityState==="visible" && coreRealtime.channel){
+    scheduleCoreTimeRefresh();
+    scheduleSupportRefresh("corrections");
+    scheduleSupportRefresh("worklogs");
+    scheduleJobsRefresh();
+  }
+});
 
 function isAdminRole(perm){ return perm && perm!=="Employee"; }
 /* Which admin tabs each permission level can see */
@@ -900,6 +1222,8 @@ async function recordJobHistory(jobId, action, detail){
 /* ---------------- Router / State ---------------- */
 let route = {name:"login"};
 let adminAuditSyncState="idle";
+let adminAuditSyncRequest=0,adminAuditRefreshQueue=Promise.resolve();
+let authBootComplete=false;
 let toastTimer = null;
 function toast(msg){
   const el = document.createElement("div");
@@ -911,6 +1235,7 @@ function toast(msg){
 function go(name, params={}){
   if(route.name==="worklog-add" && name!=="worklog-add") clearWorklogPhotoSelection();
   if(route.name==="worklog-detail" && (name!=="worklog-detail" || route.id!==params.id)) clearWorklogDetailPhoto();
+  if(name==="admin-audit") adminAuditSyncState="idle";
   route = {name, ...params}; render(); window.scrollTo(0,0);
 }
 
@@ -1041,7 +1366,7 @@ const LOCATION_ERROR_COPY = {
     primary: "Close"
   }
 };
-function requireLocation(onSuccess, actionLabel){
+function requireLocation(onSuccess, actionLabel, onCancel){
   (async function attempt(){
     toast("Getting GPS location…");
     const pos = await getPositionSmart();
@@ -1056,7 +1381,7 @@ function requireLocation(onSuccess, actionLabel){
         <button class="btn btn-ghost btn-block" style="margin-top:8px;" id="locCancel">Cancel</button>
       </div>`;
       document.body.appendChild(wrap);
-      wrap.querySelector("#locCancel").onclick = ()=> wrap.remove();
+      wrap.querySelector("#locCancel").onclick = ()=> {wrap.remove();onCancel?.();};
       if(pos.error==="iframe-blocked"){
         wrap.querySelector("#locRetry").onclick = ()=> { try{ window.open(window.location.href, "_blank", "noopener"); }catch(e){} };
         if(wrap.querySelector("#locSecondary")) wrap.querySelector("#locSecondary").onclick = ()=> { wrap.remove(); attempt(); };
@@ -1200,6 +1525,7 @@ function render(){
   const app = document.getElementById("app");
   document.body.classList.toggle("wide", window.innerWidth>900 && isAdminRole(DB.session?.role));
   if(!DB.session){
+    clearPostJobOtReminder();
     if(route.name==="privacy"){ app.innerHTML = screenPrivacy(); bindScreen(); return; }
     app.innerHTML = screenLogin(); bindLogin(); return;
   }
@@ -1210,6 +1536,7 @@ function render(){
     app.innerHTML = renderAdminShell();
     bindAdminShell();
   }
+  setTimeout(()=>{syncPostJobOtReminder();checkWorkReminders();},0);
 }
 
 /* ---------------- LOGIN ---------------- */
@@ -1244,6 +1571,48 @@ function screenLogin(){
       By logging in you acknowledge Upstage Co's attendance photo &amp; location policy. <span class="link" id="privacyLink">View privacy notice</span>.
     </div>
   </div>`;
+}
+function loadAuthenticatedProfile(userId){
+ return supabaseClient.from("employees")
+   .select("id, emp_id, name, email, permission, status")
+   .eq("user_id",userId).single();
+}
+async function syncInitialDataForProfile(profile){
+ await syncCompanySettings();
+ await syncTimeDataFromSupabase(profile.id,profile.permission==="Super Admin");
+ if(isAdminRole(profile.permission)) await syncAdminJobTimeEntries();
+}
+async function boot(){
+ DB.session=null;
+ adminAuditSyncState="idle";
+ try{
+   const {data:{user},error:userError}=await supabaseClient.auth.getUser();
+   if(userError || !user){
+     if(userError && userError.name!=="AuthSessionMissingError") console.error("Session validation error:",userError);
+     save();
+     return;
+   }
+   const {data:profile,error:profileError}=await loadAuthenticatedProfile(user.id);
+   if(profileError || !profile || profile.status==="disabled"){
+     console.error("Session profile validation error:",profileError || "Profile unavailable or disabled");
+     if(!profile || profile.status==="disabled") await supabaseClient.auth.signOut();
+     save();
+     return;
+   }
+   await syncInitialDataForProfile(profile);
+   DB.session={role:profile.permission,employeeId:profile.id,name:profile.name};
+   save();
+   route={name:isAdminRole(profile.permission)?firstAllowedTab(profile.permission):"emp-home"};
+   startCoreRealtime(user,profile);
+ }catch(error){
+   console.error("Session restore error:",error);
+   DB.session=null;
+   save();
+   toast("Unable to load attendance data. Please try again.");
+ }finally{
+   authBootComplete=true;
+   render();
+ }
 }
 function bindLogin(){
 
@@ -1281,11 +1650,7 @@ function bindLogin(){
     }
 
     const { data: profile, error: profileError } =
-      await supabaseClient
-        .from("employees")
-        .select("id, emp_id, name, email, permission, status")
-        .eq("user_id", authData.user.id)
-        .single();
+      await loadAuthenticatedProfile(authData.user.id);
 
     if(profileError || !profile){
       console.error("Profile lookup error:", profileError);
@@ -1302,10 +1667,8 @@ function bindLogin(){
 
     adminAuditSyncState="idle";
     try{
-  await syncCompanySettings();
-  await syncTimeDataFromSupabase(profile.id,profile.permission==="Super Admin");
-  if(isAdminRole(profile.permission)) await syncAdminJobTimeEntries();
-}catch(error){
+      await syncInitialDataForProfile(profile);
+    }catch(error){
   console.error("Initial data sync failed:", error);
   toast("Unable to load attendance data. Please try again.");
   await supabaseClient.auth.signOut();
@@ -1325,6 +1688,8 @@ function bindLogin(){
     );
 
     save();
+
+    startCoreRealtime(authData.user,profile);
 
     go(
       isAdminRole(profile.permission)
@@ -1366,6 +1731,10 @@ function bindEmployeeShell(){
   document.querySelectorAll("[data-nav]").forEach(b=> b.onclick = ()=> go(b.dataset.nav));
   bindScreen();
 }
+async function runJobAction(action){
+  jobActionInProgress++;
+  try{await action();}finally{jobActionInProgress--;scheduleRealtimeRender();}
+}
 
 function attStatusPill(status){
   return ({
@@ -1377,10 +1746,16 @@ function attStatusPill(status){
     corrected: '<span class="pill pill-warn">Corrected</span>',
   })[status] || `<span class="pill pill-muted">${status}</span>`;
 }
-function statusPill(st){
+function statusPill(st,activeBreakLabel="On Break"){
   if(st==="working") return `<span class="pill pill-ok"><span class="dot dot-ok"></span> Working</span>`;
-  if(st==="break") return `<span class="pill pill-warn"><span class="dot dot-warn"></span> On Break</span>`;
+  if(st==="break") return `<span class="pill pill-warn" style="font-size:14px;"><span class="dot dot-warn"></span> ${activeBreakLabel}</span>`;
   return `<span class="pill pill-muted"><span class="dot dot-muted"></span> Not Working</span>`;
+}
+function employeeVisibleJobs(empId,activeJobId){
+  const jobs=DB.jobs.filter(j=>j.assigned.includes(empId)&&j.status!=="Completed");
+  const activeJob=DB.jobs.find(j=>j.id===activeJobId);
+  if(activeJob && !jobs.some(j=>j.id===activeJob.id)) jobs.unshift(activeJob);
+  return jobs;
 }
 
 function screenEmpHome(){
@@ -1388,6 +1763,11 @@ function screenEmpHome(){
   const st = empStatus(emp.id);
   const openAtt = empOpenAttendance(emp.id);
   const openBrk = openAtt ? empOpenBreak(openAtt.id) : null;
+  const breakEligibility=st==="working"?currentBreakEligibility(emp.id):null;
+  const activeBreakDescriptor=openBrk?breakDescriptorForType(openBrk.type):null;
+  const activeBreakIsLunch=activeBreakDescriptor?.key==="lunch";
+  const activeBreakLabel=activeBreakIsLunch?"On Lunch":"On Break";
+  const activeBreakStartedLabel=activeBreakIsLunch?"Lunch started":"Break started";
   const weekStart = startOfWeek();
   const weekMin = weeklyNetMinutes(emp.id, weekStart);
   let todayMin = todayNetMinutes(emp.id);
@@ -1398,7 +1778,7 @@ function screenEmpHome(){
   }
   const activeJobEntry=(DB.jobTimeEntries||[]).find(e=>e.employeeId===emp.id&&!e.endTime);
   const job=activeJobEntry?DB.jobs.find(j=>j.id===activeJobEntry.jobId):null;
-  const assignedJobs=DB.jobs.filter(j=>j.assigned.includes(emp.id)&&j.status!=="Completed");
+  const visibleJobs=employeeVisibleJobs(emp.id,activeJobEntry?.jobId);
   const hour = new Date().getHours();
   const greeting = hour<12?"Good morning":hour<17?"Good afternoon":"Good evening";
   const firstName = emp.name.split(" ")[0];
@@ -1412,7 +1792,7 @@ function screenEmpHome(){
   const breakSecs = openBrk ? Math.floor((Date.now()-new Date(openBrk.start).getTime())/1000) : 0;
 
   return `
-  <div class="topbar"><div class="h2">${greeting}, ${escapeHtml(firstName)}</div><div class="row gap-8" style="align-items:center;">${st==="break"?`<span id="statusTimer" data-since="${openBrk.start}" class="tiny" style="font-family:ui-monospace,Menlo,Consolas,monospace;font-weight:700;color:var(--warn);">${hmsLive(breakSecs)}</span>`:""}${statusPill(st)}</div></div>
+  <div class="topbar"><div class="h2">${greeting}, ${escapeHtml(firstName)}</div><div class="row gap-8" style="align-items:center;justify-content:center;">${st==="break"?`<span id="statusTimer" data-since="${openBrk.start}" style="font-family:ui-monospace,Menlo,Consolas,monospace;font-size:15px;font-weight:700;color:var(--warn);">${hmsLive(breakSecs)}</span>`:""}${statusPill(st,activeBreakLabel)}</div></div>
   <div class="content">
     <div class="card" style="margin-bottom:14px;">
       <div class="row-between">
@@ -1427,22 +1807,17 @@ function screenEmpHome(){
       </div>
     </div>
 
-    <div class="grid2" style="margin-bottom:16px;">
-      <div class="kpi"><div class="num">${hm(todayMin)}</div><div class="lab">Today</div></div>
-      <div class="kpi"><div class="num">${hm(weekMin)}</div><div class="lab">This week</div></div>
-    </div>
-
     <div class="col gap-12" style="margin-bottom:20px;">
       ${st==="off" ? `
         <button class="btn btn-accent btn-block btn-lg" id="btnTimeIn">🟢 TIME IN</button>
       `: st==="working" ? `
-        <div class="grid2">
-          <button class="btn btn-warn btn-lg" id="btnStartBreak">☕ START BREAK</button>
+        ${breakEligibility?.eligible?`<div class="grid2">
+          <button class="btn btn-warn btn-lg" id="btnStartBreak">☕ ${breakEligibility.descriptor.startLabel}</button>
           <button class="btn btn-danger btn-lg" id="btnTimeOut">🔴 TIME OUT</button>
-        </div>
+        </div>`:`<button class="btn btn-danger btn-block btn-lg" id="btnTimeOut">🔴 TIME OUT</button>`}
       `: `
-        <button class="btn btn-ok btn-block btn-lg" id="btnEndBreak">▶️ END BREAK</button>
-        <div class="tiny muted" style="text-align:center;">On break since ${fmtTime(openBrk.start)}</div>
+        <button class="btn btn-ok btn-block btn-lg" id="btnEndBreak">▶️ ${activeBreakDescriptor?.endLabel||"END BREAK"}</button>
+        <div class="muted" style="text-align:center;font-size:14px;font-weight:600;margin-top:10px;">${activeBreakStartedLabel} ${fmtTime(openBrk.start)}</div>
       `}
     </div>
 
@@ -1458,7 +1833,7 @@ function screenEmpHome(){
 
     <div class="row-between" style="margin-bottom:10px;"><div class="h3">TODAY'S WORK</div><a class="link small" id="goWorklog">Add +</a></div>
 
-${openAtt?assignedJobs.map(j=>{
+${(openAtt||activeJobEntry)?visibleJobs.filter(j=>openAtt||j.id===activeJobEntry.jobId).map(j=>{
   const active=activeJobEntry?.jobId===j.id;
   return `<div class="card card-tight" style="margin-bottom:8px;${active?"background:#effcf3;":""}">
     <div class="row-between"><div><b>${escapeHtml(j.name)}</b><div class="tiny muted">${escapeHtml(j.number||"")}</div></div></div>
@@ -1486,8 +1861,8 @@ ${todaysLogs.length? todaysLogs.map(w=>`
 
 function screenJobSelect(){
   const emp=currentEmployee();
-  const jobs=DB.jobs.filter(j=>j.assigned.includes(emp.id)&&j.status!=="Completed");
   const active=(DB.jobTimeEntries||[]).find(e=>e.employeeId===emp.id&&!e.endTime);
+  const jobs=employeeVisibleJobs(emp.id,active?.jobId);
 
   return `
   <div class="topbar"><button class="backbtn" id="back">← Back</button><div class="h2">Select Job</div><div style="width:40px"></div></div>
@@ -1509,27 +1884,116 @@ function screenJobSelect(){
   </div>`;
 }
 
+async function fetchAuthoritativeStartJobState(jobId,employeeId){
+  const [jobResult,assignmentResult,openEntriesResult]=await Promise.all([
+    supabaseClient.from("jobs").select("id, name, status").eq("id",jobId).maybeSingle(),
+    supabaseClient.from("job_assignments").select("job_id, employee_id")
+      .eq("job_id",jobId).eq("employee_id",employeeId).maybeSingle(),
+    supabaseClient.from("job_time_entries")
+      .select("id, employee_id, job_id, start_time, end_time, duration_seconds, end_reason, switched_to_job_id")
+      .eq("employee_id",employeeId).is("end_time",null).limit(2)
+  ]);
+  const error=jobResult.error||assignmentResult.error||openEntriesResult.error;
+  if(error) throw error;
+  if(openEntriesResult.data.length>1) throw new Error("Multiple open job time entries found");
+  const row=openEntriesResult.data[0];
+  return {
+    job:jobResult.data,
+    assigned:!!assignmentResult.data,
+    active:row?{
+      id:row.id,employeeId:row.employee_id,jobId:row.job_id,
+      startTime:row.start_time,endTime:row.end_time,
+      durationSeconds:row.duration_seconds,endReason:row.end_reason,
+      switchedToJobId:row.switched_to_job_id
+    }:null
+  };
+}
+async function reconcileJobsAfterRejectedStart(){
+  try{
+    const jobs=await fetchJobsFromSupabase();
+    jobsRealtime.revision++;
+    DB.jobs=jobs;
+    save();
+    if(["emp-home","job-select"].includes(route.name)) render();
+  }catch(error){
+    console.error("Jobs reconciliation after rejected start error:",error);
+  }
+}
+function reconcileAuthoritativeOpenJobEntry(employeeId,active){
+  coreRealtime.revision++;
+  DB.jobTimeEntries=[
+    ...(active?[active]:[]),
+    ...DB.jobTimeEntries.filter(e=>e.id!==active?.id&&(e.employeeId!==employeeId||e.endTime))
+  ];
+  save();
+}
+
 async function startJobTracking(jobId){
-  const emp=currentEmployee(),job=DB.jobs.find(j=>j.id===jobId);
+  if(navigator.onLine===false){
+    toast("You're offline. Reconnect and try again.");return;
+  }
+  const emp=currentEmployee();
   const att=empOpenAttendance(emp.id);
   if(att&&empOpenBreak(att.id)){toast("End your current break before starting or switching jobs.");return;}
-  const active=(DB.jobTimeEntries||[]).find(e=>e.employeeId===emp.id&&!e.endTime);
+  let state;
+  try{
+    state=await fetchAuthoritativeStartJobState(jobId,emp.id);
+  }catch(error){
+    console.error("Start Job validation error:",error);
+    toast("Could not verify this job. Please try again.");return;
+  }
+  if(!state.job || !state.assigned || state.job.status==="Completed"){
+    await reconcileJobsAfterRejectedStart();
+    toast(!state.assigned?"This job is no longer assigned or available.":"This job is no longer available to start.");
+    return;
+  }
+  let active=state.active;
+  const job=DB.jobs.find(j=>j.id===jobId)||state.job;
   const openAtt=DB.attendance.find(a=>a.employeeId===emp.id&&!a.timeOut);
   const ts=new Date(),iso=ts.toISOString();
 
   if(active&&active.jobId!==jobId){
     const oldJob=DB.jobs.find(j=>j.id===active.jobId);
+    const confirmedActiveId=active.id;
     const time=ts.toLocaleTimeString("en-GB",{hour12:false});
     if(!await showSwitchJobConfirm(oldJob?.name||"current",time))return;
 
-    const seconds=Math.max(0,Math.floor((ts-new Date(active.startTime))/1000));
-    const {error}=await supabaseClient.from("job_time_entries").update({
-      end_time:iso,duration_seconds:seconds,end_reason:"switched_job",
-      switched_to_job_id:jobId,updated_at:iso
-    }).eq("id",active.id);
+    try{
+      state=await fetchAuthoritativeStartJobState(jobId,emp.id);
+    }catch(error){
+      console.error("Start Job validation error:",error);
+      toast("Could not verify this job. Please try again.");return;
+    }
+    if(!state.job || !state.assigned || state.job.status==="Completed"){
+      await reconcileJobsAfterRejectedStart();
+      toast(!state.assigned?"This job is no longer assigned or available.":"This job is no longer available to start.");
+      return;
+    }
+    active=state.active;
+    if(active&&active.id!==confirmedActiveId){
+      reconcileAuthoritativeOpenJobEntry(emp.id,active);
+      toast("Your active job changed. Please try again.");return;
+    }
+    if(!active){
+      reconcileAuthoritativeOpenJobEntry(emp.id,null);
+    }else if(active.jobId===jobId){
+      reconcileAuthoritativeOpenJobEntry(emp.id,active);
+      toast("This job is already active.");return;
+    }
 
-    if(error){console.error(error);toast("Could not stop current job.");return;}
-    active.endTime=iso;active.durationSeconds=seconds;
+    if(active){
+      reconcileAuthoritativeOpenJobEntry(emp.id,active);
+      const seconds=Math.max(0,Math.floor((ts-new Date(active.startTime))/1000));
+      const {error}=await supabaseClient.from("job_time_entries").update({
+        end_time:iso,duration_seconds:seconds,end_reason:"switched_job",
+        switched_to_job_id:jobId,updated_at:iso
+      }).eq("id",active.id);
+
+      if(error){console.error(error);toast("Could not stop current job.");return;}
+      active.endTime=iso;active.durationSeconds=seconds;
+    }
+  }else{
+    reconcileAuthoritativeOpenJobEntry(emp.id,active);
   }
 
   if(active?.jobId===jobId){toast("This job is already active.");return;}
@@ -1554,16 +2018,20 @@ async function startJobTracking(jobId){
     });
 
     if(error){console.error("Attendance start error:",error);toast("Could not clock in.");return;}
-    DB.attendance.push(att);
+    if(!DB.attendance.some(a=>a.id===att.id)) DB.attendance.push(att);
   }
 
   const {data,error}=await supabaseClient.from("job_time_entries").insert({
     id:uid("jte"),employee_id:emp.id,job_id:jobId,start_time:iso
   }).select().single();
 
-  if(error){console.error(error);toast("Could not start job.");return;}
+  if(error){
+    console.error("Start Job insert error:",error);
+    await reconcilePostJobOtCore();
+    toast("Could not start job. Attendance or overtime status may have changed.");return;
+  }
 
-  DB.jobTimeEntries.unshift({
+  if(!DB.jobTimeEntries.some(e=>e.id===data.id)) DB.jobTimeEntries.unshift({
     id:data.id,employeeId:data.employee_id,jobId:data.job_id,
     startTime:data.start_time,endTime:data.end_time
   });
@@ -1581,19 +2049,49 @@ async function closeJobAt(active,iso,reason="manual"){
   active.endTime=iso;active.durationSeconds=seconds;active.endReason=reason;save();
   return true;
 }
+async function closeCurrentJobAt(active,iso){
+  const seconds=Math.max(0,Math.floor((new Date(iso)-new Date(active.startTime))/1000));
+  const {data,error}=await supabaseClient.from("job_time_entries").update({
+    end_time:iso,duration_seconds:seconds,end_reason:"manual",updated_at:iso
+  }).eq("id",active.id).select().single();
+  if(error || !data?.end_time){console.error("Job close error:",error||"Updated row was not returned");return false;}
+  coreRealtime.revision++;
+  Object.assign(active,{
+    employeeId:data.employee_id,jobId:data.job_id,startTime:data.start_time,
+    endTime:data.end_time,durationSeconds:data.duration_seconds,endReason:data.end_reason,
+    switchedToJobId:data.switched_to_job_id
+  });
+  DB.jobTimeEntries=[active,...DB.jobTimeEntries.filter(e=>e.id!==active.id)];
+  save();
+  return true;
+}
 
 async function endJobTracking(jobId){
   const emp=currentEmployee(),att=empOpenAttendance(emp.id);
   if(att&&empOpenBreak(att.id)){toast("End your current break before ending a job.");return;}
-  const active=(DB.jobTimeEntries||[]).find(e=>e.jobId===jobId&&!e.endTime);
+  const active=(DB.jobTimeEntries||[]).find(e=>e.employeeId===emp.id&&e.jobId===jobId&&!e.endTime);
   if(!active){toast("No active job found.");return;}
 
   const iso=nowISO();
-  const ok=await closeJobAt(active,iso,"manual");
+  const ok=await closeCurrentJobAt(active,iso);
   if(!ok){toast("Could not end job.");return;}
 
+  let armFailed=false;
+  try{
+    const {data,error}=await supabaseClient.rpc("arm_post_job_ot_reconfirmation",{
+      p_job_time_entry_id:active.id
+    }).single();
+    if(error) throw error;
+    await reconcilePostJobOtCore();
+    if(data?.applied) syncPostJobOtReminder();
+  }catch(error){
+    armFailed=true;
+    console.error("Post-job OT arm error:",error);
+    await reconcilePostJobOtCore();
+  }
+
   audit(currentEmployee().name,"Ended Job",jobName(jobId),`Duration: ${Math.floor((active.durationSeconds||0)/60)}m`);
-  toast("Job ended");
+  toast(armFailed?"Job ended, but overtime status could not be refreshed.":"Job ended");
   go("job-select");
 }
 
@@ -1681,7 +2179,7 @@ if(attendanceError){
   return;
 }
 
-DB.attendance.push(att);
+if(!DB.attendance.some(a=>a.id===att.id)) DB.attendance.push(att);
 
 audit(
   emp.name,
@@ -1703,27 +2201,45 @@ save();
     }, "Timing in");
   };
 }
-function doStartBreak(){
-  const emp = currentEmployee(); const att = empOpenAttendance(emp.id);
-  const rules = DB.settings.breakRules;
-  const optionsHtml = rules.map(r=>`<option value="${r.id}">${escapeHtml(r.name)} (${r.minutes} min, ${r.paid?'paid':'unpaid'})</option>`).join("");
+function validBreakStart(empId,expectedKey){
+  const eligibility=currentBreakEligibility(empId);
+  return eligibility.eligible&&(!expectedKey||eligibility.descriptor.key===expectedKey)?eligibility:null;
+}
+function rejectBreakStart(descriptor){
+  toast(`${descriptor?.name||"Break"} is no longer available to start.`);
+  if(route.name==="emp-home") render();
+}
+function doStartBreak(expectedKey=null){
+  const emp=currentEmployee();
+  const initial=emp&&validBreakStart(emp.id,expectedKey);
+  const descriptor=initial?.descriptor||BREAK_DESCRIPTORS.find(b=>b.key===expectedKey);
+  if(!initial){rejectBreakStart(descriptor);return;}
   const wrap = document.createElement("div"); wrap.className="modal-bg";
+  wrap.id="startBreakModal";wrap.dataset.breakKey=descriptor.key;
   wrap.innerHTML = `<div class="modal">
-    <div class="h2" style="margin-bottom:14px;">Start Break</div>
-    <div class="field"><label>Break type</label><select id="brkType">${optionsHtml}</select></div>
-    <button class="btn btn-warn btn-block btn-lg" id="brkGo">Start Break</button>
+    <div class="h2" style="margin-bottom:14px;">${descriptor.name}</div>
+    <div class="card card-tight small" style="margin-bottom:14px;">
+      <div class="row-between"><span class="muted">Duration</span><b>${descriptor.minutes} minutes</b></div>
+      <div class="row-between" style="margin-top:6px;"><span class="muted">Payment</span><b>${descriptor.paid?"Paid":"Unpaid"}</b></div>
+    </div>
+    <button class="btn btn-warn btn-block btn-lg" id="brkGo">${descriptor.startLabel}</button>
     <button class="btn btn-ghost btn-block" style="margin-top:8px;" id="brkCancel">Cancel</button>
   </div>`;
   document.body.appendChild(wrap);
   wrap.querySelector("#brkCancel").onclick=()=>wrap.remove();
   wrap.querySelector("#brkGo").onclick= ()=>{
-    const ruleId = wrap.querySelector("#brkType").value;
-    const rule = rules.find(r=>r.id===ruleId);
+    if(!validBreakStart(emp.id,descriptor.key)){wrap.remove();rejectBreakStart(descriptor);return;}
     wrap.remove();
     requireLocation(async (pos)=>{
+      if(!validBreakStart(emp.id,descriptor.key)){rejectBreakStart(descriptor);return;}
+      let snapshot;
+      try{snapshot=await refreshEmployeeBreaksFromSupabase(emp.id);}
+      catch(error){console.error("Break eligibility refresh error:",error);toast("Break eligibility could not be confirmed. Please try again.");return;}
+      const authoritative=currentBreakEligibility(emp.id,snapshot.attendance,snapshot.breaks);
+      if(!authoritative.eligible||authoritative.descriptor.key!==descriptor.key){rejectBreakStart(descriptor);return;}
       const gpsStart = {lat:pos.lat,lng:pos.lng,accuracy:pos.accuracy};
-      const brk = {id:uid("brk"), attendanceId:att.id, type:rule.name, start:nowISO(), end:null, paid:rule.paid, plannedMinutes:rule.minutes, gpsStart, gpsEnd:null};
-      const { error: breakStartError } = await supabaseClient
+      const brk = {id:uid("brk"), attendanceId:authoritative.att.id, type:descriptor.name, start:nowISO(), end:null, paid:descriptor.paid, plannedMinutes:descriptor.minutes, gpsStart, gpsEnd:null};
+      const { data:savedBreak, error: breakStartError } = await supabaseClient
   .from("breaks")
   .insert({
     id: brk.id,
@@ -1736,7 +2252,7 @@ function doStartBreak(){
     gps_start_lng: brk.gpsStart?.lng ?? null,
     gps_end_lat: brk.gpsEnd?.lat ?? null,
     gps_end_lng: brk.gpsEnd?.lng ?? null
-  });
+  }).select().single();
 
 if(breakStartError){
   console.error("Supabase break-start error:", breakStartError);
@@ -1744,25 +2260,34 @@ if(breakStartError){
   return;
 }
 
-DB.breaks.push(brk);
-att.breakIds.push(brk.id);
-      audit(emp.name,"Start Break",jobName(att.jobId),rule.name); save();
-      go("emp-home"); toast(`${rule.name} started`);
+coreRealtime.revision++;
+const confirmedBreak={
+  id:savedBreak.id,attendanceId:savedBreak.attendance_id,type:savedBreak.type,
+  start:savedBreak.start_time,end:savedBreak.end_time,paid:savedBreak.paid,
+  plannedMinutes:descriptor.minutes,gpsStart:{lat:savedBreak.gps_start_lat,lng:savedBreak.gps_start_lng},gpsEnd:null
+};
+DB.breaks=[confirmedBreak,...DB.breaks.filter(b=>b.id!==confirmedBreak.id)];
+const currentAtt=DB.attendance.find(a=>a.id===confirmedBreak.attendanceId);
+if(currentAtt&&!currentAtt.breakIds.includes(confirmedBreak.id)) currentAtt.breakIds.push(confirmedBreak.id);
+      audit(emp.name,"Start Break",jobName(currentAtt?.jobId),descriptor.name); save();
+      go("emp-home"); toast(`${descriptor.name} started`);
     }, "Starting a break");
   };
 }
 function doEndBreak(){
   const emp = currentEmployee(); const att = empOpenAttendance(emp.id); const brk = empOpenBreak(att.id);
   requireLocation(async(pos)=>{
-    brk.end = nowISO(); brk.gpsEnd = {lat:pos.lat,lng:pos.lng,accuracy:pos.accuracy};
-    const { error: breakEndError } = await supabaseClient
+    const end=nowISO(),gpsEnd={lat:pos.lat,lng:pos.lng,accuracy:pos.accuracy};
+    const { data:savedBreak, error: breakEndError } = await supabaseClient
   .from("breaks")
   .update({
-    end_time: brk.end,
-    gps_end_lat: brk.gpsEnd?.lat ?? null,
-    gps_end_lng: brk.gpsEnd?.lng ?? null
+    end_time:end,
+    gps_end_lat:gpsEnd.lat,
+    gps_end_lng:gpsEnd.lng
   })
-  .eq("id", brk.id);
+  .eq("id", brk.id)
+  .select()
+  .single();
 
 if(breakEndError){
   console.error("Supabase break-end error:", breakEndError);
@@ -1770,15 +2295,24 @@ if(breakEndError){
   return;
 }
 
+coreRealtime.revision++;
+const confirmedBreak={
+  id:savedBreak.id,attendanceId:savedBreak.attendance_id,type:savedBreak.type,
+  start:savedBreak.start_time,end:savedBreak.end_time,paid:savedBreak.paid,
+  gpsStart:{lat:savedBreak.gps_start_lat,lng:savedBreak.gps_start_lng},
+  gpsEnd:{lat:savedBreak.gps_end_lat,lng:savedBreak.gps_end_lng,accuracy:gpsEnd.accuracy}
+};
+DB.breaks=[confirmedBreak,...DB.breaks.filter(b=>b.id!==confirmedBreak.id)];
 audit(
   emp.name,
   "End Break",
   jobName(att.jobId),
-  `${brk.type} - ${hm(mins(new Date(brk.end)-new Date(brk.start)))}`
+  `${confirmedBreak.type} - ${hm(mins(new Date(confirmedBreak.end)-new Date(confirmedBreak.start)))}`
 );
 
 save();
-    go("emp-home"); toast(`Break ended — ${hm(mins(new Date(brk.end)-new Date(brk.start)))}`);
+    const endedBreakLabel=breakDescriptorForType(confirmedBreak.type)?.key==="lunch"?"Lunch":"Break";
+    go("emp-home"); toast(`${endedBreakLabel} ended — ${hm(mins(new Date(confirmedBreak.end)-new Date(confirmedBreak.start)))}`);
   }, "Ending your break");
 }
 function showTimeOutConfirm(jobName,time){
@@ -2100,7 +2634,7 @@ function modalRequestCorrection(attId){
 const {data,error}=await supabaseClient.from("correction_requests").insert(correction).select().single();
 if(error){console.error("Correction request save error:",error);toast("Could not submit correction request.");return;}
 
-DB.correctionRequests.push({
+if(!DB.correctionRequests.some(r=>r.id===data.id)) DB.correctionRequests.push({
   id:data.id,attendanceId:data.attendance_id,employeeId:data.employee_id,type:data.request_type,
   originalTimeIn:data.original_time_in,originalTimeOut:data.original_time_out,
   requestedTimeIn:data.requested_time_in,requestedTimeOut:data.requested_time_out,
@@ -2267,8 +2801,8 @@ function bindScreen(){
     if(w?.photoPath) loadWorklogDetailPhoto(w);
     else if(worklogDetailPhoto.id) clearWorklogDetailPhoto();
   }
-  document.querySelectorAll("[data-start-job]").forEach(b=>b.onclick=()=>startJobTracking(b.dataset.startJob));
-  document.querySelectorAll("[data-end-job]").forEach(b=>b.onclick=()=>endJobTracking(b.dataset.endJob));
+  document.querySelectorAll("[data-start-job]").forEach(b=>b.onclick=()=>runJobAction(()=>startJobTracking(b.dataset.startJob)));
+  document.querySelectorAll("[data-end-job]").forEach(b=>b.onclick=()=>runJobAction(()=>endJobTracking(b.dataset.endJob)));
   if($("back") && SELF_SERVICE_ROUTES.includes(route.name)) $("back").onclick = ()=> {
     if(route.name==="emp-att-detail") go("history");
     else if(route.name==="worklog-detail") go(route.back?.name||"worklog", route.back?.params||{});
@@ -2284,7 +2818,7 @@ function bindScreen(){
   if($("tsNextWeek")) $("tsNextWeek").onclick = ()=> { if((route.weekOffset||0)<0) go("timesheet",{weekOffset:(route.weekOffset||0)+1}); };
   if($("btnTimeIn")) $("btnTimeIn").onclick = ()=> go("job-select");
   document.querySelectorAll("[data-job]").forEach(b=> b.onclick = ()=> doTimeIn(b.dataset.job));
-  if($("btnStartBreak")) $("btnStartBreak").onclick = doStartBreak;
+  if($("btnStartBreak")) $("btnStartBreak").onclick = ()=>doStartBreak();
   if($("btnEndBreak")) $("btnEndBreak").onclick = doEndBreak;
   if($("btnTimeOut")) $("btnTimeOut").onclick = doTimeOut;
   if($("goWorklog")) $("goWorklog").onclick = ()=> go("worklog-add");
@@ -2307,6 +2841,7 @@ function bindScreen(){
     return;
   }
 
+  stopCoreRealtime();
   DB.session = null;
   save();
   go("login");
@@ -2414,7 +2949,7 @@ if(worklogError){
 }
 
 worklogInserted=true;
-DB.worklogs.push(worklog);
+if(!DB.worklogs.some(w=>w.id===worklog.id)) DB.worklogs.push(worklog);
       let auditSaved=false;
       try{auditSaved=await audit(emp.name,"Added work log entry",jobName(jobId),task,worklog.id);}
       catch(auditError){console.error("Worklog audit error:",{worklogId,error:auditError});}
@@ -2505,7 +3040,7 @@ function renderAdminShell(){
 }
 function bindAdminShell(){
   document.querySelectorAll("[data-nav]").forEach(b=> b.onclick = ()=> go(b.dataset.nav));
-  const lo=document.getElementById("logoutBtn"); if(lo) lo.onclick=async()=>{ await audit(DB.session.name,"Logged out",`${DB.session.role} session`,""); const {error}=await supabaseClient.auth.signOut(); if(error){console.error("Logout error:",error);toast("Unable to log out. Please try again.");return;} DB.session=null; adminAuditSyncState="idle"; save(); go("login"); };
+  const lo=document.getElementById("logoutBtn"); if(lo) lo.onclick=async()=>{ await audit(DB.session.name,"Logged out",`${DB.session.role} session`,""); const {error}=await supabaseClient.auth.signOut(); if(error){console.error("Logout error:",error);toast("Unable to log out. Please try again.");return;} stopCoreRealtime(); DB.session=null; adminAuditSyncState="idle"; save(); go("login"); };
   if(SELF_SERVICE_ROUTES.includes(route.name)){ bindScreen(); }
   else { bindAdminScreen(); }
 }
@@ -2531,11 +3066,13 @@ function todayStats(){
   return {working,onBreak,notClocked,clockedOut,late,missingOut,totalHeadcount:emps.length,totalMin};
 }
 function activeJobsToday(){
-  return DB.jobs.filter(j=>j.status==="Active").map(j=>{
-    const todays = DB.attendance.filter(a=>a.jobId===j.id && sameDay(a.timeIn,new Date()));
-    const people = new Set(todays.map(a=>a.employeeId)).size;
-    const hrs = todays.reduce((s,a)=> s + (a.netMin!=null? a.netMin : (!a.timeOut? mins(new Date()-new Date(a.timeIn)) : 0)), 0);
-    return {job:j, people, hrs};
+  return DB.jobs.map(j=>{
+    const jobEntries=(DB.jobTimeEntries||[]).filter(e=>e.jobId===j.id);
+    const openEntries=jobEntries.filter(e=>!e.endTime);
+    const entries=jobEntries.filter(e=>sameDay(e.startTime,new Date()));
+    const people=new Set(openEntries.map(e=>e.employeeId)).size;
+    const hrs=entries.reduce((s,e)=>s+Math.max(0,Math.round((new Date(e.endTime||Date.now())-new Date(e.startTime))/60000)),0);
+    return {job:j,people,hrs};
   }).filter(x=>x.people>0);
 }
 
@@ -2578,11 +3115,12 @@ function screenAdminDash(){
     <table>
       <tr><th>Employee</th><th>Status</th><th>Job</th><th>Time in</th><th>Location</th></tr>
       ${DB.employees.filter(e=>e.status==="active" && isFieldStaff(e)).map(e=>{
-        const st=empStatus(e.id); const att=empOpenAttendance(e.id);
+        const st=empStatus(e.id),att=empOpenAttendance(e.id);
+        const activeJobEntry=(DB.jobTimeEntries||[]).find(x=>x.employeeId===e.id&&!x.endTime);
         return `<tr>
           <td>${escapeHtml(e.name)}</td>
           <td>${st==='working'?'<span class="pill pill-ok">Working</span>':st==='break'?'<span class="pill pill-warn">Break</span>':'<span class="pill pill-muted">Off</span>'}</td>
-          <td>${att?escapeHtml(jobName(att.jobId)):'—'}</td>
+          <td>${activeJobEntry?escapeHtml(jobName(activeJobEntry.jobId)):'—'}</td>
           <td>${att?fmtTime(att.timeIn):'—'}</td>
           <td class="tiny">${att?escapeHtml((att.gpsIn?.address||'').split(",").slice(0,2).join(","))||'-':'-'}</td>
         </tr>`;
@@ -2623,6 +3161,8 @@ function screenAdminEmployeeDetail(){
   const e = DB.employees.find(x=>x.id===route.id);
   const recs = DB.attendance.filter(a=>a.employeeId===e.id).sort((a,b)=>new Date(b.timeIn)-new Date(a.timeIn));
   const weekMin = weeklyNetMinutes(e.id, startOfWeek());
+  const activeAtt=empOpenAttendance(e.id),activeBreak=activeAtt?empOpenBreak(activeAtt.id):null;
+  const activeBreakLabel=breakDescriptorForType(activeBreak?.type)?.key==="lunch"?"On Lunch":"On Break";
   const canManage = DB.session.role!=="Manager";
   const canSeeRate = DB.session.role==="Admin"||DB.session.role==="Super Admin"||DB.session.role==="Payroll";
   return `
@@ -2644,7 +3184,7 @@ function screenAdminEmployeeDetail(){
     </div>
     <div class="grid2" style="margin-bottom:16px;">
       <div class="kpi"><div class="num">${hm(weekMin)}</div><div class="lab">Hours this week</div></div>
-      <div class="kpi"><div class="num">${statusPill(empStatus(e.id))}</div><div class="lab">Current status</div></div>
+      <div class="kpi"><div class="num">${statusPill(empStatus(e.id),activeBreakLabel)}</div><div class="lab">Current status</div></div>
     </div>
     ${canManage? `<div class="flexwrap" style="margin-bottom:16px;">
       <button class="btn btn-ghost btn-sm" id="resetPin">Reset PIN</button>
@@ -3053,7 +3593,7 @@ function screenAdminAudit(){
   <div class="content"><div class="empty small">${adminAuditSyncState==="error"?'Could not refresh Audit Log.':'Loading Audit Log…'}</div>
     ${adminAuditSyncState==="error"?'<button class="btn btn-ghost btn-block" id="retryAuditSync">Retry</button>':''}</div>`;
   return `
-  <div class="topbar"><div class="h2">Audit Log</div></div>
+  <div class="topbar"><div class="h2">Audit Log</div><button class="btn btn-ghost btn-sm" id="refreshAudit">Refresh</button></div>
   <div class="content">
     ${DB.auditLogs.map(a=>{
       const worklog=a.action==="Added work log entry" && a.worklogId
@@ -3152,11 +3692,26 @@ function bindAdminScreen(){
   const $ = id=>document.getElementById(id);
   if(route.name==="admin-audit" && adminAuditSyncState==="idle"){
     adminAuditSyncState="loading";
-    syncTimeDataFromSupabase(DB.session.employeeId,DB.session.role==="Super Admin",true)
-      .then(()=>{adminAuditSyncState="ready";if(route.name==="admin-audit") render();})
-      .catch(error=>{console.error("Audit Log refresh error:",error);adminAuditSyncState="error";if(route.name==="admin-audit") render();});
+    const request=++adminAuditSyncRequest;
+    const previous=adminAuditRefreshQueue;
+    adminAuditRefreshQueue=previous.catch(()=>{}).then(async()=>{
+      if(request!==adminAuditSyncRequest || route.name!=="admin-audit") return;
+      await syncAuditLogDataFromSupabase(DB.session.employeeId,DB.session.role==="Super Admin");
+    });
+    adminAuditRefreshQueue.then(()=>{
+      if(request===adminAuditSyncRequest && route.name==="admin-audit"){
+        adminAuditSyncState="ready";render();
+      }
+    }).catch(error=>{
+      if(request===adminAuditSyncRequest){
+        console.error("Audit Log refresh error:",error);
+        adminAuditSyncState="error";
+        if(route.name==="admin-audit") render();
+      }
+    });
   }
   if($("retryAuditSync")) $("retryAuditSync").onclick=()=>{adminAuditSyncState="idle";render();};
+  if($("refreshAudit")) $("refreshAudit").onclick=()=>{adminAuditSyncState="idle";render();};
   if($("back")) $("back").onclick=()=>go(route.name==="admin-att-detail"?"admin-timesheets":route.name==="admin-employee-detail"?"admin-employees":"admin-dashboard");
 
   document.querySelectorAll("[data-nav]").forEach(b=> b.onclick = ()=> go(b.dataset.nav));
@@ -3178,8 +3733,8 @@ function bindAdminScreen(){
   if($("addJob")) $("addJob").onclick = ()=> modalAddJob();
   if($("editJob")) $("editJob").onclick = ()=> modalEditJob(route.id);
   if($("addJobEmp")) $("addJobEmp").onclick = ()=> modalAssignEmployeeToJob(route.id);
-  document.querySelectorAll("[data-start-job]").forEach(b=>b.onclick=()=>startJobTracking(b.dataset.startJob));
-  document.querySelectorAll("[data-end-job]").forEach(b=>b.onclick=()=>endJobTracking(b.dataset.endJob));
+  document.querySelectorAll("[data-start-job]").forEach(b=>b.onclick=()=>runJobAction(()=>startJobTracking(b.dataset.startJob)));
+  document.querySelectorAll("[data-end-job]").forEach(b=>b.onclick=()=>runJobAction(()=>endJobTracking(b.dataset.endJob)));
   document.querySelectorAll("[data-remove-emp]").forEach(b => {
   b.onclick = async ()=>{
     const j = DB.jobs.find(x=>x.id===route.id);
@@ -3638,8 +4193,7 @@ function modalAddJob(){
       venue:wrap.querySelector("#njVenue").value, location:wrap.querySelector("#njLoc").value, start:wrap.querySelector("#njStart").value,
       end:wrap.querySelector("#njEnd").value, manager:wrap.querySelector("#njMgr").value, status:"Upcoming", notes:"", assigned:[], photo:njPhotoData,
       changeLog:[{actor:DB.session.name, ts:nowISO(), detail:"Job created."+(njPhotoData?" Reference photo attached.":"")}]};
-    DB.jobs.push(job);
-    const { error: jobCreateError } = await supabaseClient
+    const { data: savedJob, error: jobCreateError } = await supabaseClient
   .from("jobs")
   .insert({
     id: job.id,
@@ -3653,7 +4207,7 @@ function modalAddJob(){
     manager: job.manager,
     status: job.status,
     notes: job.notes
-  });
+  }).select().single();
 
 if(jobCreateError){
   console.error("Supabase job create error:", jobCreateError);
@@ -3661,7 +4215,14 @@ if(jobCreateError){
   return;
 }
 
-DB.jobs.push(job);
+const createdJob={
+  id:savedJob.id, number:savedJob.number, name:savedJob.name,
+  client:savedJob.client, venue:savedJob.venue, location:savedJob.location,
+  start:savedJob.start_date||"", end:savedJob.end_date||"",
+  manager:savedJob.manager, status:savedJob.status, notes:savedJob.notes,
+  assigned:[], photo:njPhotoData, changeLog:job.changeLog
+};
+DB.jobs=[createdJob,...DB.jobs.filter(j=>j.id!==createdJob.id)];
 
 audit(
   DB.session.name,
@@ -3729,7 +4290,7 @@ const updatedJob = {
   status: wrap.querySelector("#ejStatus").value
 };
 
-const { error: jobUpdateError } = await supabaseClient
+const { data: savedJob, error: jobUpdateError } = await supabaseClient
   .from("jobs")
   .update({
     number: updatedJob.number,
@@ -3742,7 +4303,9 @@ const { error: jobUpdateError } = await supabaseClient
     manager: updatedJob.manager,
     status: updatedJob.status
   })
-  .eq("id", j.id);
+  .eq("id", j.id)
+  .select()
+  .single();
 
 if(jobUpdateError){
   console.error("Supabase job update error:", jobUpdateError);
@@ -3750,7 +4313,18 @@ if(jobUpdateError){
   return;
 }
 
-Object.assign(j, updatedJob);
+const currentIndex=DB.jobs.findIndex(x=>x.id===j.id);
+const currentJob=DB.jobs[currentIndex];
+Object.assign(j,{
+  id:savedJob.id,number:savedJob.number,name:savedJob.name,
+  client:savedJob.client,venue:savedJob.venue,location:savedJob.location,
+  start:savedJob.start_date||"",end:savedJob.end_date||"",
+  manager:savedJob.manager,status:savedJob.status,notes:savedJob.notes,
+  assigned:currentJob?.assigned||j.assigned||[]
+});
+const jobsWithoutEdited=DB.jobs.filter(x=>x.id!==j.id);
+jobsWithoutEdited.splice(currentIndex<0?jobsWithoutEdited.length:Math.min(currentIndex,jobsWithoutEdited.length),0,j);
+DB.jobs=jobsWithoutEdited;
 
 const changed = Object.keys(before).filter(
   k => String(before[k] || "") !== String(j[k] || "")
@@ -4091,8 +4665,7 @@ function exportPDF(){
 }
 
 /* ---------------- boot ---------------- */
-window.addEventListener("resize", render);
-render();
+window.addEventListener("resize",()=>{if(authBootComplete) render();});
 setInterval(()=>{
  const el = document.getElementById("statusTimer");
  if(!el) return;
@@ -4116,7 +4689,13 @@ setInterval(()=>{
     SUPABASE_PUBLISHABLE_KEY
   );
 
+  supabaseClient.auth.onAuthStateChange((event,session)=>{
+    if(event==="SIGNED_OUT" || (coreRealtime.channel && session?.user?.id && session.user.id!==coreRealtime.userId)){
+      stopCoreRealtime();
+    }
+  });
   console.log("Supabase client connected.");
+  boot();
 </script>
 
 
