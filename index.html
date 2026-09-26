@@ -892,6 +892,7 @@ const coreRealtime={channel:null,userId:null,employeeId:null,role:null,generatio
 const supportRealtime={timer:null,revision:0,refreshing:false,corrections:false,worklogs:false,renderTimer:null};
 const jobsRealtime={timer:null,revision:0,refreshing:false,dirty:false};
 const workRecapExpandedGroups=new Set();
+const attendanceReviewExpandedPeriods=new Set();
 let jobActionInProgress=0;
 function stopCoreRealtime(){
   coreRealtime.generation++;
@@ -909,6 +910,7 @@ function stopCoreRealtime(){
   coreRealtime.userId=coreRealtime.employeeId=coreRealtime.role=null;
   coreRealtime.pending=coreRealtime.refreshing=coreRealtime.interrupted=false;
   workRecapExpandedGroups.clear();
+  attendanceReviewExpandedPeriods.clear();
   overtimeConfirmedDate="";
   fourPmDecisionOffer.key="";fourPmDecisionOffer.responseDeadline=0;fourPmDecisionOffer.processing=false;
   document.getElementById("fourPmReminder")?.remove();
@@ -1268,6 +1270,54 @@ function empRecordsForWeek(empId, weekStart){
 }
 function weeklyNetMinutes(empId, weekStart){
   return empRecordsForWeek(empId, weekStart).reduce((s,a)=> s + (a.netMin || (a.timeOut? mins(new Date(a.timeOut)-new Date(a.timeIn)) - (a.unpaidBreakMin||0) : 0)),0);
+}
+function isAttendanceReviewEligible(attendance){
+  return !!attendance?.timeOut && !Number.isNaN(new Date(attendance.timeOut).getTime()) &&
+    (attendance.status==="draft" || attendance.status==="submitted");
+}
+function addDateKeyDays(dateKey,days){
+  const date=new Date(`${dateKey}T00:00:00Z`);
+  date.setUTCDate(date.getUTCDate()+days);
+  return date.toISOString().slice(0,10);
+}
+function attendanceReviewPeriod(dateKey){
+  const date=new Date(`${dateKey}T00:00:00Z`);
+  const daysSinceFriday=(date.getUTCDay()+2)%7;
+  const periodStart=addDateKeyDays(dateKey,-daysSinceFriday);
+  return {
+    periodStart,
+    displayEnd:addDateKeyDays(periodStart,6),
+    periodEndExclusive:addDateKeyDays(periodStart,7)
+  };
+}
+function buildAttendanceReviewPeriods(attendanceRows,visibleEmployees){
+  const employeeById=new Map(visibleEmployees.map((employee,index)=>[employee.id,{employee,index}]));
+  const groups=new Map();
+  attendanceRows.filter(isAttendanceReviewEligible).forEach(attendance=>{
+    const visible=employeeById.get(attendance.employeeId);
+    if(!visible || !attendance.timeIn || Number.isNaN(new Date(attendance.timeIn).getTime())) return;
+    const attendanceDate=sydneyDateKey(attendance.timeIn);
+    const period=attendanceReviewPeriod(attendanceDate);
+    const key=`${attendance.employeeId}|${period.periodStart}`;
+    if(!groups.has(key)) groups.set(key,{
+      key,employee:visible.employee,employeeOrder:visible.index,...period,attendance:[]
+    });
+    groups.get(key).attendance.push(attendance);
+  });
+  return [...groups.values()].map(group=>({
+    ...group,
+    attendance:group.attendance.sort((a,b)=>new Date(a.timeIn)-new Date(b.timeIn)),
+    attendanceDays:new Set(group.attendance.map(a=>sydneyDateKey(a.timeIn))).size,
+    netMin:group.attendance.reduce((sum,a)=>sum+(Number.isFinite(Number(a.netMin))?Number(a.netMin):0),0)
+  })).sort((a,b)=>b.periodStart.localeCompare(a.periodStart)||a.employeeOrder-b.employeeOrder);
+}
+function formatReviewPeriodDate(dateKey,includeYear=false){
+  return new Date(`${dateKey}T12:00:00Z`).toLocaleDateString("en-AU",{
+    timeZone:"UTC",day:"numeric",month:"short",...(includeYear?{year:"numeric"}:{})
+  });
+}
+function attendanceReviewExpansionKey(period){
+  return `attendance-review:${period.employee.id}:${period.periodStart}`;
 }
 function todayNetMinutes(empId){
   const att = DB.attendance.filter(a=>a.employeeId===empId && sameDay(a.timeIn, new Date()));
@@ -2959,7 +3009,7 @@ function activeJobsToday(){
 
 function screenAdminDash(){
   const s = todayStats();
-  const pendingApprovals = DB.attendance.filter(a=>a.status==="submitted").length;
+  const pendingApprovals = buildAttendanceReviewPeriods(DB.attendance,visibleEmployeeList()).length;
   const correctionReqs = DB.correctionRequests.filter(r=>r.status==="pending").length;
   const recent = DB.auditLogs.slice(0,5);
   const jobsToday = activeJobsToday();
@@ -2979,7 +3029,7 @@ function screenAdminDash(){
 
     ${(pendingApprovals>0 || correctionReqs>0)? `<div class="card" style="margin-bottom:20px;border-color:var(--warn);">
       <div class="row-between"><div>
-        ${pendingApprovals>0?`<div><b>${pendingApprovals}</b> timesheet ${pendingApprovals>1?'entries':'entry'} awaiting approval</div>`:""}
+        ${pendingApprovals>0?`<div><b>${pendingApprovals}</b> attendance review ${pendingApprovals>1?'periods':'period'} awaiting review</div>`:""}
         ${correctionReqs>0?`<div class="small muted" style="margin-top:2px;"><b>${correctionReqs}</b> correction ${correctionReqs>1?'requests':'request'} pending</div>`:""}
       </div>
       <button class="btn btn-warn btn-sm" data-nav="admin-timesheets">Review</button></div>
@@ -3239,7 +3289,7 @@ function screenAdminLive(){
 }
 
 function screenAdminTimesheets(){
-  const pending = DB.attendance.filter(a=>a.status==="submitted");
+  const reviewPeriods=buildAttendanceReviewPeriods(DB.attendance,visibleEmployeeList());
   const rejected = DB.attendance.filter(a=>a.status==="rejected");
   const approved=DB.attendance
   .filter(a=>a.status==="approved"||a.status==="corrected")
@@ -3269,17 +3319,24 @@ function screenAdminTimesheets(){
       </div>`;
     }).join("")}`:""}
 
-    <div class="h3" style="margin-bottom:10px;">SUBMITTED — AWAITING APPROVAL (${pending.length})</div>
-    ${pending.map(a=>`<div class="card" style="margin-bottom:10px;">
-      <div class="row-between"><b class="small">${escapeHtml(empName(a.employeeId))}</b><span class="tiny muted">${fmtDate(a.timeIn)}</span></div>
-      <div class="small muted">${escapeHtml(jobName(a.jobId))}${a.category?` · ${escapeHtml(a.category)}`:""} · ${fmtTime(a.timeIn)}–${fmtTime(a.timeOut)} · Net ${hm(a.netMin)}</div>
-      <div class="grid3" style="margin-top:10px;">
-        <button class="btn btn-ok btn-sm" data-approve="${a.id}">Approve</button>
-        <button class="btn btn-danger btn-sm" data-reject="${a.id}">Reject</button>
-        <button class="btn btn-ghost btn-sm" data-att="${a.id}">Details</button>
+    <div class="h3" style="margin-bottom:10px;">ATTENDANCE PERIODS AWAITING REVIEW (${reviewPeriods.length})</div>
+    ${reviewPeriods.map(period=>`<div class="card" style="margin-bottom:10px;">
+      <div class="row-between" style="gap:12px;">
+        <div><b>${escapeHtml(period.employee.name)}</b><div class="tiny muted" style="margin-top:2px;">${formatReviewPeriodDate(period.periodStart)} – ${formatReviewPeriodDate(period.displayEnd,true)}</div></div>
+        <b class="small" style="white-space:nowrap;">Net Hours: ${hm(period.netMin)}</b>
       </div>
+      <div class="small muted" style="margin-top:6px;">${period.attendanceDays} attendance ${period.attendanceDays===1?"day":"days"}</div>
+      <details style="margin-top:10px;" data-attendance-review-key="${escapeHtml(attendanceReviewExpansionKey(period))}" ${attendanceReviewExpandedPeriods.has(attendanceReviewExpansionKey(period))?"open":""}>
+        <summary class="link small" style="cursor:pointer;">Details</summary>
+        <div class="col gap-8" style="margin-top:10px;padding-top:8px;border-top:1px solid var(--line);">
+          ${period.attendance.map(a=>`<div class="row-between small" style="gap:12px;">
+            <span><b>${fmtDate(a.timeIn)}</b><span class="tiny muted" style="display:block;">${fmtTime(a.timeIn)} – ${fmtTime(a.timeOut)} · ${escapeHtml(a.status)}</span></span>
+            <b style="white-space:nowrap;">${hm(Number.isFinite(Number(a.netMin))?Number(a.netMin):0)}</b>
+          </div>`).join("")}
+        </div>
+      </details>
     </div>`).join("")}
-    ${pending.length===0? `<div class="empty small">Nothing waiting for approval.</div>`:""}
+    ${reviewPeriods.length===0? `<div class="empty small">Nothing waiting for review.</div>`:""}
 
     ${rejected.length>0? `<div class="h3" style="margin:20px 0 10px;">REJECTED — WITH EMPLOYEE</div>
     ${rejected.map(a=>`<div class="card card-tight" style="margin-bottom:8px;border-color:var(--danger);">
@@ -3571,6 +3628,12 @@ function screenAdminSettings(){
 /* ---------------- Admin bindings ---------------- */
 function bindAdminScreen(){
   const $ = id=>document.getElementById(id);
+  document.querySelectorAll("details[data-attendance-review-key]").forEach(details=>{
+    details.ontoggle=()=>{
+      if(details.open) attendanceReviewExpandedPeriods.add(details.dataset.attendanceReviewKey);
+      else attendanceReviewExpandedPeriods.delete(details.dataset.attendanceReviewKey);
+    };
+  });
   if(route.name==="admin-audit" && adminAuditSyncState==="idle"){
     adminAuditSyncState="loading";
     const request=++adminAuditSyncRequest;
