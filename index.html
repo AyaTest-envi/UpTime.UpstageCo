@@ -86,6 +86,64 @@
   .content{padding:16px 18px 100px;flex:1;}
   .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
   .grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;}
+  .attendance-review-period{margin-bottom:12px;padding:16px 18px;}
+  .attendance-period-header{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;}
+  .attendance-period-name{font-size:16px;font-weight:800;}
+  .attendance-period-total{text-align:right;white-space:nowrap;}
+  .attendance-period-total span{display:block;color:var(--muted);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.35px;}
+  .attendance-period-total b{display:block;font-size:16px;margin-top:2px;}
+  .attendance-period-details{margin-top:12px;}
+  .attendance-period-details>summary{cursor:pointer;font-size:12.5px;font-weight:800;}
+  .attendance-date-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;align-items:start;margin-top:12px;}
+  .attendance-date-card{min-width:0;background:var(--ink);border:1px solid var(--line);border-radius:12px;padding:0 14px 14px;overflow:hidden;}
+  .attendance-date-header{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0 -14px 12px;padding:11px 14px;background:var(--panel);border-bottom:1px solid var(--line);}
+  .attendance-date-heading{font-size:16px;font-weight:800;letter-spacing:-.1px;}
+  .attendance-date-total{color:var(--muted);font-size:11.5px;white-space:nowrap;}
+  .attendance-date-total b{color:var(--text);font-size:14px;margin-left:3px;}
+  .attendance-session{min-width:0;}
+  .attendance-session+.attendance-session{margin-top:13px;padding-top:13px;border-top:1px solid var(--line);}
+  .attendance-session-heading{font-size:12px;font-weight:800;margin-bottom:9px;}
+  .attendance-fields{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));grid-template-areas:"time-in morning-break lunch" "time-out . .";gap:10px;}
+  .attendance-field{min-width:0;}
+  .attendance-field-time-in{grid-area:time-in;}
+  .attendance-field-time-out{grid-area:time-out;}
+  .attendance-field-morning-break{grid-area:morning-break;}
+  .attendance-field-lunch{grid-area:lunch;}
+  .attendance-field-label{display:flex;align-items:center;gap:5px;color:var(--muted);font-size:10.5px;font-weight:700;margin-bottom:3px;}
+  .attendance-field-icon{display:inline-grid;place-items:center;width:18px;height:18px;border-radius:6px;background:var(--panel-2);color:var(--text);font-size:11px;flex:none;}
+  .attendance-field-value{font-size:12px;font-weight:700;line-height:1.35;overflow-wrap:anywhere;}
+  .attendance-extra-break{margin-top:9px;padding-top:8px;border-top:1px dashed var(--line);}
+  .attendance-break-details{margin-top:8px;border-top:1px dashed var(--line);}
+  .attendance-break-details>summary{display:flex;align-items:center;gap:6px;padding:8px 1px 2px;cursor:pointer;color:var(--muted);font-size:11px;font-weight:700;list-style:none;}
+  .attendance-break-details>summary::-webkit-details-marker{display:none;}
+  .attendance-break-details>summary::before{content:"\25B6";font-size:8px;transition:transform .12s ease;}
+  .attendance-break-details[open]>summary::before{transform:rotate(90deg);}
+  .attendance-break-list{margin-top:6px;padding:7px 9px;border-radius:8px;background:var(--panel);}
+  .attendance-break-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;padding:5px 0;font-size:11px;}
+  .attendance-break-row+.attendance-break-row{border-top:1px solid var(--line);}
+  .attendance-break-time{min-width:0;}
+  .attendance-break-meta{font-weight:700;white-space:nowrap;}
+  .attendance-session-net{display:flex;justify-content:flex-end;gap:5px;margin-top:9px;font-size:12px;}
+  .attendance-projects{margin-top:10px;border:0;border-radius:9px;background:var(--panel);overflow:hidden;}
+  .attendance-projects>summary{display:flex;align-items:center;gap:8px;cursor:pointer;padding:9px 10px;font-size:12px;font-weight:800;list-style:none;}
+  .attendance-projects>summary::-webkit-details-marker{display:none;}
+  .attendance-projects>summary::before{content:"\25B6";font-size:9px;color:var(--muted);transition:transform .12s ease;}
+  .attendance-projects[open]>summary::before{transform:rotate(90deg);}
+  .attendance-project-count{display:inline-grid;place-items:center;min-width:22px;height:20px;margin-left:auto;padding:0 6px;border-radius:999px;background:var(--ink);border:1px solid var(--line);font-size:11px;}
+  .attendance-project-list{display:flex;flex-direction:column;padding:10px;border-top:1px solid var(--line);}
+  .attendance-project-group{min-width:0;}
+  .attendance-project-group+.attendance-project-group{margin-top:12px;padding-top:11px;border-top:1px solid var(--line);}
+  .attendance-project-header{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:7px;}
+  .attendance-project-name{display:block;min-width:0;font-size:13px;font-weight:800;line-height:1.3;overflow-wrap:anywhere;}
+  .attendance-project-total{flex:none;color:var(--muted);font-size:10.5px;white-space:nowrap;}
+  .attendance-project-total b{color:var(--text);font-size:11.5px;margin-left:3px;}
+  .attendance-group-sessions{min-width:0;margin-left:5px;padding-left:10px;border-left:2px solid var(--line);}
+  .attendance-job-row{display:grid;grid-template-columns:minmax(0,1fr) auto auto;align-items:start;gap:8px;padding:6px 0;font-size:11px;}
+  .attendance-job-row-unlabelled{grid-template-columns:minmax(0,1fr) auto;}
+  .attendance-job-row+.attendance-job-row{border-top:1px dashed var(--line);}
+  .attendance-job-name{min-width:0;font-weight:700;overflow-wrap:anywhere;}
+  .attendance-job-time{color:var(--muted);white-space:nowrap;}
+  .attendance-job-duration{white-space:nowrap;}
   table{width:100%;border-collapse:collapse;font-size:13.5px;}
   th{text-align:left;color:var(--muted);font-weight:700;font-size:11.5px;text-transform:uppercase;letter-spacing:.4px;padding:8px 10px;border-bottom:1px solid var(--line);}
   td{padding:10px;border-bottom:1px solid var(--line);}
@@ -125,6 +183,25 @@
 @media (max-width: 768px) {
   .toast {
     left: 50%;
+  }
+  .attendance-date-grid {
+    grid-template-columns:1fr;
+  }
+  .attendance-fields {
+    grid-template-columns:repeat(2,minmax(0,1fr));
+    grid-template-areas:"time-in time-out" "morning-break lunch";
+  }
+}
+@media (max-width: 420px) {
+  .attendance-fields {
+    grid-template-columns:1fr;
+    grid-template-areas:"time-in" "time-out" "morning-break" "lunch";
+  }
+  .attendance-job-row {
+    grid-template-columns:minmax(0,1fr) auto;
+  }
+  .attendance-job-row:not(.attendance-job-row-unlabelled) .attendance-job-name {
+    grid-column:1 / -1;
   }
 }
 /* Job Start / End tracking */
@@ -893,6 +970,8 @@ const supportRealtime={timer:null,revision:0,refreshing:false,corrections:false,
 const jobsRealtime={timer:null,revision:0,refreshing:false,dirty:false};
 const workRecapExpandedGroups=new Set();
 const attendanceReviewExpandedPeriods=new Set();
+const attendanceProjectsExpandedSessions=new Set();
+const attendanceBreaksExpandedGroups=new Set();
 let jobActionInProgress=0;
 function stopCoreRealtime(){
   coreRealtime.generation++;
@@ -911,6 +990,8 @@ function stopCoreRealtime(){
   coreRealtime.pending=coreRealtime.refreshing=coreRealtime.interrupted=false;
   workRecapExpandedGroups.clear();
   attendanceReviewExpandedPeriods.clear();
+  attendanceProjectsExpandedSessions.clear();
+  attendanceBreaksExpandedGroups.clear();
   overtimeConfirmedDate="";
   fourPmDecisionOffer.key="";fourPmDecisionOffer.responseDeadline=0;fourPmDecisionOffer.processing=false;
   document.getElementById("fourPmReminder")?.remove();
@@ -1318,6 +1399,192 @@ function formatReviewPeriodDate(dateKey,includeYear=false){
 }
 function attendanceReviewExpansionKey(period){
   return `attendance-review:${period.employee.id}:${period.periodStart}`;
+}
+function attendanceProjectsExpansionKey(attendance){
+  return `attendance-projects:${attendance.id}`;
+}
+function attendanceReviewDateGroups(period){
+  const groups=new Map();
+  period.attendance.forEach(attendance=>{
+    const dateKey=sydneyDateKey(attendance.timeIn);
+    if(!groups.has(dateKey)) groups.set(dateKey,{dateKey,attendance:[]});
+    groups.get(dateKey).attendance.push(attendance);
+  });
+  return [...groups.values()].sort((a,b)=>a.dateKey.localeCompare(b.dateKey)).map(group=>({
+    ...group,attendance:[...group.attendance].sort((a,b)=>new Date(a.timeIn)-new Date(b.timeIn))
+  }));
+}
+function formatAttendanceReviewDate(dateKey){
+  return new Date(`${dateKey}T12:00:00Z`).toLocaleDateString("en-AU",{
+    timeZone:"UTC",weekday:"short",day:"numeric",month:"short"
+  });
+}
+function attendanceReviewDateNetMinutes(dateGroup){
+  return dateGroup.attendance.reduce((sum,attendance)=>
+    sum+(Number.isFinite(Number(attendance.netMin))?Number(attendance.netMin):0),0);
+}
+function jobEntryDurationSeconds(entry){
+  const recorded=Number(entry.durationSeconds);
+  if(entry.durationSeconds!=null && Number.isFinite(recorded)) return Math.max(0,recorded);
+  const start=new Date(entry.startTime),end=new Date(entry.endTime);
+  if(!entry.startTime || !entry.endTime || Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return null;
+  return Math.max(0,Math.floor((end-start)/1000));
+}
+function formatJobDuration(seconds){
+  if(!Number.isFinite(seconds)) return "—";
+  const totalMinutes=Math.round(seconds/60),hours=Math.floor(totalMinutes/60),minutes=totalMinutes%60;
+  return hours?`${hours}h ${String(minutes).padStart(2,"0")}m`:`${minutes}m`;
+}
+function buildProjectJobRecap(jobEntries,jobs,projects){
+  const projectsById=new Map(projects.map(project=>[project.id,project]));
+  return [...jobEntries.reduce((groups,entry)=>{
+    const job=jobs.find(item=>item.id===entry.jobId);
+    const project=job?.projectId?projectsById.get(job.projectId):null;
+    const key=project?`project:${project.id}`:`job:${entry.jobId}`;
+    if(!groups.has(key)) groups.set(key,{id:key,name:project?.name||job?.name||"—",projectId:project?.id||null,jobs:new Map(),sessions:[],totalSeconds:0});
+    const group=groups.get(key);
+    const displayName=project&&job?.isProjectDefault?project.name:(job?.name||"—");
+    group.jobs.set(entry.jobId,{name:displayName,isProjectDefault:!!(project&&job?.isProjectDefault)});
+    const recordedSeconds=jobEntryDurationSeconds(entry);
+    group.sessions.push({...entry,displayName,recordedSeconds});
+    if(recordedSeconds!=null) group.totalSeconds+=recordedSeconds;
+    return groups;
+  },new Map()).values()];
+}
+function assignJobEntriesToAttendance(attendanceRows,jobEntries){
+  const assignments=new Map(attendanceRows.map(attendance=>[attendance.id,[]]));
+  jobEntries.filter(entry=>entry.startTime&&entry.endTime).forEach(entry=>{
+    const start=new Date(entry.startTime),end=new Date(entry.endTime);
+    if(Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return;
+    const owner=attendanceRows.filter(attendance=>{
+      const timeIn=new Date(attendance.timeIn),timeOut=new Date(attendance.timeOut);
+      return attendance.employeeId===entry.employeeId && !Number.isNaN(timeIn.getTime()) &&
+        !Number.isNaN(timeOut.getTime()) && start>=timeIn && start<timeOut;
+    }).sort((a,b)=>new Date(b.timeIn)-new Date(a.timeIn))[0];
+    if(owner) assignments.get(owner.id).push(entry);
+  });
+  assignments.forEach(entries=>entries.sort((a,b)=>new Date(a.startTime)-new Date(b.startTime)));
+  return assignments;
+}
+function attendanceBreakGroups(attendance,breakRows){
+  const result={morning:[],lunch:[],other:[]};
+  breakRows.filter(row=>row.attendanceId===attendance.id).forEach(row=>{
+    const descriptor=breakDescriptorForType(row.type);
+    if(descriptor?.key==="morning-break") result.morning.push(row);
+    else if(descriptor?.key==="lunch") result.lunch.push(row);
+    else result.other.push(row);
+  });
+  Object.values(result).forEach(rows=>rows.sort((a,b)=>new Date(a.start)-new Date(b.start)));
+  return result;
+}
+function recordedBreakLabel(row){
+  const paidLabel=row.paid?"Paid":"Unpaid";
+  if(!row.start) return `Not recorded · ${paidLabel}`;
+  if(!row.end) return `${fmtTime(row.start)} – Ongoing · ${paidLabel}`;
+  return `${fmtTime(row.start)} – ${fmtTime(row.end)} · ${hm(mins(new Date(row.end)-new Date(row.start)))} · ${paidLabel}`;
+}
+function recordedBreakDurationMinutes(row){
+  if(!row.start || !row.end) return null;
+  const start=new Date(row.start),end=new Date(row.end);
+  if(Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end<start) return null;
+  return mins(end-start);
+}
+function recordedBreakPaidSummary(rows){
+  const paidValues=new Set(rows.map(row=>row.paid));
+  if(paidValues.size===1 && paidValues.has(true)) return "Paid";
+  if(paidValues.size===1 && paidValues.has(false)) return "Unpaid";
+  return "Mixed";
+}
+function renderRecordedBreaks(rows){
+  if(!rows.length) return "Not recorded";
+  const paidLabel=recordedBreakPaidSummary(rows);
+  const completedMinutes=rows.reduce((sum,row)=>sum+(recordedBreakDurationMinutes(row)??0),0);
+  const ongoing=rows.some(row=>row.start&&!row.end);
+  if(rows.length===1){
+    const row=rows[0],duration=recordedBreakDurationMinutes(row);
+    if(!row.start) return `Not recorded · ${paidLabel}`;
+    return `<span>${duration==null?"Ongoing":hm(duration)} · ${paidLabel}</span><span class="muted" style="display:block;margin-top:2px;">${fmtTime(row.start)} – ${row.end?fmtTime(row.end):"Ongoing"}</span>`;
+  }
+  return `<span>${hm(completedMinutes)}${ongoing?" recorded · Ongoing":""} · ${paidLabel}</span><span class="muted" style="display:block;margin-top:2px;">${rows.length} recorded periods</span>`;
+}
+function attendanceBreakExpansionKey(attendance,breakType){
+  return `attendance-breaks:${attendance.id}:${breakType}`;
+}
+function renderAttendanceBreakDetails(attendance,breakType,label,rows){
+  if(rows.length<=1) return "";
+  const expansionKey=attendanceBreakExpansionKey(attendance,breakType);
+  return `<details class="attendance-break-details" data-attendance-breaks-key="${escapeHtml(expansionKey)}" ${attendanceBreaksExpandedGroups.has(expansionKey)?"open":""}>
+    <summary>${escapeHtml(label)} — ${rows.length} recorded periods</summary>
+    <div class="attendance-break-list">
+      ${rows.map(row=>{
+        const duration=recordedBreakDurationMinutes(row);
+        const paidLabel=row.paid===true?"Paid":row.paid===false?"Unpaid":"Unknown";
+        const timeLabel=row.start?`${fmtTime(row.start)} – ${row.end?fmtTime(row.end):"Ongoing"}`:"Not recorded";
+        const metaLabel=duration==null?(row.start&&!row.end?`Ongoing · ${paidLabel}`:paidLabel):`${hm(duration)} · ${paidLabel}`;
+        return `<div class="attendance-break-row"><span class="attendance-break-time">${timeLabel}</span><span class="attendance-break-meta">${metaLabel}</span></div>`;
+      }).join("")}
+    </div>
+  </details>`;
+}
+function renderAttendanceProjects(attendance,jobEntries){
+  const groups=buildProjectJobRecap(jobEntries,DB.jobs,DB.projects||[]);
+  const expansionKey=attendanceProjectsExpansionKey(attendance);
+  return `<details class="attendance-projects" data-attendance-projects-key="${escapeHtml(expansionKey)}" ${attendanceProjectsExpandedSessions.has(expansionKey)?"open":""}>
+    <summary>Projects &amp; Jobs <span class="attendance-project-count">${jobEntries.length}</span></summary>
+    <div class="attendance-project-list">
+      ${groups.length?groups.map(group=>{
+        const hasChildWork=!!(group.projectId && group.sessions.some(session=>{
+          const job=DB.jobs.find(item=>item.id===session.jobId);
+          return !(job?.projectId===group.projectId && job.isProjectDefault);
+        }));
+        return `<div class="attendance-project-group">
+        <div class="attendance-project-header"><b class="attendance-project-name">${escapeHtml(group.name)}</b>${group.projectId?`<span class="attendance-project-total">Total <b>${formatJobDuration(group.totalSeconds)}</b></span>`:""}</div>
+        <div class="attendance-group-sessions">
+          ${[...group.sessions].sort((a,b)=>new Date(a.startTime)-new Date(b.startTime)).map(session=>{
+            const job=DB.jobs.find(item=>item.id===session.jobId);
+            const directProjectWork=!!(group.projectId && job?.projectId===group.projectId && job.isProjectDefault);
+            const standaloneJobGroup=group.id===`job:${session.jobId}`;
+            const suppressNestedJobLabel=standaloneJobGroup||(directProjectWork&&!hasChildWork);
+            const jobLabel=directProjectWork?"Direct Project Work":session.displayName;
+            return `<div class="attendance-job-row${suppressNestedJobLabel?" attendance-job-row-unlabelled":""}">
+              ${suppressNestedJobLabel?"":`<b class="attendance-job-name">${escapeHtml(jobLabel)}</b>`}
+              <span class="attendance-job-time">${fmtTime(session.startTime)} – ${fmtTime(session.endTime)}</span>
+              <b class="attendance-job-duration">${formatJobDuration(session.recordedSeconds)}</b>
+            </div>`;
+          }).join("")}
+        </div>
+      </div>`;
+      }).join(""):`<div class="tiny muted">No completed job sessions recorded.</div>`}
+    </div>
+  </details>`;
+}
+function renderAttendanceReviewDetails(period,jobEntriesByAttendance){
+  return `<div class="attendance-date-grid">${attendanceReviewDateGroups(period).map(dateGroup=>`<section class="attendance-date-card">
+    <div class="attendance-date-header">
+      <div class="attendance-date-heading">${formatAttendanceReviewDate(dateGroup.dateKey)}</div>
+      <div class="attendance-date-total">Total: <b>${hm(attendanceReviewDateNetMinutes(dateGroup))}</b></div>
+    </div>
+    <div>
+      ${dateGroup.attendance.map((attendance,index)=>{
+        const breaks=attendanceBreakGroups(attendance,DB.breaks);
+        const multiple=dateGroup.attendance.length>1;
+        return `<div class="attendance-session">
+          ${multiple?`<div class="attendance-session-heading">Attendance Session ${index+1}</div>`:""}
+          <div class="attendance-fields">
+            <div class="attendance-field attendance-field-time-in"><div class="attendance-field-label"><span class="attendance-field-icon">&#8631;</span>Time In</div><div class="attendance-field-value">${fmtTime(attendance.timeIn)}</div></div>
+            <div class="attendance-field attendance-field-time-out"><div class="attendance-field-label"><span class="attendance-field-icon">&#8630;</span>Time Out</div><div class="attendance-field-value">${fmtTime(attendance.timeOut)}</div></div>
+            <div class="attendance-field attendance-field-morning-break"><div class="attendance-field-label"><span class="attendance-field-icon">&#9749;</span>Morning Break</div><div class="attendance-field-value">${renderRecordedBreaks(breaks.morning)}</div></div>
+            <div class="attendance-field attendance-field-lunch"><div class="attendance-field-label"><span class="attendance-field-icon">&#9671;</span>Lunch</div><div class="attendance-field-value">${renderRecordedBreaks(breaks.lunch)}</div></div>
+          </div>
+          ${renderAttendanceBreakDetails(attendance,"morning","Morning Break",breaks.morning)}
+          ${renderAttendanceBreakDetails(attendance,"lunch","Lunch",breaks.lunch)}
+          ${breaks.other.map(row=>`<div class="attendance-extra-break"><div class="attendance-field-label">${escapeHtml(row.type||"Other Break")}</div><div class="attendance-field-value">${escapeHtml(recordedBreakLabel(row))}</div></div>`).join("")}
+          ${multiple?`<div class="attendance-session-net"><span class="muted">Net:</span><b>${Number.isFinite(Number(attendance.netMin))?hm(Number(attendance.netMin)):"—"}</b></div>`:""}
+          ${renderAttendanceProjects(attendance,jobEntriesByAttendance.get(attendance.id)||[])}
+        </div>`;
+      }).join("")}
+    </div>
+  </section>`).join("")}</div>`;
 }
 function todayNetMinutes(empId){
   const att = DB.attendance.filter(a=>a.employeeId===empId && sameDay(a.timeIn, new Date()));
@@ -1846,26 +2113,7 @@ function screenEmpHome(){
     .filter(e=>e.employeeId===emp.id&&e.startTime&&e.endTime&&e.id!==activeJobEntry?.id&&sydneyDateKey(e.startTime)===todayKey)
     .sort((a,b)=>new Date(b.startTime)-new Date(a.startTime));
   const todaysLogs = DB.worklogs.filter(w=>w.employeeId===emp.id && sydneyDateKey(w.start)===todayKey);
-  const projectsById=new Map((DB.projects||[]).map(project=>[project.id,project]));
-  const jobRecapGroups=[...todaysJobEntries.reduce((groups,entry)=>{
-    const job=DB.jobs.find(j=>j.id===entry.jobId);
-    const project=job?.projectId?projectsById.get(job.projectId):null;
-    const key=project?`project:${project.id}`:`job:${entry.jobId}`;
-    if(!groups.has(key)) groups.set(key,{id:key,name:project?.name||job?.name||jobName(entry.jobId),projectId:project?.id||null,jobs:new Map(),sessions:[],totalSeconds:0});
-    const group=groups.get(key);
-    const displayName=project&&job?.isProjectDefault?project.name:(job?.name||jobName(entry.jobId));
-    group.jobs.set(entry.jobId,{name:displayName,isProjectDefault:!!(project&&job?.isProjectDefault)});
-    const recordedSeconds=Number.isFinite(Number(entry.durationSeconds))
-      ? Math.max(0,Number(entry.durationSeconds))
-      : Math.max(0,Math.floor((new Date(entry.endTime)-new Date(entry.startTime))/1000));
-    group.sessions.push({...entry,displayName,recordedSeconds});
-    group.totalSeconds+=recordedSeconds;
-    return groups;
-  },new Map()).values()];
-  const formatJobDuration=seconds=>{
-    const totalMinutes=Math.round(seconds/60),hours=Math.floor(totalMinutes/60),minutes=totalMinutes%60;
-    return hours?`${hours}h ${String(minutes).padStart(2,"0")}m`:`${minutes}m`;
-  };
+  const jobRecapGroups=buildProjectJobRecap(todaysJobEntries,DB.jobs,DB.projects||[]);
   const breakSecs = openBrk ? Math.floor((Date.now()-new Date(openBrk.start).getTime())/1000) : 0;
 
   return `
@@ -3290,6 +3538,7 @@ function screenAdminLive(){
 
 function screenAdminTimesheets(){
   const reviewPeriods=buildAttendanceReviewPeriods(DB.attendance,visibleEmployeeList());
+  const jobEntriesByAttendance=assignJobEntriesToAttendance(reviewPeriods.flatMap(period=>period.attendance),DB.jobTimeEntries||[]);
   const rejected = DB.attendance.filter(a=>a.status==="rejected");
   const approved=DB.attendance
   .filter(a=>a.status==="approved"||a.status==="corrected")
@@ -3320,19 +3569,16 @@ function screenAdminTimesheets(){
     }).join("")}`:""}
 
     <div class="h3" style="margin-bottom:10px;">ATTENDANCE PERIODS AWAITING REVIEW (${reviewPeriods.length})</div>
-    ${reviewPeriods.map(period=>`<div class="card" style="margin-bottom:10px;">
-      <div class="row-between" style="gap:12px;">
-        <div><b>${escapeHtml(period.employee.name)}</b><div class="tiny muted" style="margin-top:2px;">${formatReviewPeriodDate(period.periodStart)} – ${formatReviewPeriodDate(period.displayEnd,true)}</div></div>
-        <b class="small" style="white-space:nowrap;">Net Hours: ${hm(period.netMin)}</b>
+    ${reviewPeriods.map(period=>`<div class="card attendance-review-period">
+      <div class="attendance-period-header">
+        <div><div class="attendance-period-name">${escapeHtml(period.employee.name)}</div><div class="tiny muted" style="margin-top:3px;">${formatReviewPeriodDate(period.periodStart)} – ${formatReviewPeriodDate(period.displayEnd,true)}</div></div>
+        <div class="attendance-period-total"><span>Net Hours</span><b>${hm(period.netMin)}</b></div>
       </div>
-      <div class="small muted" style="margin-top:6px;">${period.attendanceDays} attendance ${period.attendanceDays===1?"day":"days"}</div>
-      <details style="margin-top:10px;" data-attendance-review-key="${escapeHtml(attendanceReviewExpansionKey(period))}" ${attendanceReviewExpandedPeriods.has(attendanceReviewExpansionKey(period))?"open":""}>
-        <summary class="link small" style="cursor:pointer;">Details</summary>
-        <div class="col gap-8" style="margin-top:10px;padding-top:8px;border-top:1px solid var(--line);">
-          ${period.attendance.map(a=>`<div class="row-between small" style="gap:12px;">
-            <span><b>${fmtDate(a.timeIn)}</b><span class="tiny muted" style="display:block;">${fmtTime(a.timeIn)} – ${fmtTime(a.timeOut)} · ${escapeHtml(a.status)}</span></span>
-            <b style="white-space:nowrap;">${hm(Number.isFinite(Number(a.netMin))?Number(a.netMin):0)}</b>
-          </div>`).join("")}
+      <div class="small muted" style="margin-top:7px;">${period.attendanceDays} attendance ${period.attendanceDays===1?"day":"days"}</div>
+      <details class="attendance-period-details" data-attendance-review-key="${escapeHtml(attendanceReviewExpansionKey(period))}" ${attendanceReviewExpandedPeriods.has(attendanceReviewExpansionKey(period))?"open":""}>
+        <summary class="link">Details</summary>
+        <div style="margin-top:10px;border-top:1px solid var(--line);">
+          ${renderAttendanceReviewDetails(period,jobEntriesByAttendance)}
         </div>
       </details>
     </div>`).join("")}
@@ -3632,6 +3878,18 @@ function bindAdminScreen(){
     details.ontoggle=()=>{
       if(details.open) attendanceReviewExpandedPeriods.add(details.dataset.attendanceReviewKey);
       else attendanceReviewExpandedPeriods.delete(details.dataset.attendanceReviewKey);
+    };
+  });
+  document.querySelectorAll("details[data-attendance-projects-key]").forEach(details=>{
+    details.ontoggle=()=>{
+      if(details.open) attendanceProjectsExpandedSessions.add(details.dataset.attendanceProjectsKey);
+      else attendanceProjectsExpandedSessions.delete(details.dataset.attendanceProjectsKey);
+    };
+  });
+  document.querySelectorAll("details[data-attendance-breaks-key]").forEach(details=>{
+    details.ontoggle=()=>{
+      if(details.open) attendanceBreaksExpandedGroups.add(details.dataset.attendanceBreaksKey);
+      else attendanceBreaksExpandedGroups.delete(details.dataset.attendanceBreaksKey);
     };
   });
   if(route.name==="admin-audit" && adminAuditSyncState==="idle"){
