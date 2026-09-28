@@ -124,6 +124,24 @@
   .attendance-break-time{min-width:0;}
   .attendance-break-meta{font-weight:700;white-space:nowrap;}
   .attendance-session-net{display:flex;justify-content:flex-end;gap:5px;margin-top:9px;font-size:12px;}
+  .attendance-session-actions{display:flex;justify-content:flex-end;align-items:center;gap:8px;margin-top:10px;}
+  .attendance-correction-note{margin-top:10px;padding:9px 10px;border:1px solid var(--warn);border-radius:8px;font-size:12px;color:var(--muted);}
+  .attendance-correction-history-indicator{font-size:11px;font-weight:700;color:var(--muted);overflow-wrap:anywhere;}
+  .correction-history{margin:0 0 14px;border:1px solid var(--line);border-radius:10px;overflow:hidden;}
+  .correction-history>summary{display:flex;align-items:center;min-height:44px;padding:10px 12px;cursor:pointer;font-size:13px;font-weight:800;list-style:none;overflow-wrap:anywhere;}
+  .correction-history>summary::-webkit-details-marker{display:none;}
+  .correction-history>summary::before{content:"\25B6";flex:none;margin-right:8px;font-size:9px;color:var(--muted);transition:transform .12s ease;}
+  .correction-history[open]>summary::before{transform:rotate(90deg);}
+  .correction-history-list{padding:0 12px 12px;border-top:1px solid var(--line);}
+  .correction-history-entry{padding:12px 0;min-width:0;}
+  .correction-history-entry+.correction-history-entry{border-top:1px solid var(--line);}
+  .correction-history-meta,.correction-history-reason,.correction-history-change{overflow-wrap:anywhere;word-break:break-word;}
+  .correction-history-change{display:grid;grid-template-columns:minmax(80px,.7fr) minmax(0,1.5fr);gap:8px;margin-top:6px;font-size:12px;}
+  .correction-history-state{padding:12px;font-size:12px;color:var(--muted);}
+  .correction-history-retry{margin-top:8px;}
+  .correction-datetime-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,.8fr);gap:8px;}
+  .correction-break-section{padding:12px;border:1px solid var(--line);border-radius:10px;margin-bottom:12px;}
+  .correction-break-title{font-size:13px;font-weight:800;margin-bottom:9px;}
   .attendance-projects{margin-top:10px;border:0;border-radius:9px;background:var(--panel);overflow:hidden;}
   .attendance-projects>summary{display:flex;align-items:center;gap:8px;cursor:pointer;padding:9px 10px;font-size:12px;font-weight:800;list-style:none;}
   .attendance-projects>summary::-webkit-details-marker{display:none;}
@@ -203,6 +221,7 @@
   .attendance-job-row:not(.attendance-job-row-unlabelled) .attendance-job-name {
     grid-column:1 / -1;
   }
+  .correction-history-change{grid-template-columns:1fr;gap:2px;}
 }
 /* Job Start / End tracking */
 .job-track-card{padding:16px;margin-bottom:14px;border:1px solid var(--line);border-radius:16px;background:#fff}
@@ -604,7 +623,12 @@ function startOfWeek(d=new Date()){
 }
 function sameDay(a,b){ const x=new Date(a),y=new Date(b); return x.toDateString()===y.toDateString(); }
 function initials(name){ return name.split(" ").map(s=>s[0]).slice(0,2).join("").toUpperCase(); }
-function escapeHtml(s){ return (s||"").replace(/[&<>"]/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+function escapeHtml(s){ return String(s??"").replace(/[&<>"]/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+function auditDetailText(detail){
+  if(detail==null) return "";
+  if(typeof detail==="string") return detail;
+  try{return JSON.stringify(detail,null,2);}catch(error){return String(detail);}
+}
 
 /* ---------------- Demo data ---------------- */
 const NOTIFICATION_LABELS = {
@@ -972,6 +996,8 @@ const workRecapExpandedGroups=new Set();
 const attendanceReviewExpandedPeriods=new Set();
 const attendanceProjectsExpandedSessions=new Set();
 const attendanceBreaksExpandedGroups=new Set();
+const attendanceCorrectionHistoryById=new Map();
+let attendanceCorrectionHistoryGeneration=0;
 let jobActionInProgress=0;
 function stopCoreRealtime(){
   coreRealtime.generation++;
@@ -992,6 +1018,8 @@ function stopCoreRealtime(){
   attendanceReviewExpandedPeriods.clear();
   attendanceProjectsExpandedSessions.clear();
   attendanceBreaksExpandedGroups.clear();
+  attendanceCorrectionHistoryGeneration++;
+  attendanceCorrectionHistoryById.clear();
   overtimeConfirmedDate="";
   fourPmDecisionOffer.key="";fourPmDecisionOffer.responseDeadline=0;fourPmDecisionOffer.processing=false;
   document.getElementById("fourPmReminder")?.remove();
@@ -1356,6 +1384,10 @@ function isAttendanceReviewEligible(attendance){
   return !!attendance?.timeOut && !Number.isNaN(new Date(attendance.timeOut).getTime()) &&
     (attendance.status==="draft" || attendance.status==="submitted");
 }
+function isAttendanceReviewPeriodRelevant(attendance){
+  return !!attendance?.timeOut && !Number.isNaN(new Date(attendance.timeOut).getTime()) &&
+    (isAttendanceReviewEligible(attendance) || attendance.status==="corrected");
+}
 function addDateKeyDays(dateKey,days){
   const date=new Date(`${dateKey}T00:00:00Z`);
   date.setUTCDate(date.getUTCDate()+days);
@@ -1374,7 +1406,7 @@ function attendanceReviewPeriod(dateKey){
 function buildAttendanceReviewPeriods(attendanceRows,visibleEmployees){
   const employeeById=new Map(visibleEmployees.map((employee,index)=>[employee.id,{employee,index}]));
   const groups=new Map();
-  attendanceRows.filter(isAttendanceReviewEligible).forEach(attendance=>{
+  attendanceRows.filter(isAttendanceReviewPeriodRelevant).forEach(attendance=>{
     const visible=employeeById.get(attendance.employeeId);
     if(!visible || !attendance.timeIn || Number.isNaN(new Date(attendance.timeIn).getTime())) return;
     const attendanceDate=sydneyDateKey(attendance.timeIn);
@@ -1477,6 +1509,227 @@ function attendanceBreakGroups(attendance,breakRows){
   Object.values(result).forEach(rows=>rows.sort((a,b)=>new Date(a.start)-new Date(b.start)));
   return result;
 }
+function normalizeAttendanceCorrectionHistoryRow(row){
+  if(!row || typeof row!=="object") return null;
+  const attendanceId=String(row.attendance_id??row.attendanceId??"").trim();
+  const auditId=String(row.audit_id??row.auditId??"").trim();
+  if(!attendanceId || !auditId) return null;
+  const objectOrNull=value=>value && typeof value==="object" && !Array.isArray(value)?value:null;
+  const arrayOrNull=value=>Array.isArray(value)?value:null;
+  return {auditId,attendanceId,actor:String(row.actor??"").trim(),createdAt:row.created_at??row.createdAt??null,
+    reason:row.reason==null?null:String(row.reason),attendanceBefore:objectOrNull(row.attendance_before??row.attendanceBefore),
+    attendanceAfter:objectOrNull(row.attendance_after??row.attendanceAfter),breaksBefore:arrayOrNull(row.breaks_before??row.breaksBefore),
+    breaksAfter:arrayOrNull(row.breaks_after??row.breaksAfter)};
+}
+function sortAttendanceCorrectionHistory(rows){
+  return [...rows].sort((a,b)=>{
+    const timeA=new Date(a.createdAt).getTime(),timeB=new Date(b.createdAt).getTime();
+    const safeA=Number.isFinite(timeA)?timeA:0,safeB=Number.isFinite(timeB)?timeB:0;
+    return safeA-safeB || a.auditId.localeCompare(b.auditId);
+  });
+}
+function correctionHistoryState(attendanceId){
+  return attendanceCorrectionHistoryById.get(attendanceId)||{rows:[],loaded:false,loading:false,error:null,request:0};
+}
+async function fetchAttendanceCorrectionHistory(attendanceIds,{force=false}={}){
+  const ids=[...new Set((attendanceIds||[]).filter(Boolean).map(String))];
+  const wanted=ids.filter(id=>force || !correctionHistoryState(id).loaded && !correctionHistoryState(id).loading && !correctionHistoryState(id).error);
+  if(!wanted.length) return;
+  const generation=attendanceCorrectionHistoryGeneration;
+  for(let offset=0;offset<wanted.length;offset+=500){
+    const batch=wanted.slice(offset,offset+500),request=Date.now()+offset+Math.random();
+    batch.forEach(id=>attendanceCorrectionHistoryById.set(id,{...correctionHistoryState(id),loading:true,error:null,request}));
+    let data=null,error=null;
+    try{({data,error}=await supabaseClient.rpc("get_attendance_correction_history",{p_attendance_ids:batch}));}
+    catch(fetchError){error=fetchError;}
+    if(generation!==attendanceCorrectionHistoryGeneration) return;
+    if(error){
+      console.error("Attendance correction history error:",error);
+      batch.forEach(id=>{
+        const state=correctionHistoryState(id);
+        if(state.request===request) attendanceCorrectionHistoryById.set(id,{rows:state.rows,loaded:false,loading:false,error,request});
+      });
+      continue;
+    }
+    const grouped=new Map(batch.map(id=>[id,[]]));
+    (Array.isArray(data)?data:[]).map(normalizeAttendanceCorrectionHistoryRow).filter(Boolean).forEach(row=>{
+      if(grouped.has(row.attendanceId)) grouped.get(row.attendanceId).push(row);
+    });
+    batch.forEach(id=>{
+      const state=correctionHistoryState(id);
+      if(state.request===request) attendanceCorrectionHistoryById.set(id,{rows:sortAttendanceCorrectionHistory(grouped.get(id)||[]),loaded:true,loading:false,error:null,request});
+    });
+  }
+  wanted.forEach(refreshOpenAttendanceCorrectionHistory);
+  if(route.name==="admin-timesheets" && generation===attendanceCorrectionHistoryGeneration) render();
+}
+function correctionSnapshotValue(snapshot,...keys){
+  for(const key of keys) if(snapshot && snapshot[key]!=null) return snapshot[key];
+  return null;
+}
+function formatSydneyCorrectionTimestamp(value){
+  const date=new Date(value);
+  if(Number.isNaN(date.getTime())) return "Time not recorded";
+  return new Intl.DateTimeFormat("en-AU",{timeZone:"Australia/Sydney",day:"numeric",month:"short",year:"numeric",
+    hour:"numeric",minute:"2-digit",second:"2-digit",hour12:true}).format(date);
+}
+function formatSydneyHistoryTime(value){
+  const date=new Date(value);
+  if(Number.isNaN(date.getTime())) return "Not recorded";
+  return new Intl.DateTimeFormat("en-AU",{timeZone:"Australia/Sydney",hour:"numeric",minute:"2-digit",second:"2-digit",hour12:true}).format(date);
+}
+function attendanceCorrectionDiffs(row){
+  const before=row.attendanceBefore,after=row.attendanceAfter;
+  if(!before || !after) return [];
+  const diffs=[];
+  const fields=[
+    ["Time In",["time_in","timeIn"],formatSydneyHistoryTime],
+    ["Time Out",["time_out","timeOut"],formatSydneyHistoryTime],
+    ["Gross",["gross_minutes","grossMin"],value=>hm(Number(value))],
+    ["Paid Break",["paid_break_minutes","paidBreakMin"],value=>hm(Number(value))],
+    ["Unpaid Break",["unpaid_break_minutes","unpaidBreakMin"],value=>hm(Number(value))],
+    ["Net",["net_minutes","netMin"],value=>hm(Number(value))]
+  ];
+  fields.forEach(([label,keys,format])=>{
+    const oldValue=correctionSnapshotValue(before,...keys),newValue=correctionSnapshotValue(after,...keys);
+    if(String(oldValue??"")!==String(newValue??"")) diffs.push({label,before:oldValue==null?"Not recorded":format(oldValue),after:newValue==null?"Not recorded":format(newValue)});
+  });
+  return diffs;
+}
+function correctionBreakLabel(row){
+  const descriptor=breakDescriptorForType(row?.type??row?.break_type);
+  return descriptor?.key==="morning-break"?"Morning Break":descriptor?.key==="lunch"?"Lunch":String(row?.type??row?.break_type??"Other Break");
+}
+function correctionBreakSnapshot(row){
+  if(!row || typeof row!=="object") return null;
+  return {id:row.id==null?null:String(row.id),type:row.type??row.break_type??null,start:row.start??row.start_time??null,
+    end:row.end??row.end_time??null,paid:row.paid==null?null:Boolean(row.paid)};
+}
+function correctionBreakDisplay(row){
+  if(!row) return "Not recorded";
+  const times=row.start?`${formatSydneyHistoryTime(row.start)}${row.end?`–${formatSydneyHistoryTime(row.end)}`:"–Ongoing"}`:"Not recorded";
+  const paid=row.paid==null?"":` · ${row.paid?"Paid":"Unpaid"}`;
+  return `${times}${paid}`;
+}
+function breakCorrectionDiffs(row){
+  const before=(row.breaksBefore||[]).map(correctionBreakSnapshot).filter(Boolean),after=(row.breaksAfter||[]).map(correctionBreakSnapshot).filter(Boolean);
+  const keyed=(items,side)=>items.map((item,index)=>({item,key:item.id?`id:${item.id}`:`${side}:${index}`}));
+  const beforeKeyed=keyed(before,"before"),afterKeyed=keyed(after,"after"),pairs=[];
+  const usedAfter=new Set();
+  beforeKeyed.forEach(({item,key},index)=>{
+    let matchIndex=item.id?after.findIndex(candidate=>candidate.id===item.id):-1;
+    if(matchIndex<0 && !item.id) matchIndex=after.findIndex((candidate,i)=>!usedAfter.has(i)&&!candidate.id&&String(candidate.type)===String(item.type));
+    if(matchIndex>=0){usedAfter.add(matchIndex);pairs.push([item,after[matchIndex]]);}else pairs.push([item,null]);
+  });
+  after.forEach((item,index)=>{if(!usedAfter.has(index)) pairs.push([null,item]);});
+  return pairs.filter(([oldRow,newRow])=>JSON.stringify(oldRow)!==JSON.stringify(newRow)).map(([oldRow,newRow])=>({
+    label:correctionBreakLabel(newRow||oldRow),before:correctionBreakDisplay(oldRow),after:correctionBreakDisplay(newRow)
+  }));
+}
+function renderCorrectionHistoryEntry(row,index){
+  const changes=[...attendanceCorrectionDiffs(row),...breakCorrectionDiffs(row)];
+  return `<article class="correction-history-entry">
+    <div class="small"><b>Correction #${index+1}</b></div>
+    <div class="tiny muted correction-history-meta" style="margin-top:3px;">${escapeHtml(formatSydneyCorrectionTimestamp(row.createdAt))}<br>By ${escapeHtml(row.actor||"Actor not recorded")}</div>
+    <div class="small correction-history-reason" style="margin-top:9px;"><span class="muted">Reason:</span><br>${escapeHtml(row.reason||"Reason not recorded")}</div>
+    <div class="small" style="margin-top:9px;"><span class="muted">Changed:</span>${changes.length?changes.map(change=>`<div class="correction-history-change"><b>${escapeHtml(change.label)}</b><span>${escapeHtml(change.before)} &rarr; ${escapeHtml(change.after)}</span></div>`).join(""):`<div class="tiny muted" style="margin-top:5px;">No supported field changes were recorded.</div>`}</div>
+  </article>`;
+}
+function renderAttendanceCorrectionHistory(attendanceId){
+  const state=correctionHistoryState(attendanceId);
+  if(state.loading && !state.loaded) return `<div class="correction-history correction-history-state">Loading correction history…</div>`;
+  if(state.error && !state.loaded) return `<div class="correction-history correction-history-state">Correction history unavailable.<br><button type="button" class="btn btn-ghost btn-sm correction-history-retry" data-retry-correction-history="${escapeHtml(attendanceId)}">Retry</button></div>`;
+  if(!state.loaded || !state.rows.length) return "";
+  return `<details class="correction-history"><summary>Correction History (${state.rows.length})</summary><div class="correction-history-list">${state.rows.map(renderCorrectionHistoryEntry).join("")}</div></details>`;
+}
+function bindCorrectionHistoryRetry(container,attendanceId){
+  container?.querySelectorAll("[data-retry-correction-history]").forEach(button=>button.onclick=async()=>{
+    button.disabled=true;button.textContent="Retrying...";
+    await fetchAttendanceCorrectionHistory([attendanceId],{force:true});
+  });
+}
+function refreshOpenAttendanceCorrectionHistory(attendanceId){
+  document.querySelectorAll("[data-attendance-correction-history]").forEach(container=>{
+    if(container.dataset.attendanceCorrectionHistory!==attendanceId) return;
+    container.innerHTML=renderAttendanceCorrectionHistory(attendanceId);
+    bindCorrectionHistoryRetry(container,attendanceId);
+  });
+}
+function attendanceCorrectionHistoryIndicator(attendance){
+  const state=correctionHistoryState(attendance.id),count=state.loaded?state.rows.length:0;
+  if(!count) return "";
+  const status=String(attendance.status||"").replace(/(^|[-_\s]+)(\w)/g,(match,space,letter)=>`${space?" ":""}${letter.toUpperCase()}`);
+  return `<span class="attendance-correction-history-indicator">${escapeHtml(status||"Attendance")} &middot; ${count} ${count===1?"correction":"corrections"}</span>`;
+}
+function canActorCorrectAttendance(attendance){
+  const actor=currentEmployee(),target=DB.employees.find(employee=>employee.id===attendance?.employeeId);
+  if(!actor || !target || !DB.session) return false;
+  if(DB.session.role==="Admin" || DB.session.role==="Super Admin") return true;
+  return DB.session.role==="Manager" && target.manager===actor.name;
+}
+function attendanceCorrectionReadiness(attendance,breakRows=DB.breaks){
+  if(!attendance?.id || !attendance.timeOut || Number.isNaN(new Date(attendance.timeOut).getTime())) return {canEdit:false,reason:"Open attendance cannot be corrected."};
+  if(!["draft","submitted","corrected"].includes(attendance.status)) return {canEdit:false,reason:""};
+  if(!canActorCorrectAttendance(attendance)) return {canEdit:false,reason:""};
+  const rows=breakRows.filter(row=>row.attendanceId===attendance.id);
+  if(rows.some(row=>!row.end)) return {canEdit:false,reason:"Correction requires manual review because this attendance contains an ongoing break."};
+  const groups=attendanceBreakGroups(attendance,rows);
+  if(groups.morning.length>1 || groups.lunch.length>1){
+    return {canEdit:false,reason:"Correction requires manual review because this attendance contains multiple recorded break periods."};
+  }
+  return {canEdit:true,reason:""};
+}
+const SYDNEY_WALL_FORMATTER=new Intl.DateTimeFormat("en-CA",{
+  timeZone:"Australia/Sydney",year:"numeric",month:"2-digit",day:"2-digit",
+  hour:"2-digit",minute:"2-digit",second:"2-digit",hourCycle:"h23"
+});
+function sydneyWallParts(value){
+  const date=new Date(value);
+  if(Number.isNaN(date.getTime())) return null;
+  const parts=Object.fromEntries(SYDNEY_WALL_FORMATTER.formatToParts(date)
+    .filter(part=>part.type!=="literal").map(part=>[part.type,part.value]));
+  return {date:`${parts.year}-${parts.month}-${parts.day}`,time:`${parts.hour}:${parts.minute}:${parts.second}`};
+}
+function sydneyWallToIso(dateKey,timeValue){
+  const dateMatch=/^(\d{4})-(\d{2})-(\d{2})$/.exec(dateKey||"");
+  const timeMatch=/^(\d{2}):(\d{2})(?::(\d{2}))?$/.exec(timeValue||"");
+  if(!dateMatch || !timeMatch) return {error:"Enter a valid Sydney date and time."};
+  const [,yearText,monthText,dayText]=dateMatch,[,hourText,minuteText,secondText="00"]=timeMatch;
+  const year=Number(yearText),month=Number(monthText),day=Number(dayText);
+  const hour=Number(hourText),minute=Number(minuteText),second=Number(secondText);
+  const wallUtc=Date.UTC(year,month-1,day,hour,minute,second);
+  const calendarCheck=new Date(Date.UTC(year,month-1,day));
+  if(calendarCheck.getUTCFullYear()!==year || calendarCheck.getUTCMonth()!==month-1 || calendarCheck.getUTCDate()!==day || hour>23 || minute>59 || second>59){
+    return {error:"Enter a valid Sydney date and time."};
+  }
+  const expectedDate=`${yearText}-${monthText}-${dayText}`,expectedTime=`${hourText}:${minuteText}:${secondText}`;
+  const matches=[];
+  for(let offsetMinutes=8*60;offsetMinutes<=12*60;offsetMinutes+=30){
+    const candidate=new Date(wallUtc-offsetMinutes*60000);
+    const parts=sydneyWallParts(candidate);
+    if(parts?.date===expectedDate && parts.time===expectedTime) matches.push(candidate.toISOString());
+  }
+  const unique=[...new Set(matches)];
+  if(unique.length===0) return {error:"That Sydney time does not exist because of the daylight-saving change."};
+  if(unique.length>1) return {error:"That Sydney time occurs twice because of the daylight-saving change. Choose a different time or request manual review."};
+  return {iso:unique[0]};
+}
+function attendanceCorrectionSnapshot(attendance,breakRows=DB.breaks){
+  const rows=breakRows.filter(row=>row.attendanceId===attendance.id).map(row=>({
+    id:row.id,attendanceId:row.attendanceId,type:row.type,start:row.start||null,end:row.end||null,paid:row.paid
+  })).sort((a,b)=>String(a.id).localeCompare(String(b.id)));
+  return {
+    attendance:{id:attendance.id,employeeId:attendance.employeeId,status:attendance.status,updatedAt:attendance.updatedAt||null,
+      timeIn:attendance.timeIn,timeOut:attendance.timeOut,grossMin:attendance.grossMin,paidBreakMin:attendance.paidBreakMin,
+      unpaidBreakMin:attendance.unpaidBreakMin,netMin:attendance.netMin,overtimeConfirmedAt:attendance.overtimeConfirmedAt||null,
+      otReconfirmJobTimeEntryId:attendance.otReconfirmJobTimeEntryId||null,otReconfirmDeadline:attendance.otReconfirmDeadline||null},
+    breaks:rows
+  };
+}
+function attendanceCorrectionSnapshotMatches(snapshot){
+  const current=DB.attendance.find(attendance=>attendance.id===snapshot.attendance.id);
+  return !!current && JSON.stringify(attendanceCorrectionSnapshot(current))===JSON.stringify(snapshot);
+}
 function recordedBreakLabel(row){
   const paidLabel=row.paid?"Paid":"Unpaid";
   if(!row.start) return `Not recorded · ${paidLabel}`;
@@ -1568,6 +1821,8 @@ function renderAttendanceReviewDetails(period,jobEntriesByAttendance){
       ${dateGroup.attendance.map((attendance,index)=>{
         const breaks=attendanceBreakGroups(attendance,DB.breaks);
         const multiple=dateGroup.attendance.length>1;
+        const correction=attendanceCorrectionReadiness(attendance);
+        const historyIndicator=attendanceCorrectionHistoryIndicator(attendance);
         return `<div class="attendance-session">
           ${multiple?`<div class="attendance-session-heading">Attendance Session ${index+1}</div>`:""}
           <div class="attendance-fields">
@@ -1581,10 +1836,187 @@ function renderAttendanceReviewDetails(period,jobEntriesByAttendance){
           ${breaks.other.map(row=>`<div class="attendance-extra-break"><div class="attendance-field-label">${escapeHtml(row.type||"Other Break")}</div><div class="attendance-field-value">${escapeHtml(recordedBreakLabel(row))}</div></div>`).join("")}
           ${multiple?`<div class="attendance-session-net"><span class="muted">Net:</span><b>${Number.isFinite(Number(attendance.netMin))?hm(Number(attendance.netMin)):"—"}</b></div>`:""}
           ${renderAttendanceProjects(attendance,jobEntriesByAttendance.get(attendance.id)||[])}
+          ${correction.canEdit||historyIndicator?`<div class="attendance-session-actions">${historyIndicator}${correction.canEdit?`<button class="btn btn-ghost btn-sm" data-edit-attendance="${escapeHtml(attendance.id)}">Edit Attendance</button>`:""}</div>`:""}
+          ${!correction.canEdit&&correction.reason?`<div class="attendance-correction-note">${escapeHtml(correction.reason)}</div>`:""}
         </div>`;
       }).join("")}
     </div>
   </section>`).join("")}</div>`;
+}
+function correctionDateTimeFields(prefix,label,instant){
+  const wall=instant?sydneyWallParts(instant):null;
+  return `<div class="field"><label>${escapeHtml(label)}</label><div class="correction-datetime-grid">
+    <input type="date" id="${prefix}Date" value="${wall?.date||""}" aria-label="${escapeHtml(label)} Sydney date">
+    <input type="time" id="${prefix}Time" step="1" value="${wall?.time||""}" aria-label="${escapeHtml(label)} Sydney time">
+  </div></div>`;
+}
+function correctionTimeField(id,label,instant){
+  const wall=instant?sydneyWallParts(instant):null;
+  return `<div class="field"><label for="${id}">${escapeHtml(label)}</label><input type="time" id="${id}" step="1" value="${wall?.time||""}"></div>`;
+}
+function attendanceSydneyDateKeys(timeInDate,timeOutDate){
+  const keys=[];
+  for(let dateKey=timeInDate;dateKey<=timeOutDate;dateKey=addDateKeyDays(dateKey,1)){
+    keys.push(dateKey);
+    if(keys.length>31) return [];
+  }
+  return keys;
+}
+function resolveBreakWallTimes(startTime,endTime,timeInIso,timeOutIso,timeInDate,timeOutDate,label){
+  const dateKeys=attendanceSydneyDateKeys(timeInDate,timeOutDate);
+  if(!dateKeys.length) return {error:`${label} cannot be resolved safely within this attendance interval.`};
+  const attendanceStart=new Date(timeInIso),attendanceEnd=new Date(timeOutIso),matches=[];
+  for(const startDate of dateKeys) for(const endDate of dateKeys){
+    const startResult=sydneyWallToIso(startDate,startTime),endResult=sydneyWallToIso(endDate,endTime);
+    if(startResult.error || endResult.error) continue;
+    const start=new Date(startResult.iso),end=new Date(endResult.iso);
+    if(end>start && start>=attendanceStart && end<=attendanceEnd){
+      matches.push({start:startResult.iso,end:endResult.iso});
+    }
+  }
+  const unique=[...new Map(matches.map(match=>[`${match.start}|${match.end}`,match])).values()];
+  if(unique.length===1) return unique[0];
+  if(unique.length>1) return {error:`${label} times could refer to more than one date in this attendance interval. Adjust the times or request manual review.`};
+  const directErrors=dateKeys.flatMap(dateKey=>[sydneyWallToIso(dateKey,startTime).error,sydneyWallToIso(dateKey,endTime).error]).filter(Boolean);
+  if(directErrors.some(error=>error.includes("daylight-saving"))){
+    return {error:`${label}: the entered Sydney time cannot be represented safely because of the daylight-saving change.`};
+  }
+  return {error:`${label} must form one complete interval inside the corrected attendance times.`};
+}
+function correctionIntervalFromInputs(wrap,prefix,label,existing,attendanceRange){
+  const startTime=wrap.querySelector(`#${prefix}StartTime`).value;
+  const endTime=wrap.querySelector(`#${prefix}EndTime`).value;
+  const values=[startTime,endTime],allBlank=values.every(value=>!value),allPresent=values.every(Boolean);
+  if(allBlank){
+    if(existing) return {error:`${label} is already recorded and cannot be deleted through this correction workflow.`};
+    return {effective:null,rpcStart:null,rpcEnd:null,changed:false};
+  }
+  if(!allPresent) return {error:`Enter both the start and end time for ${label}.`};
+  const initialStart=existing?sydneyWallParts(existing.start):null,initialEnd=existing?sydneyWallParts(existing.end):null;
+  const changed=!existing || initialStart?.time!==startTime || initialEnd?.time!==endTime;
+  if(!changed) return {effective:{start:existing.start,end:existing.end,id:existing.id,type:existing.type,paid:existing.paid},rpcStart:null,rpcEnd:null,changed:false};
+  const resolved=resolveBreakWallTimes(startTime,endTime,attendanceRange.timeInIso,attendanceRange.timeOutIso,
+    attendanceRange.timeInDate,attendanceRange.timeOutDate,label);
+  if(resolved.error) return resolved;
+  return {effective:{start:resolved.start,end:resolved.end,id:existing?.id||null,type:existing?.type||label,paid:existing?.paid},
+    rpcStart:resolved.start,rpcEnd:resolved.end,changed:true};
+}
+function correctionIntervalsOverlap(a,b){
+  return new Date(a.start)<new Date(b.end) && new Date(b.start)<new Date(a.end);
+}
+async function refreshAfterAttendanceCorrection(){
+  const generation=coreRealtime.generation,employeeId=coreRealtime.employeeId,role=coreRealtime.role;
+  if(!DB.session || !employeeId || DB.session.employeeId!==employeeId || DB.session.role!==role) throw new Error("Authenticated session changed.");
+  coreRealtime.revision++;
+  const snapshot=await fetchCoreTimeFromSupabase(employeeId,isAdminRole(role));
+  if(generation!==coreRealtime.generation || DB.session?.employeeId!==employeeId || DB.session?.role!==role) throw new Error("Authenticated session changed.");
+  Object.assign(DB,snapshot);
+  save();
+}
+async function saveAttendanceCorrection(wrap,snapshot){
+  const saveButton=wrap.querySelector("#attendanceCorrectionSave"),cancelButton=wrap.querySelector("#attendanceCorrectionCancel");
+  if(saveButton.disabled) return;
+  const message=wrap.querySelector("#attendanceCorrectionMessage");
+  const fail=text=>{message.textContent=text;message.style.display="block";toast(text);};
+  const attendance=DB.attendance.find(row=>row.id===snapshot.attendance.id);
+  if(!attendance || !attendanceCorrectionSnapshotMatches(snapshot)){
+    fail("This attendance changed while you were editing it. Close/reopen the editor to review the latest data.");return;
+  }
+  const readiness=attendanceCorrectionReadiness(attendance);
+  if(!readiness.canEdit){fail(readiness.reason||"You are no longer authorized to correct this attendance.");return;}
+  const reason=wrap.querySelector("#attendanceCorrectionReason").value.trim();
+  if(!reason){fail("A correction reason is required.");return;}
+  const timeInResult=sydneyWallToIso(wrap.querySelector("#correctionTimeInDate").value,wrap.querySelector("#correctionTimeInTime").value);
+  const timeOutResult=sydneyWallToIso(wrap.querySelector("#correctionTimeOutDate").value,wrap.querySelector("#correctionTimeOutTime").value);
+  if(timeInResult.error){fail(`Time In: ${timeInResult.error}`);return;}
+  if(timeOutResult.error){fail(`Time Out: ${timeOutResult.error}`);return;}
+  const timeIn=new Date(timeInResult.iso),timeOut=new Date(timeOutResult.iso);
+  if(timeOut<=timeIn){fail("Time Out must be later than Time In.");return;}
+  const snapshotAttendance={id:snapshot.attendance.id},groups=attendanceBreakGroups(snapshotAttendance,snapshot.breaks);
+  const attendanceRange={timeInIso:timeInResult.iso,timeOutIso:timeOutResult.iso,
+    timeInDate:wrap.querySelector("#correctionTimeInDate").value,timeOutDate:wrap.querySelector("#correctionTimeOutDate").value};
+  const morning=correctionIntervalFromInputs(wrap,"correctionMorning","Morning Break",groups.morning[0]||null,attendanceRange);
+  const lunch=correctionIntervalFromInputs(wrap,"correctionLunch","Lunch",groups.lunch[0]||null,attendanceRange);
+  if(morning.error){fail(morning.error);return;}
+  if(lunch.error){fail(lunch.error);return;}
+  const intervals=[...groups.other.map(row=>({...row,preserved:true})),
+    ...(morning.effective?[{...morning.effective,label:"Morning Break",changed:morning.changed}]:[]),
+    ...(lunch.effective?[{...lunch.effective,label:"Lunch",changed:lunch.changed}]:[])];
+  for(const interval of intervals){
+    const start=new Date(interval.start),end=new Date(interval.end);
+    if(Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end<=start){fail(`${interval.label||interval.type||"Recorded break"} has an invalid start or end time.`);return;}
+    if(start<timeIn || end>timeOut){fail(`${interval.label||interval.type||"A recorded break"} must remain inside the corrected attendance interval.`);return;}
+  }
+  for(let i=0;i<intervals.length;i++) for(let j=i+1;j<intervals.length;j++){
+    if(correctionIntervalsOverlap(intervals[i],intervals[j]) && (intervals[i].changed || intervals[j].changed)){
+      fail("The corrected break intervals overlap another recorded break. Review the times before saving.");return;
+    }
+  }
+  saveButton.disabled=true;cancelButton.disabled=true;saveButton.textContent="Saving...";message.style.display="none";
+  let error=null;
+  try{
+    ({error}=await supabaseClient.rpc("correct_attendance_record",{
+      p_attendance_id:snapshot.attendance.id,p_time_in:timeInResult.iso,p_time_out:timeOutResult.iso,
+      p_morning_break_start:morning.rpcStart,p_morning_break_end:morning.rpcEnd,
+      p_lunch_start:lunch.rpcStart,p_lunch_end:lunch.rpcEnd,p_reason:reason
+    }));
+  }catch(rpcError){error=rpcError;}
+  if(error){
+    console.error("Attendance correction RPC error:",error);
+    saveButton.disabled=false;cancelButton.disabled=false;saveButton.textContent="Save Correction";
+    fail(error.message?.includes("manual review")||error.message?.includes("Multiple")?error.message:"Correction could not be saved. Review the details and try again.");
+    return;
+  }
+  saveButton.textContent="Refreshing...";
+  try{
+    await refreshAfterAttendanceCorrection();
+  }catch(error){
+    console.error("Attendance correction refresh error:",error);
+    saveButton.textContent="Correction Saved";
+    message.textContent="The correction was saved, but the latest data could not be refreshed. Close this editor and reload before making another change.";
+    message.style.display="block";
+    cancelButton.disabled=false;cancelButton.textContent="Close";
+    return;
+  }
+  await fetchAttendanceCorrectionHistory([snapshot.attendance.id],{force:true});
+  wrap.remove();
+  render();
+  toast("Attendance correction saved.");
+}
+function openAttendanceCorrectionEditor(attendanceId){
+  const attendance=DB.attendance.find(row=>row.id===attendanceId),readiness=attendanceCorrectionReadiness(attendance);
+  if(!attendance || !readiness.canEdit){toast(readiness.reason||"This attendance cannot be corrected.");return;}
+  const snapshot=attendanceCorrectionSnapshot(attendance),groups=attendanceBreakGroups(attendance,snapshot.breaks);
+  const timeIn=sydneyWallParts(attendance.timeIn),timeOut=sydneyWallParts(attendance.timeOut);
+  if(!timeIn || !timeOut){toast("This attendance has invalid recorded times and requires manual review.");return;}
+  const morning=groups.morning[0]||null,lunch=groups.lunch[0]||null;
+  const wrap=document.createElement("div");wrap.className="modal-bg";
+  wrap.innerHTML=`<div class="modal" role="dialog" aria-modal="true" aria-labelledby="attendanceCorrectionTitle">
+    <div class="h2" id="attendanceCorrectionTitle" style="margin-bottom:4px;">Correct Attendance</div>
+    <div class="small muted" style="margin-bottom:14px;">${escapeHtml(empName(attendance.employeeId))} &middot; Times shown in Australia/Sydney</div>
+    ${correctionDateTimeFields("correctionTimeIn","Time In",attendance.timeIn)}
+    ${correctionDateTimeFields("correctionTimeOut","Time Out",attendance.timeOut)}
+    <div class="correction-break-section"><div class="correction-break-title">Morning Break <span class="muted">(paid)</span></div>
+      ${correctionTimeField("correctionMorningStartTime","Start",morning?.start)}
+      ${correctionTimeField("correctionMorningEndTime","End",morning?.end)}
+      <div class="tiny muted">${morning?"Recorded breaks cannot be deleted here.":"Leave all fields blank to keep Morning Break unrecorded."}</div>
+    </div>
+    <div class="correction-break-section"><div class="correction-break-title">Lunch <span class="muted">(unpaid)</span></div>
+      ${correctionTimeField("correctionLunchStartTime","Start",lunch?.start)}
+      ${correctionTimeField("correctionLunchEndTime","End",lunch?.end)}
+      <div class="tiny muted">${lunch?"Recorded breaks cannot be deleted here.":"Leave all fields blank to keep Lunch unrecorded."}</div>
+    </div>
+    <div data-attendance-correction-history="${escapeHtml(attendance.id)}">${renderAttendanceCorrectionHistory(attendance.id)}</div>
+    <div class="field"><label for="attendanceCorrectionReason">Correction Reason (required)</label><textarea id="attendanceCorrectionReason" rows="3" placeholder="Explain why this attendance record is being corrected"></textarea></div>
+    <div class="small" id="attendanceCorrectionMessage" role="alert" style="display:none;color:var(--danger);margin-bottom:10px;"></div>
+    <button class="btn btn-accent btn-block btn-lg" id="attendanceCorrectionSave">Save Correction</button>
+    <button class="btn btn-ghost btn-block" style="margin-top:8px;" id="attendanceCorrectionCancel">Cancel</button>
+  </div>`;
+  document.body.appendChild(wrap);
+  wrap.querySelector("#attendanceCorrectionCancel").onclick=()=>wrap.remove();
+  wrap.querySelector("#attendanceCorrectionSave").onclick=()=>saveAttendanceCorrection(wrap,snapshot);
+  bindCorrectionHistoryRetry(wrap,attendanceId);
+  wrap.querySelector("#correctionTimeInDate").focus();
 }
 function todayNetMinutes(empId){
   const att = DB.attendance.filter(a=>a.employeeId===empId && sameDay(a.timeIn, new Date()));
@@ -3503,7 +3935,7 @@ ${jobHistory.map(c=>`
     </div>
 
     <div class="small" style="margin-top:6px;">
-      ${escapeHtml(c.detail || "")}
+      ${escapeHtml(auditDetailText(c.detail))}
     </div>
   </div>
 `).join("")}
@@ -3560,7 +3992,7 @@ function screenAdminTimesheets(){
         ${r.requestedTimeIn? `<div class="small muted" style="margin-top:6px;">Time In — original: <b>${fmtTime(r.originalTimeIn)}</b> → requested: <b>${fmtTime(r.requestedTimeIn)}</b></div>`:""}
         ${r.requestedTimeOut? `<div class="small muted" style="margin-top:4px;">Time Out — original: <b>${fmtTime(r.originalTimeOut)}</b> → requested: <b>${fmtTime(r.requestedTimeOut)}</b></div>`:""}
         <div class="small" style="margin-top:6px;">"${escapeHtml(r.reason)}"</div>
-        ${relatedLogs.length? `<div class="tiny muted" style="margin-top:10px;padding-top:8px;border-top:1px solid var(--line);"><b>Related activity that day:</b><br>${relatedLogs.map(l=>`${fmtTime(l.ts)} — ${escapeHtml(l.action)}${l.detail?`: ${escapeHtml(l.detail)}`:""}`).join("<br>")}</div>`:""}
+        ${relatedLogs.length? `<div class="tiny muted" style="margin-top:10px;padding-top:8px;border-top:1px solid var(--line);"><b>Related activity that day:</b><br>${relatedLogs.map(l=>`${fmtTime(l.ts)} — ${escapeHtml(l.action)}${l.detail?`: ${escapeHtml(auditDetailText(l.detail))}`:""}`).join("<br>")}</div>`:""}
         <div class="grid2" style="margin-top:10px;">
           <button class="btn btn-ok btn-sm" data-cr-approve="${r.id}">Approve Correction</button>
           <button class="btn btn-danger btn-sm" data-cr-reject="${r.id}">Reject</button>
@@ -3785,7 +4217,7 @@ function screenAdminAudit(){
       return `<div class="card card-tight" style="margin-bottom:8px;${worklog?'cursor:pointer;':''}" ${worklog?`data-audit-worklog="${escapeHtml(worklog.id)}" role="button" tabindex="0"`:''}>
       <div class="row-between"><b class="small">${escapeHtml(a.actor)}</b><span class="tiny muted">${new Date(a.ts).toLocaleString()}</span></div>
       <div class="small">${escapeHtml(a.action)} <span class="muted">— ${escapeHtml(a.target)}</span></div>
-      ${a.detail? `<div class="tiny muted" style="margin-top:2px;">${escapeHtml(a.detail)}</div>`:""}
+      ${a.detail? `<div class="tiny muted" style="margin-top:2px;white-space:pre-wrap;overflow-wrap:anywhere;">${escapeHtml(auditDetailText(a.detail))}</div>`:""}
     </div>`;}).join("")}
   </div>`;
 }
@@ -3874,6 +4306,11 @@ function screenAdminSettings(){
 /* ---------------- Admin bindings ---------------- */
 function bindAdminScreen(){
   const $ = id=>document.getElementById(id);
+  if(route.name==="admin-timesheets"){
+    const visibleAttendanceIds=buildAttendanceReviewPeriods(DB.attendance,visibleEmployeeList())
+      .flatMap(period=>period.attendance.map(attendance=>attendance.id));
+    void fetchAttendanceCorrectionHistory(visibleAttendanceIds);
+  }
   document.querySelectorAll("details[data-attendance-review-key]").forEach(details=>{
     details.ontoggle=()=>{
       if(details.open) attendanceReviewExpandedPeriods.add(details.dataset.attendanceReviewKey);
@@ -3890,6 +4327,15 @@ function bindAdminScreen(){
     details.ontoggle=()=>{
       if(details.open) attendanceBreaksExpandedGroups.add(details.dataset.attendanceBreaksKey);
       else attendanceBreaksExpandedGroups.delete(details.dataset.attendanceBreaksKey);
+    };
+  });
+  document.querySelectorAll("[data-edit-attendance]").forEach(button=>{
+    button.onclick=()=>openAttendanceCorrectionEditor(button.dataset.editAttendance);
+  });
+  document.querySelectorAll("[data-retry-correction-history]").forEach(button=>{
+    button.onclick=async()=>{
+      button.disabled=true;button.textContent="Retrying...";
+      await fetchAttendanceCorrectionHistory([button.dataset.retryCorrectionHistory],{force:true});
     };
   });
   if(route.name==="admin-audit" && adminAuditSyncState==="idle"){
