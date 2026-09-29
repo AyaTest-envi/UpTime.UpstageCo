@@ -203,6 +203,10 @@
   .kpi .num{font-size:24px;font-weight:800;}
   .kpi .lab{font-size:11.5px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.3px;}
   .flexwrap{display:flex;flex-wrap:wrap;gap:10px;}
+  .timesheet-review-reminder{margin-bottom:20px;}
+  .timesheet-review-reminder-inner{display:flex;align-items:center;justify-content:space-between;gap:16px;}
+  .timesheet-review-reminder-copy{min-width:0;overflow-wrap:anywhere;}
+  .timesheet-review-reminder-action{flex:none;}
   /* Mobile browser adjustments */
 @media (max-width: 768px) {
   .toast {
@@ -217,6 +221,8 @@
   }
 }
 @media (max-width: 420px) {
+  .timesheet-review-reminder-inner{align-items:stretch;flex-direction:column;}
+  .timesheet-review-reminder-action{width:100%;}
   .attendance-fields {
     grid-template-columns:1fr;
     grid-template-areas:"time-in" "time-out" "morning-break" "lunch";
@@ -725,6 +731,7 @@ function seed(){
   const settings = {
     companyName:"Upstage Co", timezone:"Australia/Sydney", workWeekStart:"Monday",
     standardHours:8, requirePhoto:true, requireGPS:true,
+    timesheetReviewCutoffTime:null,
     geofenceEnforced:false, lateThresholdMin:10, overtimeThresholdHrs:8,
     autoClockOutHrs:12, galleryUploadAllowed:false, backgroundTracking:false,
     breakRules:[
@@ -765,6 +772,7 @@ async function syncCompanySettings(){
   standardHours:Number(s.standard_hours),workStartTime:s.work_start_time,
   lateThresholdMin:s.late_threshold_minutes,overtimeStartTime:s.overtime_start_time,
   overtimeGraceMinutes:s.overtime_grace_minutes,
+  timesheetReviewCutoffTime:s.timesheet_review_cutoff_time??null,
   overtimeThresholdHrs:Number(s.overtime_threshold_hours),
   autoClockOutHrs:Number(s.auto_clock_out_hours),requirePhoto:s.require_photo,
   requireGPS:s.require_gps,geofenceEnforced:s.geofence_enforced,
@@ -1009,6 +1017,7 @@ const attendanceCorrectionHistoryById=new Map();
 let attendanceCorrectionHistoryGeneration=0;
 const attendancePeriodApprovalState=new Map();
 const attendanceApprovalHistoryState={rows:[],loaded:false,loading:false,error:null,request:0,employeeKey:"",promise:null,cutoffMs:0};
+const timesheetReviewReminderRuntime={timer:null,signature:""};
 let jobActionInProgress=0;
 function stopCoreRealtime(){
   coreRealtime.generation++;
@@ -1035,6 +1044,8 @@ function stopCoreRealtime(){
   attendanceApprovalHistoryState.rows=[];attendanceApprovalHistoryState.loaded=false;attendanceApprovalHistoryState.loading=false;
   attendanceApprovalHistoryState.error=null;attendanceApprovalHistoryState.employeeKey="";attendanceApprovalHistoryState.promise=null;attendanceApprovalHistoryState.cutoffMs=0;
   attendanceApprovalHistoryState.request++;
+  clearTimeout(timesheetReviewReminderRuntime.timer);
+  timesheetReviewReminderRuntime.timer=null;timesheetReviewReminderRuntime.signature="";
   overtimeConfirmedDate="";
   fourPmDecisionOffer.key="";fourPmDecisionOffer.responseDeadline=0;fourPmDecisionOffer.processing=false;
   document.getElementById("fourPmReminder")?.remove();
@@ -1247,6 +1258,7 @@ function startCoreRealtime(user,profile){
       console.error("Core Realtime channel status:",status);
     }
   });
+  scheduleTimesheetReviewReminder();
 }
 document.addEventListener("visibilitychange",()=>{
   if(document.visibilityState==="visible" && coreRealtime.channel){
@@ -1254,6 +1266,7 @@ document.addEventListener("visibilitychange",()=>{
     scheduleSupportRefresh("corrections");
     scheduleSupportRefresh("worklogs");
     scheduleJobsRefresh();
+    scheduleTimesheetReviewReminder({evaluate:true});
   }
 });
 
@@ -1458,12 +1471,96 @@ function normalizeAttendanceApprovalHistoryRow(row){
 function attendanceApprovalHistoryCutoff(nowMs=Date.now()){
   return nowMs-7*24*60*60*1000;
 }
-function attendanceApprovalHistoryVisibleEmployees(){
+function isAttendanceReviewRole(role=DB.session?.role){
+  return role==="Manager" || role==="Admin" || role==="Super Admin";
+}
+function attendanceReviewVisibleEmployees(){
+  if(!isAttendanceReviewRole()) return [];
   const visible=visibleEmployeeList();
   if(DB.session?.role==="Admin" || DB.session?.role==="Super Admin") return visible;
-  if(DB.session?.role!=="Manager") return [];
   const actor=currentEmployee();
   return actor?visible.filter(employee=>employee.manager===actor.name):[];
+}
+function attendanceApprovalHistoryVisibleEmployees(){
+  return attendanceReviewVisibleEmployees();
+}
+function parseTimesheetReviewCutoff(value){
+  if(value==null || String(value).trim()==="") return {configured:false,valid:true,canonical:null};
+  const match=/^(\d{2}):(\d{2})(?::(\d{2}))?$/.exec(String(value).trim());
+  if(!match) return {configured:false,valid:false,canonical:null};
+  const hour=Number(match[1]),minute=Number(match[2]),second=Number(match[3]||"00");
+  if(hour>23 || minute>59 || second>59) return {configured:false,valid:false,canonical:null};
+  return {configured:true,valid:true,hour,minute,second,
+    canonical:`${match[1]}:${match[2]}:${String(second).padStart(2,"0")}`};
+}
+function timesheetReviewCutoffSaveValue(value){
+  const parsed=parseTimesheetReviewCutoff(value);
+  return parsed.valid?{valid:true,value:parsed.configured?parsed.canonical:null}:{valid:false,value:null};
+}
+function timesheetReviewCutoffLabel(parsed){
+  if(!parsed?.configured) return "";
+  const hour=parsed.hour%12||12,period=parsed.hour<12?"AM":"PM";
+  return `${hour}:${String(parsed.minute).padStart(2,"0")}${parsed.second?`:${String(parsed.second).padStart(2,"0")}`:""} ${period}`;
+}
+function timesheetReviewPeriodDue(period,parsed){
+  if(!period?.displayEnd || !parsed?.configured) return null;
+  const converted=sydneyWallToIso(period.displayEnd,parsed.canonical);
+  if(!converted.iso) return null;
+  const dueMs=new Date(converted.iso).getTime();
+  return Number.isFinite(dueMs)?dueMs:null;
+}
+function timesheetReviewReminderState(periods,cutoffValue,nowValue=new Date(),role=DB.session?.role){
+  const count=Array.isArray(periods)?periods.length:0;
+  const base={visible:false,state:"hidden",count,cutoffConfigured:false,cutoffLabel:"",nextBoundaryMs:null};
+  if(!isAttendanceReviewRole(role) || count===0) return base;
+  const now=new Date(nowValue),nowMs=now.getTime();
+  if(!Number.isFinite(nowMs)) return {...base,visible:true,state:"pending"};
+  const today=sydneyDateKey(now),day=new Date(`${today}T00:00:00Z`).getUTCDay();
+  const parsed=parseTimesheetReviewCutoff(cutoffValue);
+  if(!parsed.configured){
+    return {...base,visible:true,state:day===4?"due":"pending",cutoffInvalid:!parsed.valid};
+  }
+  const dueTimes=periods.map(period=>({period,dueMs:timesheetReviewPeriodDue(period,parsed)}));
+  const validDueTimes=dueTimes.filter(item=>item.dueMs!=null);
+  if(!validDueTimes.length) return {...base,visible:true,state:day===4?"due":"pending",cutoffInvalid:true};
+  const nextBoundaries=validDueTimes.flatMap(item=>[item.dueMs-60*60*1000,item.dueMs]).filter(value=>value>nowMs);
+  const shared={...base,visible:true,cutoffConfigured:true,cutoffLabel:timesheetReviewCutoffLabel(parsed),
+    nextBoundaryMs:nextBoundaries.length?Math.min(...nextBoundaries):null};
+  if(validDueTimes.some(item=>nowMs>=item.dueMs)) return {...shared,state:"overdue"};
+  const todayDue=validDueTimes.filter(item=>item.period.displayEnd===today);
+  if(todayDue.length){
+    const nextDue=Math.min(...todayDue.map(item=>item.dueMs)),remaining=nextDue-nowMs;
+    if(remaining<=60*60*1000) return {...shared,state:"approaching"};
+    return {...shared,state:"due"};
+  }
+  return {...shared,state:"pending"};
+}
+function currentTimesheetReviewReminder(nowValue=new Date()){
+  if(!isAttendanceReviewRole()) return timesheetReviewReminderState([],DB.settings.timesheetReviewCutoffTime,nowValue);
+  const periods=buildAttendanceReviewPeriods(DB.attendance,attendanceReviewVisibleEmployees());
+  return timesheetReviewReminderState(periods,DB.settings.timesheetReviewCutoffTime,nowValue);
+}
+function timesheetReviewReminderSignature(state){
+  return `${state.visible?1:0}|${state.state}|${state.count}|${state.cutoffConfigured?state.cutoffLabel:""}`;
+}
+function noteTimesheetReviewReminderRendered(state){
+  timesheetReviewReminderRuntime.signature=timesheetReviewReminderSignature(state);
+}
+function scheduleTimesheetReviewReminder({evaluate=true}={}){
+  clearTimeout(timesheetReviewReminderRuntime.timer);
+  timesheetReviewReminderRuntime.timer=null;
+  if(!DB.session || !isAttendanceReviewRole()){
+    timesheetReviewReminderRuntime.signature="";
+    return;
+  }
+  const now=Date.now(),state=currentTimesheetReviewReminder(new Date(now));
+  const signature=timesheetReviewReminderSignature(state);
+  if(evaluate && timesheetReviewReminderRuntime.signature && signature!==timesheetReviewReminderRuntime.signature &&
+     route.name==="admin-dashboard" && !document.querySelector(".modal-bg")) render();
+  timesheetReviewReminderRuntime.signature=signature;
+  const nextMinute=now+(60000-now%60000)+50;
+  const wakeAt=state.nextBoundaryMs&&state.nextBoundaryMs>now?Math.min(nextMinute,state.nextBoundaryMs+25):nextMinute;
+  timesheetReviewReminderRuntime.timer=setTimeout(()=>scheduleTimesheetReviewReminder({evaluate:true}),Math.max(250,wakeAt-now));
 }
 async function fetchAttendanceApprovalHistory({force=false,renderAfter=true}={}){
   const employees=attendanceApprovalHistoryVisibleEmployees(),employeeIds=[...new Set(employees.map(employee=>employee.id).filter(Boolean))].sort();
@@ -1583,7 +1680,7 @@ async function refreshAttendanceApprovalData(){
   Object.assign(DB,snapshot);save();
 }
 function currentAttendanceReviewPeriod(employeeId,periodStart){
-  return buildAttendanceReviewPeriods(DB.attendance,visibleEmployeeList())
+  return buildAttendanceReviewPeriods(DB.attendance,attendanceReviewVisibleEmployees())
     .find(period=>period.employee.id===employeeId && period.periodStart===periodStart)||null;
 }
 function attendancePeriodCorrectionCount(period){
@@ -3964,7 +4061,8 @@ function activeJobsToday(){
 
 function screenAdminDash(){
   const s = todayStats();
-  const pendingApprovals = buildAttendanceReviewPeriods(DB.attendance,visibleEmployeeList()).length;
+  const reviewReminder=currentTimesheetReviewReminder();
+  noteTimesheetReviewReminderRendered(reviewReminder);
   const correctionReqs = DB.correctionRequests.filter(r=>r.status==="pending").length;
   const recent = DB.auditLogs.slice(0,5);
   const jobsToday = activeJobsToday();
@@ -3982,12 +4080,13 @@ function screenAdminDash(){
       <div class="kpi"><div class="num" style="color:var(--danger)">🔴 ${s.late}</div><div class="lab">Late</div></div>
     </div>
 
-    ${(pendingApprovals>0 || correctionReqs>0)? `<div class="card" style="margin-bottom:20px;border-color:var(--warn);">
-      <div class="row-between"><div>
-        ${pendingApprovals>0?`<div><b>${pendingApprovals}</b> attendance review ${pendingApprovals>1?'periods':'period'} awaiting review</div>`:""}
+    ${(reviewReminder.visible || correctionReqs>0)? `<div class="card timesheet-review-reminder" style="border-color:${reviewReminder.state==="overdue"?'var(--danger)':'var(--warn)'};" role="status" aria-live="polite">
+      <div class="timesheet-review-reminder-inner"><div class="timesheet-review-reminder-copy">
+        ${reviewReminder.visible?`<div><b>${reviewReminder.state==="overdue"?'Timesheet review is overdue':reviewReminder.state==="approaching"?'Timesheet review cutoff is approaching':reviewReminder.state==="due"?'Timesheet review is due today':'Timesheets are awaiting review'}</b></div>
+        <div class="small" style="margin-top:3px;"><b>${reviewReminder.count}</b> outstanding review ${reviewReminder.count===1?'period':'periods'}${reviewReminder.cutoffConfigured&&(reviewReminder.state==="approaching"||reviewReminder.state==="overdue")?` · ${reviewReminder.cutoffLabel} Sydney cutoff`:''}</div>`:""}
         ${correctionReqs>0?`<div class="small muted" style="margin-top:2px;"><b>${correctionReqs}</b> correction ${correctionReqs>1?'requests':'request'} pending</div>`:""}
       </div>
-      <button class="btn btn-warn btn-sm" data-nav="admin-timesheets">Review</button></div>
+      <button class="btn ${reviewReminder.state==="overdue"?'btn-danger':'btn-warn'} btn-sm timesheet-review-reminder-action" data-nav="admin-timesheets">${reviewReminder.visible?'Review Timesheets':'Review'}</button></div>
     </div>`:""}
 
     <div class="row-between" style="margin-bottom:10px;"><div class="h3">ACTIVE JOBS TODAY</div><a class="link small" data-nav="admin-jobs">View all</a></div>
@@ -4276,7 +4375,7 @@ function renderAttendanceActivitySection(title,periods,kind,jobEntriesByAttendan
 }
 
 function screenAdminTimesheets(){
-  const visibleEmployees=visibleEmployeeList();
+  const visibleEmployees=attendanceReviewVisibleEmployees();
   const reviewPeriods=buildAttendanceReviewPeriods(DB.attendance,visibleEmployees);
   const activityPeriods=buildAttendanceActivityPeriods(attendanceApprovalHistoryState.rows,attendanceApprovalHistoryVisibleEmployees(),DB.attendance);
   const recentPeriods=activityPeriods.filter(period=>period.kind==="recent"),archivePeriods=activityPeriods.filter(period=>period.kind==="archive");
@@ -4495,9 +4594,6 @@ function buildNotifications(){
         list.push({icon:"🔴", color:"var(--danger)", title:"Late Arrival", detail:`${emp.name} clocked in at ${fmtTime(a.timeIn)} today.`, time:"Today"});
       }
     }
-    if(s.timesheetApproved && a.status==="submitted"){
-      list.push({icon:"🔔", color:"var(--warn)", title:"Timesheet Awaiting Approval", detail:`${emp.name}'s shift on ${fmtDate(a.timeIn)} is submitted and awaiting your review.`, time:fmtDateShort(a.timeIn)});
-    }
     if(s.timesheetRejected && a.status==="rejected"){
       list.push({icon:"✖", color:"var(--danger)", title:"Timesheet Rejected", detail:`${emp.name}'s shift on ${fmtDate(a.timeIn)} was rejected: ${a.rejectReason||''}`, time:fmtDateShort(a.timeIn)});
     }
@@ -4562,6 +4658,7 @@ function screenAdminXero(){
 
 function screenAdminSettings(){
   const s = DB.settings;
+  const cutoff=parseTimesheetReviewCutoff(s.timesheetReviewCutoffTime);
   return `
   <div class="topbar"><div class="h2">Company Settings</div></div>
   <div class="content">
@@ -4589,6 +4686,15 @@ function screenAdminSettings(){
       ${s.breakRules.map(r=>`<div class="row-between small"><span>${escapeHtml(r.name)}</span><b>${r.minutes} min · ${r.paid?'Paid':'Unpaid'}</b></div>`).join("")}
     </div>
 
+    ${DB.session?.role==="Super Admin"?`<div class="h3" style="margin-bottom:8px;">TIMESHEET REVIEW</div>
+    <div class="card col gap-10" style="margin-bottom:16px;">
+      <label for="timesheetReviewCutoff">Timesheet Review Cutoff</label>
+      <input type="time" id="timesheetReviewCutoff" step="60" value="${cutoff.configured?cutoff.canonical.slice(0,5):''}">
+      <div class="tiny muted">Reviews are due Thursday in Australia/Sydney. Leave blank for a due-today reminder without approaching or overdue urgency.</div>
+      ${!cutoff.valid?'<div class="small" style="color:var(--danger);">The saved cutoff is invalid. Enter a valid time or clear it.</div>':''}
+      <button class="btn btn-accent btn-block" id="saveTimesheetReviewCutoff">Save Cutoff</button>
+    </div>`:""}
+
     <div class="h3" style="margin-bottom:8px;">GEOFENCES</div>
     <div class="card col gap-10" style="margin-bottom:16px;">
       ${s.geofences.map(g=>`<div class="row-between small"><span>${escapeHtml(g.name)}</span><b>${g.radiusM}m radius</b></div>`).join("")}
@@ -4612,7 +4718,7 @@ function screenAdminSettings(){
 function bindAdminScreen(){
   const $ = id=>document.getElementById(id);
   if(route.name==="admin-timesheets"){
-    const visibleEmployees=visibleEmployeeList();
+    const visibleEmployees=attendanceReviewVisibleEmployees();
     const visiblePeriods=[...buildAttendanceReviewPeriods(DB.attendance,visibleEmployees),
       ...buildAttendanceActivityPeriods(attendanceApprovalHistoryState.rows,attendanceApprovalHistoryVisibleEmployees(),DB.attendance)];
     const visibleAttendanceIds=visiblePeriods.flatMap(period=>period.attendance.map(attendance=>attendance.id));
@@ -4823,6 +4929,20 @@ function bindAdminScreen(){
   if($("ackBtn")) $("ackBtn").onclick = ()=> go("admin-settings");
 
   document.querySelectorAll("[data-notif]").forEach(cb=> cb.onchange = ()=>{ DB.settings.notifications[cb.dataset.notif]=cb.checked; save(); });
+  if($("saveTimesheetReviewCutoff")) $("saveTimesheetReviewCutoff").onclick=async()=>{
+    if(DB.session?.role!=="Super Admin"){toast("Only Super Admin can change this setting.");return;}
+    const input=$("timesheetReviewCutoff"),candidate=timesheetReviewCutoffSaveValue(input.value);
+    if(!candidate.valid){toast("Enter a valid cutoff time.");return;}
+    const button=$("saveTimesheetReviewCutoff");
+    button.disabled=true;
+    const saved=await updateCompanySetting("timesheet_review_cutoff_time",candidate.value,"timesheetReviewCutoffTime");
+    button.disabled=false;
+    if(saved){scheduleTimesheetReviewReminder({evaluate:true});render();}
+    else{
+      const current=parseTimesheetReviewCutoff(DB.settings.timesheetReviewCutoffTime);
+      input.value=current.configured?current.canonical.slice(0,5):"";
+    }
+  };
   [["reqPhoto","require_photo","requirePhoto"],["reqGps","require_gps","requireGPS"],
    ["reqGeo","geofence_enforced","geofenceEnforced"],["reqGallery","gallery_upload_allowed","galleryUploadAllowed"]]
    .forEach(([id,column,key])=>{
