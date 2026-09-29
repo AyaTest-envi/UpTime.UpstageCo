@@ -125,6 +125,12 @@
   .attendance-break-meta{font-weight:700;white-space:nowrap;}
   .attendance-session-net{display:flex;justify-content:flex-end;gap:5px;margin-top:9px;font-size:12px;}
   .attendance-session-actions{display:flex;justify-content:flex-end;align-items:center;gap:8px;margin-top:10px;}
+  .attendance-period-actions{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:12px;}
+  .attendance-approval-modal{box-sizing:border-box;width:calc(100% - 24px);max-width:480px;overflow-x:hidden;}
+  .attendance-approval-facts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:14px 0;}
+  .attendance-approval-fact{padding:10px;border:1px solid var(--line);border-radius:9px;min-width:0;}
+  .attendance-approval-fact span{display:block;color:var(--muted);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.3px;}
+  .attendance-approval-fact b{display:block;margin-top:3px;font-size:13px;overflow-wrap:anywhere;}
   .attendance-correction-note{margin-top:10px;padding:9px 10px;border:1px solid var(--warn);border-radius:8px;font-size:12px;color:var(--muted);}
   .attendance-correction-history-indicator{font-size:11px;font-weight:700;color:var(--muted);overflow-wrap:anywhere;}
   .correction-history{margin:0 0 14px;border:1px solid var(--line);border-radius:10px;overflow:hidden;}
@@ -222,6 +228,9 @@
     grid-column:1 / -1;
   }
   .correction-history-change{grid-template-columns:1fr;gap:2px;}
+  .attendance-period-actions{align-items:stretch;flex-direction:column-reverse;}
+  .attendance-period-actions .btn{width:100%;}
+  .attendance-approval-facts{grid-template-columns:1fr;}
 }
 /* Job Start / End tracking */
 .job-track-card{padding:16px;margin-bottom:14px;border:1px solid var(--line);border-radius:16px;background:#fff}
@@ -998,6 +1007,8 @@ const attendanceProjectsExpandedSessions=new Set();
 const attendanceBreaksExpandedGroups=new Set();
 const attendanceCorrectionHistoryById=new Map();
 let attendanceCorrectionHistoryGeneration=0;
+const attendancePeriodApprovalState=new Map();
+const attendanceApprovalHistoryState={rows:[],loaded:false,loading:false,error:null,request:0,employeeKey:"",promise:null,cutoffMs:0};
 let jobActionInProgress=0;
 function stopCoreRealtime(){
   coreRealtime.generation++;
@@ -1020,6 +1031,10 @@ function stopCoreRealtime(){
   attendanceBreaksExpandedGroups.clear();
   attendanceCorrectionHistoryGeneration++;
   attendanceCorrectionHistoryById.clear();
+  attendancePeriodApprovalState.clear();
+  attendanceApprovalHistoryState.rows=[];attendanceApprovalHistoryState.loaded=false;attendanceApprovalHistoryState.loading=false;
+  attendanceApprovalHistoryState.error=null;attendanceApprovalHistoryState.employeeKey="";attendanceApprovalHistoryState.promise=null;attendanceApprovalHistoryState.cutoffMs=0;
+  attendanceApprovalHistoryState.request++;
   overtimeConfirmedDate="";
   fourPmDecisionOffer.key="";fourPmDecisionOffer.responseDeadline=0;fourPmDecisionOffer.processing=false;
   document.getElementById("fourPmReminder")?.remove();
@@ -1084,6 +1099,7 @@ async function refreshCoreTimeFromRealtime(){
     invalidateStaleFourPmReminder();
     invalidateStalePostJobOtReminder();
     save();
+    if(route.name==="admin-timesheets" && isAdminRole(role)) void fetchAttendanceApprovalHistory({force:true});
   }catch(error){
     if(generation===coreRealtime.generation) console.error("Core Realtime sync error:",error);
   }finally{
@@ -1423,6 +1439,264 @@ function buildAttendanceReviewPeriods(attendanceRows,visibleEmployees){
     attendanceDays:new Set(group.attendance.map(a=>sydneyDateKey(a.timeIn))).size,
     netMin:group.attendance.reduce((sum,a)=>sum+(Number.isFinite(Number(a.netMin))?Number(a.netMin):0),0)
   })).sort((a,b)=>b.periodStart.localeCompare(a.periodStart)||a.employeeOrder-b.employeeOrder);
+}
+function attendancePeriodApprovalKey(employeeId,periodStart){
+  return `${employeeId}|${periodStart}`;
+}
+function normalizeAttendanceApprovalHistoryRow(row){
+  if(!row || typeof row!=="object") return null;
+  const auditId=String(row.audit_id??row.auditId??"").trim(),employeeId=String(row.employee_id??row.employeeId??"").trim();
+  const periodStart=String(row.period_start??row.periodStart??"").trim(),periodEndInclusive=String(row.period_end_inclusive??row.periodEndInclusive??"").trim();
+  const createdAt=row.created_at??row.createdAt??null,createdTime=new Date(createdAt).getTime();
+  if(!auditId || !employeeId || !/^\d{4}-\d{2}-\d{2}$/.test(periodStart) || !/^\d{4}-\d{2}-\d{2}$/.test(periodEndInclusive) || !Number.isFinite(createdTime)) return null;
+  const counts=[row.period_records??row.periodRecords,row.newly_approved??row.newlyApproved,
+    row.corrected_approved??row.correctedApproved,row.already_approved??row.alreadyApproved].map(Number);
+  if(counts.some(value=>!Number.isInteger(value)||value<0)) return null;
+  return {auditId,employeeId,periodStart,periodEndInclusive,actor:String(row.actor??"").trim(),createdAt,
+    periodRecords:counts[0],newlyApproved:counts[1],correctedApproved:counts[2],alreadyApproved:counts[3]};
+}
+function attendanceApprovalHistoryCutoff(nowMs=Date.now()){
+  return nowMs-7*24*60*60*1000;
+}
+function attendanceApprovalHistoryVisibleEmployees(){
+  const visible=visibleEmployeeList();
+  if(DB.session?.role==="Admin" || DB.session?.role==="Super Admin") return visible;
+  if(DB.session?.role!=="Manager") return [];
+  const actor=currentEmployee();
+  return actor?visible.filter(employee=>employee.manager===actor.name):[];
+}
+async function fetchAttendanceApprovalHistory({force=false,renderAfter=true}={}){
+  const employees=attendanceApprovalHistoryVisibleEmployees(),employeeIds=[...new Set(employees.map(employee=>employee.id).filter(Boolean))].sort();
+  const employeeKey=employeeIds.join("|");
+  if(attendanceApprovalHistoryState.loading){
+    if(!force) return attendanceApprovalHistoryState.promise;
+    return attendanceApprovalHistoryState.promise.then(()=>fetchAttendanceApprovalHistory({force:true,renderAfter}));
+  }
+  if(!force && attendanceApprovalHistoryState.loaded && attendanceApprovalHistoryState.employeeKey===employeeKey) return true;
+  const generation=coreRealtime.generation,request=++attendanceApprovalHistoryState.request;
+  attendanceApprovalHistoryState.loading=true;attendanceApprovalHistoryState.error=null;attendanceApprovalHistoryState.employeeKey=employeeKey;
+  const work=(async()=>{
+    if(!employeeIds.length){attendanceApprovalHistoryState.rows=[];attendanceApprovalHistoryState.loaded=true;return true;}
+    const now=Date.now(),cutoff=attendanceApprovalHistoryCutoff(now),upper=new Date(now+5*60*1000).toISOString();
+    attendanceApprovalHistoryState.cutoffMs=cutoff;
+    const recentFrom=new Date(cutoff).toISOString(),archiveFrom=new Date(cutoff-366*24*60*60*1000).toISOString();
+    const calls=[];
+    for(let offset=0;offset<employeeIds.length;offset+=500){
+      const batch=employeeIds.slice(offset,offset+500);
+      calls.push(supabaseClient.rpc("get_attendance_period_approval_history",{
+        p_employee_ids:batch,p_activity_from:recentFrom,p_activity_to:upper,p_limit:200
+      }));
+      calls.push(supabaseClient.rpc("get_attendance_period_approval_history",{
+        p_employee_ids:batch,p_activity_from:archiveFrom,p_activity_to:recentFrom,p_limit:200
+      }));
+    }
+    const results=await Promise.all(calls),errors=results.map(result=>result.error).filter(Boolean);
+    if(errors.length) throw errors[0];
+    if(generation!==coreRealtime.generation || request!==attendanceApprovalHistoryState.request) return false;
+    const byId=new Map();
+    results.flatMap(result=>Array.isArray(result.data)?result.data:[]).map(normalizeAttendanceApprovalHistoryRow).filter(Boolean)
+      .forEach(row=>byId.set(row.auditId,row));
+    attendanceApprovalHistoryState.rows=[...byId.values()].sort((a,b)=>new Date(b.createdAt)-new Date(a.createdAt)||b.auditId.localeCompare(a.auditId));
+    attendanceApprovalHistoryState.loaded=true;return true;
+  })().catch(error=>{
+    if(generation===coreRealtime.generation && request===attendanceApprovalHistoryState.request){
+      console.error("Attendance approval history error:",error);
+      attendanceApprovalHistoryState.rows=[];attendanceApprovalHistoryState.loaded=false;attendanceApprovalHistoryState.error=error;
+    }
+    return false;
+  }).finally(()=>{
+    if(request===attendanceApprovalHistoryState.request){
+      attendanceApprovalHistoryState.loading=false;attendanceApprovalHistoryState.promise=null;
+      if(renderAfter && route.name==="admin-timesheets") scheduleRealtimeRender();
+    }
+  });
+  attendanceApprovalHistoryState.promise=work;
+  return work;
+}
+function buildAttendanceActivityPeriods(historyRows,visibleEmployees,attendanceRows,cutoffMs=attendanceApprovalHistoryState.cutoffMs||attendanceApprovalHistoryCutoff()){
+  const employeeById=new Map(visibleEmployees.map((employee,index)=>[employee.id,{employee,index}])),groups=new Map();
+  historyRows.forEach(activity=>{
+    const visible=employeeById.get(activity.employeeId);
+    if(!visible) return;
+    const key=`${activity.employeeId}|${activity.periodStart}`;
+    if(!groups.has(key)) groups.set(key,{key,employee:visible.employee,employeeOrder:visible.index,
+      ...attendanceReviewPeriod(activity.periodStart),activities:[]});
+    groups.get(key).activities.push(activity);
+  });
+  return [...groups.values()].map(group=>{
+    group.activities.sort((a,b)=>new Date(b.createdAt)-new Date(a.createdAt)||b.auditId.localeCompare(a.auditId));
+    const attendance=attendanceRowsInReviewPeriod(group.employee.id,group.periodStart,attendanceRows)
+      .filter(row=>row.status==="approved" && row.timeOut && !Number.isNaN(new Date(row.timeOut).getTime()))
+      .sort((a,b)=>new Date(a.timeIn)-new Date(b.timeIn));
+    return {...group,attendance,latestActivity:group.activities[0],kind:new Date(group.activities[0].createdAt).getTime()>=cutoffMs?"recent":"archive",
+      attendanceDays:new Set(attendance.map(row=>sydneyDateKey(row.timeIn))).size,
+      netMin:attendance.reduce((sum,row)=>sum+(Number.isFinite(Number(row.netMin))?Number(row.netMin):0),0)};
+  }).sort((a,b)=>new Date(b.latestActivity.createdAt)-new Date(a.latestActivity.createdAt)||a.employeeOrder-b.employeeOrder||b.periodStart.localeCompare(a.periodStart));
+}
+function attendanceActivityExpansionKey(kind,period){
+  return `attendance-${kind}:${period.employee.id}:${period.periodStart}`;
+}
+function formatSydneyApprovalTimestamp(value){
+  const date=new Date(value);
+  if(Number.isNaN(date.getTime())) return "Time not recorded";
+  return new Intl.DateTimeFormat("en-AU",{timeZone:"Australia/Sydney",day:"numeric",month:"short",year:"numeric",
+    hour:"numeric",minute:"2-digit",hour12:true}).format(date);
+}
+function attendanceRowsInReviewPeriod(employeeId,periodStart,rows=DB.attendance){
+  return rows.filter(attendance=>{
+    if(attendance.employeeId!==employeeId || !attendance.timeIn || Number.isNaN(new Date(attendance.timeIn).getTime())) return false;
+    return attendanceReviewPeriod(sydneyDateKey(attendance.timeIn)).periodStart===periodStart;
+  });
+}
+function canActorApproveAttendancePeriod(period){
+  if(!period?.employee?.id || !DB.session) return false;
+  if(DB.session.role==="Admin" || DB.session.role==="Super Admin") return true;
+  if(DB.session.role!=="Manager") return false;
+  const actor=currentEmployee();
+  return !!actor && period.employee.manager===actor.name;
+}
+function attendancePeriodApprovalReadiness(employeeId,periodStart){
+  const rows=attendanceRowsInReviewPeriod(employeeId,periodStart);
+  if(!rows.length) return {ready:false,reason:"No attendance remains in this period.",rows};
+  if(rows.some(row=>!row.timeOut || Number.isNaN(new Date(row.timeOut).getTime()))){
+    return {ready:false,reason:"This attendance period cannot be approved while an attendance session is still open.",rows};
+  }
+  if(rows.some(row=>row.status==="rejected")){
+    return {ready:false,reason:"This attendance period contains rejected attendance and cannot be approved.",rows};
+  }
+  if(rows.some(row=>row.status==null || !["draft","submitted","corrected","approved"].includes(row.status))){
+    return {ready:false,reason:"This attendance period contains attendance requiring separate review.",rows};
+  }
+  return {ready:true,reason:"",rows};
+}
+function attendancePeriodApprovalSnapshot(period,allRows){
+  return JSON.stringify({employeeId:period.employee.id,periodStart:period.periodStart,periodEndExclusive:period.periodEndExclusive,
+    rows:[...allRows].sort((a,b)=>String(a.id).localeCompare(String(b.id))).map(row=>({id:row.id,status:row.status,
+      timeIn:row.timeIn,timeOut:row.timeOut,netMin:row.netMin,updatedAt:row.updatedAt||null}))});
+}
+async function refreshAttendanceApprovalData(){
+  const generation=coreRealtime.generation,employeeId=coreRealtime.employeeId,role=coreRealtime.role;
+  if(!DB.session || !employeeId || DB.session.employeeId!==employeeId || DB.session.role!==role) throw new Error("Authenticated session changed.");
+  coreRealtime.revision++;
+  const snapshot=await fetchCoreTimeFromSupabase(employeeId,isAdminRole(role));
+  if(generation!==coreRealtime.generation || DB.session?.employeeId!==employeeId || DB.session?.role!==role) throw new Error("Authenticated session changed.");
+  Object.assign(DB,snapshot);save();
+}
+function currentAttendanceReviewPeriod(employeeId,periodStart){
+  return buildAttendanceReviewPeriods(DB.attendance,visibleEmployeeList())
+    .find(period=>period.employee.id===employeeId && period.periodStart===periodStart)||null;
+}
+function attendancePeriodCorrectionCount(period){
+  return period.attendance.reduce((total,attendance)=>{
+    const state=correctionHistoryState(attendance.id);
+    return total+(state.loaded?state.rows.length:0);
+  },0);
+}
+function approvalErrorMessage(error){
+  const message=String(error?.message||"");
+  if(/open attendance/i.test(message)) return "This attendance period cannot be approved while an attendance session is still open.";
+  if(/rejected/i.test(message)) return "This attendance period contains rejected attendance and cannot be approved.";
+  if(/unsupported/i.test(message)) return "This attendance period contains attendance requiring separate review.";
+  if(/not authorized|permission|profile/i.test(message)) return "You are no longer authorized to approve this attendance period.";
+  if(/no attendance|empty/i.test(message)) return "No attendance remained awaiting approval.";
+  return "Attendance period could not be approved. Refresh and try again.";
+}
+async function approveAttendancePeriodFromModal(wrap,period,snapshotText){
+  const key=attendancePeriodApprovalKey(period.employee.id,period.periodStart),state=attendancePeriodApprovalState.get(key);
+  if(state?.stage==="approving" || state?.stage==="refresh-required") return;
+  const approveButton=wrap.querySelector("#confirmAttendancePeriodApproval"),cancelButton=wrap.querySelector("#cancelAttendancePeriodApproval");
+  const message=wrap.querySelector("#attendancePeriodApprovalMessage");
+  attendancePeriodApprovalState.set(key,{stage:"approving"});
+  approveButton.disabled=true;cancelButton.disabled=true;approveButton.textContent="Approving…";message.style.display="none";
+  try{
+    await refreshAttendanceApprovalData();
+  }catch(error){
+    console.error("Attendance approval preflight refresh error:",error);
+    if(!attendancePeriodApprovalState.has(key)){wrap.remove();return;}
+    attendancePeriodApprovalState.delete(key);approveButton.disabled=false;cancelButton.disabled=false;approveButton.textContent="Approve Period";
+    message.textContent="Current attendance could not be refreshed. Check your connection and try again.";message.style.display="block";return;
+  }
+  const refreshedPeriod=currentAttendanceReviewPeriod(period.employee.id,period.periodStart);
+  const readiness=attendancePeriodApprovalReadiness(period.employee.id,period.periodStart);
+  if(!refreshedPeriod || !readiness.ready){
+    attendancePeriodApprovalState.delete(key);wrap.remove();render();toast(readiness.reason||"No attendance remained awaiting approval.");return;
+  }
+  if(attendancePeriodApprovalSnapshot(refreshedPeriod,readiness.rows)!==snapshotText){
+    attendancePeriodApprovalState.delete(key);wrap.remove();toast("Attendance changed. Review the refreshed period before approving.");
+    await openAttendancePeriodApproval(refreshedPeriod.employee.id,refreshedPeriod.periodStart);return;
+  }
+  let data=null,error=null;
+  try{
+    ({data,error}=await supabaseClient.rpc("approve_timesheet_period",{
+      p_employee_id:period.employee.id,p_period_start:period.periodStart,p_period_end_exclusive:period.periodEndExclusive
+    }));
+  }catch(rpcError){error=rpcError;}
+  if(error){
+    console.error("Attendance period approval RPC error:",error);
+    if(!attendancePeriodApprovalState.has(key)){wrap.remove();return;}
+    attendancePeriodApprovalState.delete(key);approveButton.disabled=false;cancelButton.disabled=false;approveButton.textContent="Approve Period";
+    message.textContent=approvalErrorMessage(error);message.style.display="block";return;
+  }
+  try{
+    await refreshAttendanceApprovalData();
+  }catch(refreshError){
+    console.error("Attendance approval refresh error:",refreshError);
+    if(!attendancePeriodApprovalState.has(key)){wrap.remove();return;}
+    attendancePeriodApprovalState.set(key,{stage:"refresh-required"});
+    approveButton.textContent="Approval Saved";cancelButton.disabled=false;cancelButton.textContent="Close";
+    message.textContent="The attendance period was approved, but current data could not be refreshed. Reload before taking another approval action.";
+    message.style.display="block";return;
+  }
+  await fetchAttendanceApprovalHistory({force:true,renderAfter:false});
+  attendancePeriodApprovalState.delete(key);wrap.remove();render();
+  if(data?.approval_performed===false && Number(data?.newly_approved||0)===0) toast("No attendance remained awaiting approval.");
+  else toast("Attendance period approved.");
+}
+async function openAttendancePeriodApproval(employeeId,periodStart){
+  const key=attendancePeriodApprovalKey(employeeId,periodStart);
+  if(attendancePeriodApprovalState.has(key)) return;
+  attendancePeriodApprovalState.set(key,{stage:"opening"});
+  try{
+    await refreshAttendanceApprovalData();
+  }catch(error){
+    console.error("Attendance approval refresh error:",error);
+    if(!attendancePeriodApprovalState.has(key)) return;
+    attendancePeriodApprovalState.delete(key);
+    toast("Current attendance could not be refreshed. Check your connection and try again.");return;
+  }
+  const period=currentAttendanceReviewPeriod(employeeId,periodStart);
+  if(!period || !canActorApproveAttendancePeriod(period)){
+    attendancePeriodApprovalState.delete(key);render();toast(period?"You are not authorized to approve this attendance period.":"No attendance remained awaiting approval.");return;
+  }
+  const readiness=attendancePeriodApprovalReadiness(employeeId,periodStart);
+  if(!readiness.ready){attendancePeriodApprovalState.delete(key);render();toast(readiness.reason);return;}
+  await fetchAttendanceCorrectionHistory(period.attendance.map(attendance=>attendance.id));
+  const correctionCount=attendancePeriodCorrectionCount(period),snapshotText=attendancePeriodApprovalSnapshot(period,readiness.rows);
+  attendancePeriodApprovalState.set(key,{stage:"confirming"});
+  const wrap=document.createElement("div");wrap.className="modal-bg";
+  wrap.innerHTML=`<div class="modal attendance-approval-modal" role="dialog" aria-modal="true" aria-labelledby="attendancePeriodApprovalTitle">
+    <div class="h2" id="attendancePeriodApprovalTitle">Approve Attendance Period</div>
+    <div class="small muted" style="margin-top:4px;">Approve this employee's completed attendance for the full review period.</div>
+    <div class="attendance-approval-facts">
+      <div class="attendance-approval-fact"><span>Employee</span><b>${escapeHtml(period.employee.name)}</b></div>
+      <div class="attendance-approval-fact"><span>Period</span><b>${formatReviewPeriodDate(period.periodStart)} – ${formatReviewPeriodDate(period.displayEnd,true)}</b></div>
+      <div class="attendance-approval-fact"><span>Attendance Days</span><b>${period.attendanceDays}</b></div>
+      <div class="attendance-approval-fact"><span>Attendance Sessions</span><b>${period.attendance.length}</b></div>
+      <div class="attendance-approval-fact"><span>Net Hours</span><b>${hm(period.netMin)}</b></div>
+      ${correctionCount?`<div class="attendance-approval-fact"><span>Corrections</span><b>${correctionCount}</b></div>`:""}
+    </div>
+    <div class="small" id="attendancePeriodApprovalMessage" role="alert" style="display:none;color:var(--danger);margin-bottom:10px;"></div>
+    <button class="btn btn-ok btn-block btn-lg" id="confirmAttendancePeriodApproval">Approve Period</button>
+    <button class="btn btn-ghost btn-block" style="margin-top:8px;" id="cancelAttendancePeriodApproval">Cancel</button>
+  </div>`;
+  document.body.appendChild(wrap);
+  wrap.querySelector("#cancelAttendancePeriodApproval").onclick=()=>{
+    if(attendancePeriodApprovalState.get(key)?.stage==="approving") return;
+    if(attendancePeriodApprovalState.get(key)?.stage!=="refresh-required") attendancePeriodApprovalState.delete(key);
+    wrap.remove();
+  };
+  wrap.querySelector("#confirmAttendancePeriodApproval").onclick=()=>approveAttendancePeriodFromModal(wrap,period,snapshotText);
+  wrap.querySelector("#confirmAttendancePeriodApproval").focus();
 }
 function formatReviewPeriodDate(dateKey,includeYear=false){
   return new Date(`${dateKey}T12:00:00Z`).toLocaleDateString("en-AU",{
@@ -1811,7 +2085,7 @@ function renderAttendanceProjects(attendance,jobEntries){
     </div>
   </details>`;
 }
-function renderAttendanceReviewDetails(period,jobEntriesByAttendance){
+function renderAttendanceReviewDetails(period,jobEntriesByAttendance,{readOnly=false}={}){
   return `<div class="attendance-date-grid">${attendanceReviewDateGroups(period).map(dateGroup=>`<section class="attendance-date-card">
     <div class="attendance-date-header">
       <div class="attendance-date-heading">${formatAttendanceReviewDate(dateGroup.dateKey)}</div>
@@ -1821,7 +2095,7 @@ function renderAttendanceReviewDetails(period,jobEntriesByAttendance){
       ${dateGroup.attendance.map((attendance,index)=>{
         const breaks=attendanceBreakGroups(attendance,DB.breaks);
         const multiple=dateGroup.attendance.length>1;
-        const correction=attendanceCorrectionReadiness(attendance);
+        const correction=readOnly?{canEdit:false,reason:""}:attendanceCorrectionReadiness(attendance);
         const historyIndicator=attendanceCorrectionHistoryIndicator(attendance);
         return `<div class="attendance-session">
           ${multiple?`<div class="attendance-session-heading">Attendance Session ${index+1}</div>`:""}
@@ -1837,6 +2111,7 @@ function renderAttendanceReviewDetails(period,jobEntriesByAttendance){
           ${multiple?`<div class="attendance-session-net"><span class="muted">Net:</span><b>${Number.isFinite(Number(attendance.netMin))?hm(Number(attendance.netMin)):"—"}</b></div>`:""}
           ${renderAttendanceProjects(attendance,jobEntriesByAttendance.get(attendance.id)||[])}
           ${correction.canEdit||historyIndicator?`<div class="attendance-session-actions">${historyIndicator}${correction.canEdit?`<button class="btn btn-ghost btn-sm" data-edit-attendance="${escapeHtml(attendance.id)}">Edit Attendance</button>`:""}</div>`:""}
+          <div data-attendance-correction-history="${escapeHtml(attendance.id)}">${renderAttendanceCorrectionHistory(attendance.id)}</div>
           ${!correction.canEdit&&correction.reason?`<div class="attendance-correction-note">${escapeHtml(correction.reason)}</div>`:""}
         </div>`;
       }).join("")}
@@ -3968,14 +4243,46 @@ function screenAdminLive(){
   </div>`;
 }
 
+function renderAttendanceActivitySection(title,periods,kind,jobEntriesByAttendance){
+  if(attendanceApprovalHistoryState.loading && !attendanceApprovalHistoryState.loaded){
+    return `<div class="h3" style="margin:20px 0 10px;">${title}</div><div class="empty small">Loading attendance activity&hellip;</div>`;
+  }
+  if(attendanceApprovalHistoryState.error && !attendanceApprovalHistoryState.loaded){
+    return `<div class="h3" style="margin:20px 0 10px;">${title}</div><div class="empty small">Unable to load attendance activity.<br><button class="btn btn-ghost btn-sm" style="margin-top:8px;" data-retry-attendance-activity>Retry</button></div>`;
+  }
+  return `<div class="h3" style="margin:20px 0 10px;">${title} (${periods.length})</div>
+    ${periods.map(period=>{
+      const correctionCount=attendancePeriodCorrectionCount(period);
+      const statusLabel=period.attendance.length?`Approved${correctionCount?` &middot; ${correctionCount} ${correctionCount===1?"correction":"corrections"}`:""}`:"Attendance unavailable";
+      const expansionKey=attendanceActivityExpansionKey(kind,period),latest=period.latestActivity;
+      return `<div class="card attendance-review-period">
+        <div class="attendance-period-header">
+          <div><div class="attendance-period-name">${escapeHtml(period.employee.name)}</div><div class="tiny muted" style="margin-top:3px;">${formatReviewPeriodDate(period.periodStart)} &ndash; ${formatReviewPeriodDate(period.displayEnd,true)}</div></div>
+          <div class="attendance-period-total"><span>Net Hours</span><b>${hm(period.netMin)}</b></div>
+        </div>
+        <div class="small" style="margin-top:8px;"><b>${statusLabel}</b></div>
+        <div class="tiny muted" style="margin-top:4px;overflow-wrap:anywhere;">Approved by ${escapeHtml(latest.actor||"Actor not recorded")} &middot; ${escapeHtml(formatSydneyApprovalTimestamp(latest.createdAt))}</div>
+        <div class="tiny muted" style="margin-top:3px;">${period.attendanceDays} attendance ${period.attendanceDays===1?"day":"days"} &middot; ${period.attendance.length} ${period.attendance.length===1?"session":"sessions"}</div>
+        ${period.activities.length>1?`<div class="tiny muted" style="margin-top:7px;">${period.activities.length} approval events for this period</div><div class="tiny muted" style="margin-top:3px;">${period.activities.slice(1).map(activity=>`Earlier: ${escapeHtml(activity.actor||"Actor not recorded")} &middot; ${escapeHtml(formatSydneyApprovalTimestamp(activity.createdAt))}`).join("<br>")}</div>`:""}
+        <details class="attendance-period-details" data-attendance-review-key="${escapeHtml(expansionKey)}" ${attendanceReviewExpandedPeriods.has(expansionKey)?"open":""}>
+          <summary class="link">Details</summary>
+          <div style="margin-top:10px;border-top:1px solid var(--line);">
+            ${period.attendance.length?renderAttendanceReviewDetails(period,jobEntriesByAttendance,{readOnly:true}):`<div class="empty small" style="margin-top:10px;">Authoritative attendance is unavailable for this approval activity.</div>`}
+          </div>
+        </details>
+      </div>`;
+    }).join("")}
+    ${periods.length===0?`<div class="empty small">No ${kind==="recent"?"recent":"archived"} attendance activity.</div>`:""}`;
+}
+
 function screenAdminTimesheets(){
-  const reviewPeriods=buildAttendanceReviewPeriods(DB.attendance,visibleEmployeeList());
-  const jobEntriesByAttendance=assignJobEntriesToAttendance(reviewPeriods.flatMap(period=>period.attendance),DB.jobTimeEntries||[]);
+  const visibleEmployees=visibleEmployeeList();
+  const reviewPeriods=buildAttendanceReviewPeriods(DB.attendance,visibleEmployees);
+  const activityPeriods=buildAttendanceActivityPeriods(attendanceApprovalHistoryState.rows,attendanceApprovalHistoryVisibleEmployees(),DB.attendance);
+  const recentPeriods=activityPeriods.filter(period=>period.kind==="recent"),archivePeriods=activityPeriods.filter(period=>period.kind==="archive");
+  const displayedAttendance=[...reviewPeriods,...activityPeriods].flatMap(period=>period.attendance);
+  const jobEntriesByAttendance=assignJobEntriesToAttendance([...new Map(displayedAttendance.map(row=>[row.id,row])).values()],DB.jobTimeEntries||[]);
   const rejected = DB.attendance.filter(a=>a.status==="rejected");
-  const approved=DB.attendance
-  .filter(a=>a.status==="approved"||a.status==="corrected")
-  .sort((a,b)=>new Date(b.updatedAt||b.timeOut||b.timeIn)-new Date(a.updatedAt||a.timeOut||a.timeIn))
-  .slice(0,15);
   const corrections = DB.correctionRequests.filter(r=>r.status==="pending");
   return `
   <div class="topbar"><div class="h2">Timesheet Approval</div></div>
@@ -4007,6 +4314,7 @@ function screenAdminTimesheets(){
         <div class="attendance-period-total"><span>Net Hours</span><b>${hm(period.netMin)}</b></div>
       </div>
       <div class="small muted" style="margin-top:7px;">${period.attendanceDays} attendance ${period.attendanceDays===1?"day":"days"}</div>
+      ${canActorApproveAttendancePeriod(period)?`<div class="attendance-period-actions"><span class="small muted">Approve this employee's completed Friday–Thursday attendance.</span><button class="btn btn-ok btn-sm" data-approve-attendance-period="${escapeHtml(period.employee.id)}" data-period-start="${escapeHtml(period.periodStart)}" ${attendancePeriodApprovalState.has(attendancePeriodApprovalKey(period.employee.id,period.periodStart))?"disabled":""}>${attendancePeriodApprovalState.get(attendancePeriodApprovalKey(period.employee.id,period.periodStart))?.stage==="approving"?"Approving…":"Approve Period"}</button></div>`:""}
       <details class="attendance-period-details" data-attendance-review-key="${escapeHtml(attendanceReviewExpansionKey(period))}" ${attendanceReviewExpandedPeriods.has(attendanceReviewExpansionKey(period))?"open":""}>
         <summary class="link">Details</summary>
         <div style="margin-top:10px;border-top:1px solid var(--line);">
@@ -4022,11 +4330,8 @@ function screenAdminTimesheets(){
       <div class="tiny muted">${fmtDate(a.timeIn)} · ${escapeHtml(jobName(a.jobId))} · ${a.rejectReason?escapeHtml(a.rejectReason):''}</div>
     </div>`).join("")}`:""}
 
-    <div class="h3" style="margin:20px 0 10px;">RECENTLY APPROVED</div>
-    ${approved.map(a=>`<div class="card card-tight" style="margin-bottom:8px;cursor:pointer;" onclick="go('admin-att-detail',{id:'${a.id}'})">
-      <div class="row-between small"><b>${escapeHtml(empName(a.employeeId))}</b>${attStatusPill(a.status)}</div>
-      <div class="tiny muted">${fmtDate(a.timeIn)} · ${escapeHtml(jobName(a.jobId))} · ${hm(a.netMin)}</div>
-    </div>`).join("")}
+    ${renderAttendanceActivitySection("RECENT ATTENDANCE ACTIVITY",recentPeriods,"recent",jobEntriesByAttendance)}
+    ${renderAttendanceActivitySection("ARCHIVED ATTENDANCE ACTIVITY",archivePeriods,"archive",jobEntriesByAttendance)}
   </div>`;
 }
 
@@ -4090,7 +4395,7 @@ function payrollRows(fromDate,toDate){
   return emps.map(emp=>{
     const recs=DB.attendance.filter(a=>
       a.employeeId===emp.id &&
-      (a.status==="approved"||a.status==="corrected") &&
+      a.status==="approved" &&
       a.timeOut &&
       new Date(a.timeIn)>=from &&
       new Date(a.timeIn)<=to
@@ -4153,7 +4458,7 @@ function screenAdminPayroll(){
       </div>
       <button class="btn btn-accent btn-block" id="runPayroll">Generate Payroll Summary</button>
     </div>
-    <div class="tiny muted" style="margin-bottom:14px;">Only <b>approved</b> and <b>corrected</b> timesheets are included — draft, submitted, rejected and open shifts are excluded until approved.</div>
+    <div class="tiny muted" style="margin-bottom:14px;">Only <b>approved</b> attendance is included — draft, submitted, corrected, rejected and open shifts are excluded until period approval.</div>
     <div id="payrollResults"></div>
   </div>`;
 }
@@ -4307,9 +4612,12 @@ function screenAdminSettings(){
 function bindAdminScreen(){
   const $ = id=>document.getElementById(id);
   if(route.name==="admin-timesheets"){
-    const visibleAttendanceIds=buildAttendanceReviewPeriods(DB.attendance,visibleEmployeeList())
-      .flatMap(period=>period.attendance.map(attendance=>attendance.id));
+    const visibleEmployees=visibleEmployeeList();
+    const visiblePeriods=[...buildAttendanceReviewPeriods(DB.attendance,visibleEmployees),
+      ...buildAttendanceActivityPeriods(attendanceApprovalHistoryState.rows,attendanceApprovalHistoryVisibleEmployees(),DB.attendance)];
+    const visibleAttendanceIds=visiblePeriods.flatMap(period=>period.attendance.map(attendance=>attendance.id));
     void fetchAttendanceCorrectionHistory(visibleAttendanceIds);
+    void fetchAttendanceApprovalHistory();
   }
   document.querySelectorAll("details[data-attendance-review-key]").forEach(details=>{
     details.ontoggle=()=>{
@@ -4331,6 +4639,15 @@ function bindAdminScreen(){
   });
   document.querySelectorAll("[data-edit-attendance]").forEach(button=>{
     button.onclick=()=>openAttendanceCorrectionEditor(button.dataset.editAttendance);
+  });
+  document.querySelectorAll("[data-approve-attendance-period]").forEach(button=>{
+    button.onclick=()=>openAttendancePeriodApproval(button.dataset.approveAttendancePeriod,button.dataset.periodStart);
+  });
+  document.querySelectorAll("[data-retry-attendance-activity]").forEach(button=>{
+    button.onclick=async()=>{
+      button.disabled=true;button.textContent="Retrying...";
+      await fetchAttendanceApprovalHistory({force:true});
+    };
   });
   document.querySelectorAll("[data-retry-correction-history]").forEach(button=>{
     button.onclick=async()=>{
