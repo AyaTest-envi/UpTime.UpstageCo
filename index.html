@@ -293,8 +293,8 @@ function breakTakenFromRows(empId,descriptor,dateKey,attendanceRows,breakRows){
 }
 function currentBreakEligibility(empId,attendanceRows=DB.attendance,breakRows=DB.breaks){
   const descriptor=currentBreakDescriptor(),dateKey=sydneyDateKey();
-  const att=attendanceRows.find(a=>a.employeeId===empId&&!a.timeOut);
-  const openBreak=att&&breakRows.find(b=>b.attendanceId===att.id&&!b.end);
+  const att=openAttendanceFromRows(attendanceRows,empId);
+  const openBreak=att&&openBreakFromRows(breakRows,att.id);
   const taken=descriptor?breakTakenFromRows(empId,descriptor,dateKey,attendanceRows,breakRows):false;
   return {descriptor,dateKey,att,openBreak,taken,eligible:!!(descriptor&&att&&!openBreak&&!taken)};
 }
@@ -521,7 +521,7 @@ function fourPmSydneyISO(){
 }
 function offerFourPmDecision(emp,att,cutoff){
   const key=`${att.id}|${cutoff.today}`;
-  const activeJob=(DB.jobTimeEntries||[]).find(e=>e.employeeId===emp.id&&!e.endTime);
+  const activeJob=empOpenJobTimeEntry(emp.id);
   if(fourPmDecisionOffer.key===key){showFourPmReminder(emp,att,activeJob);return;}
   if(!showFourPmReminder(emp,att,activeJob)) return;
   const scheduledDeadline=new Date(fourPmSydneyISO()).getTime()+FOUR_PM_GRACE_MINUTES*60*1000;
@@ -540,7 +540,7 @@ function invalidateStaleFourPmReminder(){
 }
 async function autoFourPmCutoff(emp,att){
   const cutoffISO=fourPmSydneyISO();
-  const activeJob=(DB.jobTimeEntries||[]).find(e=>e.employeeId===emp.id&&!e.endTime);
+  const activeJob=empOpenJobTimeEntry(emp.id);
 
   if(activeJob){
     const ok=await closeJobAt(activeJob,cutoffISO,"automatic-4pm-cutoff");
@@ -1060,7 +1060,7 @@ function renderRealtimeIfSafe(){
      jobsRealtime.dirty || jobActionInProgress) return;
   if(document.querySelector(".modal-bg")) return;
   const readOnlyJobDetail=route.name==="admin-job-detail" && DB.jobs.find(j=>j.id===route.id)?.status==="Completed";
-  if(readOnlyJobDetail || ["emp-home","history","timesheet","worklog","admin-dashboard","admin-live","admin-timesheets","admin-jobs"].includes(route.name)) render();
+  if(readOnlyJobDetail || ["emp-home","history","worklog","admin-dashboard","admin-timesheets","admin-jobs"].includes(route.name)) render();
 }
 function scheduleRealtimeRender(){
   clearTimeout(supportRealtime.renderTimer);
@@ -1273,9 +1273,9 @@ document.addEventListener("visibilitychange",()=>{
 function isAdminRole(perm){ return perm && perm!=="Employee"; }
 /* Which admin tabs each permission level can see */
 const ROLE_TAB_ACCESS = {
-  "Super Admin": ["admin-dashboard","admin-employees","admin-jobs","admin-live","admin-timesheets","admin-reports","admin-payroll","admin-notifications","admin-audit","admin-xero","admin-settings"],
-  "Admin":       ["admin-dashboard","admin-employees","admin-jobs","admin-live","admin-timesheets","admin-reports","admin-payroll","admin-notifications","admin-audit","admin-xero","admin-settings"],
-  "Manager":     ["admin-dashboard","admin-employees","admin-jobs","admin-live","admin-timesheets","admin-reports","admin-notifications"],
+  "Super Admin": ["admin-dashboard","admin-employees","admin-jobs","admin-timesheets","admin-reports","admin-payroll","admin-notifications","admin-audit","admin-xero","admin-settings"],
+  "Admin":       ["admin-dashboard","admin-employees","admin-jobs","admin-timesheets","admin-reports","admin-payroll","admin-notifications","admin-audit","admin-xero","admin-settings"],
+  "Manager":     ["admin-dashboard","admin-employees","admin-jobs","admin-timesheets","admin-reports","admin-notifications"],
   "Payroll":     ["admin-dashboard","admin-reports","admin-payroll","admin-notifications"],
 };
 function canAccess(tab){
@@ -1284,8 +1284,8 @@ function canAccess(tab){
   return (ROLE_TAB_ACCESS[role]||[]).includes(tab);
 }
 /* Admins/managers who are also field crew (e.g. Alex, Shadelle, Julia) get a "My Time" section
-   inside their admin shell reusing the same personal clock-in/break/timesheet screens. */
-const SELF_SERVICE_ROUTES = ["emp-home","job-select","worklog","worklog-add","worklog-detail","history","timesheet","emp-att-detail"];
+   inside their admin shell reusing the same personal attendance and work-log screens. */
+const SELF_SERVICE_ROUTES = ["emp-home","job-select","worklog","worklog-add","worklog-detail","history","emp-att-detail"];
 function hasFieldAccess(){ const e = currentEmployee(); return !!(e && e.fieldRole); }
 function isFieldStaff(e){ return e.permission==="Employee" || e.permission==="Manager" || !!e.fieldRole; }
 function firstAllowedTab(role){ return (ROLE_TAB_ACCESS[role]||["admin-dashboard"])[0]; }
@@ -1389,16 +1389,37 @@ function isWide(){ return document.body.classList.contains("wide"); }
 
 /* ---------------- Derived helpers ---------------- */
 function empOpenAttendance(empId){
-  return DB.attendance.find(a=>a.employeeId===empId && !a.timeOut);
+  return openAttendanceFromRows(DB.attendance,empId);
+}
+function openAttendanceFromRows(rows,empId){
+  return rows.filter(a=>a.employeeId===empId && a.timeIn && !a.timeOut)
+    .sort((a,b)=>new Date(b.timeIn)-new Date(a.timeIn))[0];
 }
 function empOpenBreak(attId){
-  return DB.breaks.find(b=>b.attendanceId===attId && !b.end);
+  return openBreakFromRows(DB.breaks,attId);
+}
+function openBreakFromRows(rows,attId){
+  return rows.filter(b=>b.attendanceId===attId && b.start && !b.end)
+    .sort((a,b)=>new Date(b.start)-new Date(a.start))[0];
+}
+function empOpenJobTimeEntry(empId,jobId=""){
+  return (DB.jobTimeEntries||[]).filter(entry=>entry.employeeId===empId && entry.startTime && !entry.endTime && (!jobId || entry.jobId===jobId))
+    .sort((a,b)=>new Date(b.startTime)-new Date(a.startTime))[0];
+}
+function employeeLiveState(empId){
+  const attendance=empOpenAttendance(empId);
+  if(!attendance) return {status:"off",kind:"off",label:"Off",attendance:null,activeBreak:null,activeJobEntry:null};
+  const activeBreak=empOpenBreak(attendance.id);
+  const activeJobEntry=empOpenJobTimeEntry(empId);
+  if(activeBreak){
+    const isLunch=breakDescriptorForType(activeBreak.type)?.key==="lunch";
+    return {status:"break",kind:isLunch?"lunch":"break",label:isLunch?"On Lunch":"On Break",attendance,activeBreak,activeJobEntry};
+  }
+  const overtime=!!attendance.overtimeConfirmedAt;
+  return {status:"working",kind:overtime?"overtime":"working",label:overtime?"Working Overtime":"Working",attendance,activeBreak:null,activeJobEntry};
 }
 function empStatus(empId){
-  const att = empOpenAttendance(empId);
-  if(!att) return "off";
-  if(empOpenBreak(att.id)) return "break";
-  return "working";
+  return employeeLiveState(empId).status;
 }
 function jobName(id){ const j=DB.jobs.find(j=>j.id===id); return j? j.name : "—"; }
 function empName(id){ const e=DB.employees.find(e=>e.id===id); return e? e.name : "—"; }
@@ -2835,15 +2856,14 @@ function renderEmployeeShell(){
     "worklog-add": screenWorklogAdd,
     "worklog-detail": screenWorklogDetail,
     "history": screenHistory,
-    "timesheet": screenTimesheet,
     "emp-att-detail": screenEmpAttDetail,
     "profile": screenProfile,
     "privacy": screenPrivacy,
   })[route.name]?.() || screenEmpHome();
 
-  const nav = ["emp-home","worklog","history","timesheet","profile"];
-  const icons = {"emp-home":"🏠","worklog":"🛠️","history":"📋","timesheet":"🧾","profile":"👤"};
-  const labels = {"emp-home":"Home","worklog":"Work Log","history":"History","timesheet":"Timesheet","profile":"Profile"};
+  const nav = ["emp-home","worklog","history","profile"];
+  const icons = {"emp-home":"🏠","worklog":"🛠️","history":"📋","profile":"👤"};
+  const labels = {"emp-home":"Home","worklog":"Work Log","history":"History","profile":"Profile"};
 
   return `
     <div class="topbrand"><div style="background:#000;border-radius:6px;padding:3px 6px;display:flex;align-items:center;"><img src="${LOGO_DATA_URL}" alt="Upstage Co" style="width:22px;height:auto;display:block;"></div><b class="small">Upstage Co</b></div>
@@ -2872,8 +2892,8 @@ function attStatusPill(status){
     corrected: '<span class="pill pill-warn">Corrected</span>',
   })[status] || `<span class="pill pill-muted">${status}</span>`;
 }
-function statusPill(st,activeBreakLabel="On Break"){
-  if(st==="working") return `<span class="pill pill-ok"><span class="dot dot-ok"></span> Working</span>`;
+function statusPill(st,activeBreakLabel="On Break",workingLabel="Working"){
+  if(st==="working") return `<span class="pill pill-ok"><span class="dot dot-ok"></span> ${workingLabel}</span>`;
   if(st==="break") return `<span class="pill pill-warn" style="font-size:14px;"><span class="dot dot-warn"></span> ${activeBreakLabel}</span>`;
   return `<span class="pill pill-muted"><span class="dot dot-muted"></span> Not Working</span>`;
 }
@@ -2886,9 +2906,10 @@ function employeeVisibleJobs(empId,activeJobId){
 
 function screenEmpHome(){
   const emp = currentEmployee();
-  const st = empStatus(emp.id);
-  const openAtt = empOpenAttendance(emp.id);
-  const openBrk = openAtt ? empOpenBreak(openAtt.id) : null;
+  const liveState=employeeLiveState(emp.id);
+  const st = liveState.status;
+  const openAtt = liveState.attendance;
+  const openBrk = liveState.activeBreak;
   const breakEligibility=st==="working"?currentBreakEligibility(emp.id):null;
   const activeBreakDescriptor=openBrk?breakDescriptorForType(openBrk.type):null;
   const activeBreakIsLunch=activeBreakDescriptor?.key==="lunch";
@@ -2902,7 +2923,7 @@ function screenEmpHome(){
     const breaksSoFar = DB.breaks.filter(b=>b.attendanceId===openAtt.id && b.end).reduce((s,b)=> s+ (b.paid? 0 : mins(new Date(b.end)-new Date(b.start))),0);
     todayMin += Math.max(0, elapsed - breaksSoFar - (openBrk? mins(new Date()-new Date(openBrk.start)) : 0));
   }
-  const activeJobEntry=(DB.jobTimeEntries||[]).find(e=>e.employeeId===emp.id&&!e.endTime);
+  const activeJobEntry=liveState.activeJobEntry;
   const job=activeJobEntry?DB.jobs.find(j=>j.id===activeJobEntry.jobId):null;
   const visibleJobs=employeeVisibleJobs(emp.id,activeJobEntry?.jobId);
   const renderedJobs=activeJobEntry
@@ -2921,7 +2942,7 @@ function screenEmpHome(){
   const breakSecs = openBrk ? Math.floor((Date.now()-new Date(openBrk.start).getTime())/1000) : 0;
 
   return `
-  <div class="topbar"><div class="h2">${greeting}, ${escapeHtml(firstName)}</div><div class="row gap-8" style="align-items:center;justify-content:center;">${st==="break"?`<span id="statusTimer" data-since="${openBrk.start}" style="font-family:ui-monospace,Menlo,Consolas,monospace;font-size:15px;font-weight:700;color:var(--warn);">${hmsLive(breakSecs)}</span>`:""}${statusPill(st,activeBreakLabel)}</div></div>
+  <div class="topbar"><div class="h2">${greeting}, ${escapeHtml(firstName)}</div><div class="row gap-8" style="align-items:center;justify-content:center;">${st==="break"?`<span id="statusTimer" data-since="${openBrk.start}" style="font-family:ui-monospace,Menlo,Consolas,monospace;font-size:15px;font-weight:700;color:var(--warn);">${hmsLive(breakSecs)}</span>`:""}${statusPill(st,activeBreakLabel,liveState.label)}</div></div>
   <div class="content">
     <div class="card" style="margin-bottom:14px;">
       <div class="row-between">
@@ -2991,7 +3012,7 @@ ${!jobRecapGroups.length&&!todaysLogs.length&&!activeJobEntry?`<div class="empty
 
 function screenJobSelect(){
   const emp=currentEmployee();
-  const active=(DB.jobTimeEntries||[]).find(e=>e.employeeId===emp.id&&!e.endTime);
+  const active=empOpenJobTimeEntry(emp.id);
   const jobs=employeeVisibleJobs(emp.id,active?.jobId);
 
   return `
@@ -3080,7 +3101,7 @@ async function startJobTracking(jobId){
   }
   let active=state.active;
   const job=DB.jobs.find(j=>j.id===jobId)||state.job;
-  const openAtt=DB.attendance.find(a=>a.employeeId===emp.id&&!a.timeOut);
+  const openAtt=empOpenAttendance(emp.id);
   const ts=new Date(),iso=ts.toISOString();
 
   if(active&&active.jobId!==jobId){
@@ -3200,7 +3221,7 @@ async function closeCurrentJobAt(active,iso){
 async function endJobTracking(jobId){
   const emp=currentEmployee(),att=empOpenAttendance(emp.id);
   if(att&&empOpenBreak(att.id)){toast("End your current break before ending a job.");return;}
-  const active=(DB.jobTimeEntries||[]).find(e=>e.employeeId===emp.id&&e.jobId===jobId&&!e.endTime);
+  const active=empOpenJobTimeEntry(emp.id,jobId);
   if(!active){toast("No active job found.");return;}
 
   const iso=nowISO();
@@ -3466,7 +3487,7 @@ async function doTimeOut(){
   const emp = currentEmployee(); const att = empOpenAttendance(emp.id);
   const openBrk = empOpenBreak(att.id);
   if(openBrk){ toast("End your current break before timing out."); return; }
-  const activeJob=(DB.jobTimeEntries||[]).find(e=>e.employeeId===emp.id&&!e.endTime);
+  const activeJob=empOpenJobTimeEntry(emp.id);
 const timeOutISO=nowISO();
 
 if(activeJob){
@@ -3706,42 +3727,6 @@ function screenEmpAttDetail(){
   </div>`;
 }
 
-function screenTimesheet(){
-  const emp = currentEmployee();
-  const weekOffset = route.weekOffset||0;
-  const weekStart = new Date(startOfWeek()); weekStart.setDate(weekStart.getDate()+weekOffset*7);
-  const week = empRecordsForWeek(emp.id, weekStart).filter(a=>a.timeOut);
-  const totalNet = week.reduce((s,a)=>s+(a.netMin||0),0);
-  const weekEnd = new Date(weekStart); weekEnd.setDate(weekEnd.getDate()+6);
-  const weekLabel = weekOffset===0? "This week" : weekOffset===-1? "Last week" : `${fmtDateShort(weekStart)} – ${fmtDateShort(weekEnd)}`;
-  return `
-  <div class="topbar"><div class="h2">My Timesheet</div></div>
-  <div class="content">
-    <div class="row-between" style="margin-bottom:10px;">
-      <button class="btn btn-ghost btn-sm" id="tsPrevWeek">← Previous week</button>
-      <span class="small muted">${weekLabel}</span>
-      <button class="btn btn-ghost btn-sm" id="tsNextWeek" ${weekOffset>=0?'disabled':''}>Next week →</button>
-    </div>
-    <div class="card" style="margin-bottom:16px;">
-      <div class="muted small">Week of ${fmtDateShort(weekStart)}</div>
-      <div class="flowbig" style="margin:6px 0;">${hm(totalNet)}</div>
-      <div class="small muted">Read-only attendance history</div>
-    </div>
-    <div class="row-between" style="margin-bottom:8px;"><div class="h3">ALL SHIFTS — ${weekLabel.toUpperCase()}</div>${week.length>1?`<span class="tiny muted">Bulk view — ${week.length} days</span>`:""}</div>
-    <table>
-      <tr><th>Date</th><th>Job</th><th>In</th><th>Out</th><th>Break</th><th>Total</th><th>Status</th></tr>
-      ${week.map(a=>`<tr data-emp-att="${a.id}" style="cursor:pointer;">
-        <td>${fmtDateShort(a.timeIn)}</td><td>${escapeHtml(jobName(a.jobId))}</td>
-        <td>${fmtTime(a.timeIn)}</td><td>${a.timeOut?fmtTime(a.timeOut):'—'}</td>
-        <td>${hm((a.unpaidBreakMin||0)+(a.paidBreakMin||0))}</td>
-        <td>${a.netMin!=null?hm(a.netMin):'—'}</td>
-        <td>${attStatusPill(a.status)}</td>
-      </tr>`).join("")}
-      ${week.length===0?`<tr><td colspan="7" class="muted" style="text-align:center;padding:20px;">No completed shifts this week</td></tr>`:""}
-    </table>
-    <div class="tiny muted" style="margin-top:14px;">Select a shift to view its recorded attendance and break details.</div>
-  </div>`;
-}
 function screenProfile(){
   const emp = currentEmployee();
   return `
@@ -3799,8 +3784,6 @@ function bindScreen(){
   };
   if($("back") && route.name==="privacy" && !isAdminRole(DB.session?.role)) $("back").onclick = ()=> go("profile");
   document.querySelectorAll("[data-emp-att]").forEach(el=> el.onclick = ()=> go("emp-att-detail",{id:el.dataset.empAtt}));
-  if($("tsPrevWeek")) $("tsPrevWeek").onclick = ()=> go("timesheet",{weekOffset:(route.weekOffset||0)-1});
-  if($("tsNextWeek")) $("tsNextWeek").onclick = ()=> { if((route.weekOffset||0)<0) go("timesheet",{weekOffset:(route.weekOffset||0)+1}); };
   if($("btnTimeIn")) $("btnTimeIn").onclick = ()=> go("job-select");
   document.querySelectorAll("[data-job]").forEach(b=> b.onclick = ()=> doTimeIn(b.dataset.job));
   if($("btnStartBreak")) $("btnStartBreak").onclick = ()=>doStartBreak();
@@ -3958,7 +3941,6 @@ function renderAdminShell(){
     ["admin-dashboard","📊","Dashboard"],
     ["admin-employees","👥","Employees"],
     ["admin-jobs","🧰","Jobs"],
-    ["admin-live","🟢","Live"],
     ["admin-timesheets","🧾","Timesheets"],
     ["admin-reports","📈","Reports"],
     ["admin-payroll","💵","Payroll"],
@@ -3983,7 +3965,6 @@ function renderAdminShell(){
     "admin-employee-detail": screenAdminEmployeeDetail,
     "admin-jobs": screenAdminJobs,
     "admin-job-detail": screenAdminJobDetail,
-    "admin-live": screenAdminLive,
     "admin-att-detail": screenAdminAttDetail,
     "admin-timesheets": screenAdminTimesheets,
     "admin-reports": screenAdminReports,
@@ -3999,7 +3980,6 @@ function renderAdminShell(){
     "worklog-add": screenWorklogAdd,
     "worklog-detail": screenWorklogDetail,
     "history": screenHistory,
-    "timesheet": screenTimesheet,
     "emp-att-detail": screenEmpAttDetail,
   })[route.name] || screenAdminDash;
 
@@ -4096,15 +4076,14 @@ function screenAdminDash(){
       ${jobsToday.length===0?`<tr><td colspan="3" class="muted" style="text-align:center;padding:16px;">No activity logged yet today</td></tr>`:""}
     </table>
 
-    <div class="row-between" style="margin-bottom:10px;"><div class="h3">LIVE EMPLOYEE STATUS</div><a class="link small" data-nav="admin-live">View all</a></div>
+    <div class="h3" style="margin-bottom:10px;">LIVE EMPLOYEE STATUS</div>
     <table>
       <tr><th>Employee</th><th>Status</th><th>Job</th><th>Time in</th><th>Location</th></tr>
-      ${DB.employees.filter(e=>e.status==="active" && isFieldStaff(e)).map(e=>{
-        const st=empStatus(e.id),att=empOpenAttendance(e.id);
-        const activeJobEntry=(DB.jobTimeEntries||[]).find(x=>x.employeeId===e.id&&!x.endTime);
+      ${visibleEmployeeList().filter(e=>e.status==="active").map(e=>{
+        const live=employeeLiveState(e.id),att=live.attendance,activeJobEntry=live.activeJobEntry;
         return `<tr>
           <td>${escapeHtml(e.name)}</td>
-          <td>${st==='working'?'<span class="pill pill-ok">Working</span>':st==='break'?'<span class="pill pill-warn">Break</span>':'<span class="pill pill-muted">Off</span>'}</td>
+          <td>${live.status==='working'?`<span class="pill pill-ok">${live.label}</span>`:live.status==='break'?`<span class="pill pill-warn">${live.label}</span>`:'<span class="pill pill-muted">Off</span>'}</td>
           <td>${activeJobEntry?escapeHtml(jobName(activeJobEntry.jobId)):'—'}</td>
           <td>${att?fmtTime(att.timeIn):'—'}</td>
           <td class="tiny">${att?escapeHtml((att.gpsIn?.address||'').split(",").slice(0,2).join(","))||'-':'-'}</td>
@@ -4146,7 +4125,7 @@ function screenAdminEmployeeDetail(){
   const e = DB.employees.find(x=>x.id===route.id);
   const recs = DB.attendance.filter(a=>a.employeeId===e.id).sort((a,b)=>new Date(b.timeIn)-new Date(a.timeIn));
   const weekMin = weeklyNetMinutes(e.id, startOfWeek());
-  const activeAtt=empOpenAttendance(e.id),activeBreak=activeAtt?empOpenBreak(activeAtt.id):null;
+  const liveState=employeeLiveState(e.id),activeAtt=liveState.attendance,activeBreak=liveState.activeBreak;
   const activeBreakLabel=breakDescriptorForType(activeBreak?.type)?.key==="lunch"?"On Lunch":"On Break";
   const canManage = DB.session.role!=="Manager";
   const canSeeRate = DB.session.role==="Admin"||DB.session.role==="Super Admin"||DB.session.role==="Payroll";
@@ -4169,7 +4148,7 @@ function screenAdminEmployeeDetail(){
     </div>
     <div class="grid2" style="margin-bottom:16px;">
       <div class="kpi"><div class="num">${hm(weekMin)}</div><div class="lab">Hours this week</div></div>
-      <div class="kpi"><div class="num">${statusPill(empStatus(e.id),activeBreakLabel)}</div><div class="lab">Current status</div></div>
+      <div class="kpi"><div class="num">${statusPill(liveState.status,activeBreakLabel,liveState.label)}</div><div class="lab">Current status</div></div>
     </div>
     ${canManage? `<div class="flexwrap" style="margin-bottom:16px;">
       <button class="btn btn-ghost btn-sm" id="resetPin">Reset PIN</button>
@@ -4320,28 +4299,6 @@ ${jobHistory.length===0
 
   </div>`;
 }
-function screenAdminLive(){
-  return `
-  <div class="topbar"><div class="h2">Live Attendance</div></div>
-  <div class="content">
-    <table>
-      <tr><th>Employee</th><th>Status</th><th>Job</th><th>Since</th><th>Location</th><th></th></tr>
-      ${DB.employees.filter(e=>e.status==="active").map(e=>{
-        const st=empStatus(e.id); const att=empOpenAttendance(e.id);
-        return `<tr>
-          <td>${escapeHtml(e.name)}</td>
-          <td>${st==='working'?'<span class="pill pill-ok">Working</span>':st==='break'?'<span class="pill pill-warn">Break</span>':'<span class="pill pill-muted">Off</span>'}</td>
-          <td>${att?escapeHtml(jobName(att.jobId)):'—'}</td>
-          <td>${att?fmtTime(att.timeIn):'—'}</td>
-          <td class="tiny">${att? (att.geofence==='inside'?'🟢 ':'🟠 ')+escapeHtml((att.gpsIn.address||'').split(",")[0]):'—'}</td>
-          <td>${att?`<span class="link small" data-att="${att.id}">View →</span>`:''}</td>
-        </tr>`;
-      }).join("")}
-    </table>
-    <div class="tiny muted" style="margin-top:16px;">A full build renders these coordinates on an interactive map (e.g. Google Maps / Mapbox SDK) with pins per employee.</div>
-  </div>`;
-}
-
 function renderAttendanceActivitySection(title,periods,kind,jobEntriesByAttendance){
   if(attendanceApprovalHistoryState.loading && !attendanceApprovalHistoryState.loaded){
     return `<div class="h3" style="margin:20px 0 10px;">${title}</div><div class="empty small">Loading attendance activity&hellip;</div>`;
