@@ -308,6 +308,37 @@ function hm(totalMins){
   const h = Math.floor(totalMins/60), m = totalMins%60;
   return (h>0? h+"h ":"") + m+"m";
 }
+function validTimestampOrder(startValue,endValue,{allowEqual=true}={}){
+  const start=new Date(startValue),end=new Date(endValue);
+  if(!startValue||!endValue||Number.isNaN(start.getTime())||Number.isNaN(end.getTime())) return false;
+  return allowEqual?end>=start:end>start;
+}
+function attendanceIntegrityIssues(attendance){
+  const issues=[];
+  if(!validTimestampOrder(attendance?.timeIn,attendance?.timeOut,{allowEqual:true})) issues.push("Time Out is earlier than Time In or is invalid");
+  if(Number.isFinite(Number(attendance?.grossMin))&&Number(attendance.grossMin)<0) issues.push("Gross time is negative");
+  if(Number.isFinite(Number(attendance?.netMin))&&Number(attendance.netMin)<0) issues.push("Net time is negative");
+  if(Number.isFinite(Number(attendance?.unpaidBreakMin))&&Number(attendance.unpaidBreakMin)<0) issues.push("Unpaid break time is negative");
+  if(Number.isFinite(Number(attendance?.grossMin))&&Number.isFinite(Number(attendance?.unpaidBreakMin))&&
+     Number(attendance.unpaidBreakMin)>Number(attendance.grossMin)) issues.push("Unpaid break time exceeds gross time");
+  return issues;
+}
+function isAttendancePayable(attendance){ return attendanceIntegrityIssues(attendance).length===0; }
+function completedBreakSummary(attendance,endValue,breakRows){
+  const timeIn=new Date(attendance?.timeIn),timeOut=new Date(endValue);
+  if(Number.isNaN(timeIn.getTime())||Number.isNaN(timeOut.getTime())||timeOut<timeIn) return {error:"Attendance times are invalid."};
+  let unpaidMin=0,paidMin=0;
+  for(const row of breakRows){
+    if(!validTimestampOrder(row?.start,row?.end,{allowEqual:true})) return {error:"A break has invalid recorded times."};
+    const start=new Date(row.start),end=new Date(row.end);
+    if(start<timeIn||end>timeOut) return {error:"A break falls outside the attendance interval."};
+    const duration=mins(end-start);
+    if(row.paid) paidMin+=duration; else unpaidMin+=duration;
+  }
+  const grossMin=mins(timeOut-timeIn);
+  if(unpaidMin>grossMin) return {error:"Unpaid break time exceeds gross attendance time."};
+  return {grossMin,unpaidMin,paidMin,netMin:grossMin-unpaidMin};
+}
 const workReminderSnoozeUntil={};
 let overtimeConfirmedDate="";
 const FOUR_PM_GRACE_MINUTES=10;
@@ -503,14 +534,14 @@ function showFourPmReminder(emp,att,activeJob){
 };
   return true;
 }
-function fourPmCutoffState(){
-  const t=ausNow();
-  const minsNow=t.hour*60+t.minute;
-  const fourPm=16*60;
+function fourPmCutoffState(attendance=null){
+  const cutoffISO=attendance?.timeIn?sydney4pmISO(attendance.timeIn).toISOString():fourPmSydneyISO();
+  const cutoffMs=new Date(cutoffISO).getTime(),now=Date.now();
   return {
-    prompt:minsNow>=fourPm&&minsNow<fourPm+FOUR_PM_GRACE_MINUTES,
-    expired:minsNow>=fourPm+FOUR_PM_GRACE_MINUTES,
-    today:sydneyDateKey()
+    prompt:now>=cutoffMs&&now<cutoffMs+FOUR_PM_GRACE_MINUTES*60*1000,
+    expired:now>=cutoffMs+FOUR_PM_GRACE_MINUTES*60*1000,
+    today:sydneyDateKey(),cutoffISO,
+    eligible:!!attendance&&validTimestampOrder(attendance.timeIn,cutoffISO,{allowEqual:false})
   };
 }
 function fourPmSydneyISO(){
@@ -524,14 +555,14 @@ function offerFourPmDecision(emp,att,cutoff){
   const activeJob=empOpenJobTimeEntry(emp.id);
   if(fourPmDecisionOffer.key===key){showFourPmReminder(emp,att,activeJob);return;}
   if(!showFourPmReminder(emp,att,activeJob)) return;
-  const scheduledDeadline=new Date(fourPmSydneyISO()).getTime()+FOUR_PM_GRACE_MINUTES*60*1000;
+  const scheduledDeadline=new Date(cutoff.cutoffISO).getTime()+FOUR_PM_GRACE_MINUTES*60*1000;
   fourPmDecisionOffer.key=key;
   fourPmDecisionOffer.responseDeadline=Math.max(scheduledDeadline,Date.now()+FOUR_PM_GRACE_MINUTES*60*1000);
 }
 function invalidateStaleFourPmReminder(){
   const modal=document.getElementById("fourPmReminder"),emp=currentEmployee();
   if(!modal) return false;
-  const att=emp?empOpenAttendance(emp.id):null,cutoff=fourPmCutoffState();
+  const att=emp?empOpenAttendance(emp.id):null,cutoff=fourPmCutoffState(att);
   const confirmedToday=att?.overtimeConfirmedAt&&
     sydneyDateKey(att.overtimeConfirmedAt)===cutoff.today;
   if(att?.id===modal.dataset.attendanceId&&!confirmedToday) return false;
@@ -539,20 +570,30 @@ function invalidateStaleFourPmReminder(){
   return true;
 }
 async function autoFourPmCutoff(emp,att){
-  const cutoffISO=fourPmSydneyISO();
+  const cutoff=fourPmCutoffState(att),cutoffISO=cutoff.cutoffISO;
   const activeJob=empOpenJobTimeEntry(emp.id);
+
+  if(!cutoff.eligible){
+    console.error("4 PM cutoff refused: attendance began at or after the applicable cutoff.");
+    return false;
+  }
+  if(activeJob&&!validTimestampOrder(activeJob.startTime,cutoffISO,{allowEqual:true})){
+    console.error("4 PM cutoff refused: active job began after the applicable cutoff.");
+    return false;
+  }
+  const brks=DB.breaks.filter(b=>att.breakIds.includes(b.id));
+  const totals=completedBreakSummary(att,cutoffISO,brks);
+  if(totals.error){console.error(`4 PM cutoff refused: ${totals.error}`);return false;}
 
   if(activeJob){
     const ok=await closeJobAt(activeJob,cutoffISO,"automatic-4pm-cutoff");
     if(!ok){console.error("4 PM cutoff: job could not be closed.");return false;}
   }
 att.timeOut=cutoffISO;
-att.grossMin=mins(new Date(cutoffISO)-new Date(att.timeIn));
-
-const brks=DB.breaks.filter(b=>att.breakIds.includes(b.id));
-att.unpaidBreakMin=brks.filter(b=>!b.paid).reduce((s,b)=>s+mins(new Date(b.end)-new Date(b.start)),0);
-att.paidBreakMin=brks.filter(b=>b.paid).reduce((s,b)=>s+mins(new Date(b.end)-new Date(b.start)),0);
-att.netMin=att.grossMin-att.unpaidBreakMin;
+att.grossMin=totals.grossMin;
+att.unpaidBreakMin=totals.unpaidMin;
+att.paidBreakMin=totals.paidMin;
+att.netMin=totals.netMin;
 att.status="draft";
 
 const {error}=await supabaseClient.from("attendance").update({
@@ -586,9 +627,12 @@ function checkWorkReminders(){
   syncPostJobOtReminder();
   if(postJobOtPendingState()) return;
 
-  const cutoff=fourPmCutoffState();
+  const cutoff=fourPmCutoffState(att);
   const confirmedToday=att.overtimeConfirmedAt&&sydneyDateKey(att.overtimeConfirmedAt)===cutoff.today;
   overtimeConfirmedDate=confirmedToday?cutoff.today:"";
+if(!cutoff.eligible){
+  fourPmDecisionOffer.key="";fourPmDecisionOffer.responseDeadline=0;
+}else{
 if(cutoff.prompt&&!confirmedToday){
   offerFourPmDecision(emp,att,cutoff);
   return;
@@ -611,6 +655,7 @@ if(cutoff.expired&&!confirmedToday){
     }
   }).finally(()=>{fourPmDecisionOffer.processing=false;});
   return;
+}
 }
 
   const eligibility=currentBreakEligibility(emp.id);
@@ -1087,7 +1132,7 @@ function applyFourPmAttendanceRealtime(payload){
   const att=empOpenAttendance(emp.id);
   if(!att||att.id!==row.id) return;
   const confirmedDate=row.overtime_confirmed_at&&sydneyDateKey(row.overtime_confirmed_at);
-  if(confirmedDate!==fourPmCutoffState().today) return;
+  if(confirmedDate!==fourPmCutoffState(att).today) return;
   att.overtimeConfirmedAt=row.overtime_confirmed_at;
   overtimeConfirmedDate=confirmedDate;
   document.getElementById("fourPmReminder")?.remove();
@@ -1471,7 +1516,8 @@ function buildAttendanceReviewPeriods(attendanceRows,visibleEmployees){
     ...group,
     attendance:group.attendance.sort((a,b)=>new Date(a.timeIn)-new Date(b.timeIn)),
     attendanceDays:new Set(group.attendance.map(a=>sydneyDateKey(a.timeIn))).size,
-    netMin:group.attendance.reduce((sum,a)=>sum+(Number.isFinite(Number(a.netMin))?Number(a.netMin):0),0)
+    netMin:group.attendance.reduce((sum,a)=>sum+(Number.isFinite(Number(a.netMin))?Number(a.netMin):0),0),
+    invalidAttendance:group.attendance.filter(a=>!isAttendancePayable(a))
   })).sort((a,b)=>b.periodStart.localeCompare(a.periodStart)||a.employeeOrder-b.employeeOrder);
 }
 function attendancePeriodApprovalKey(employeeId,periodStart){
@@ -1648,7 +1694,8 @@ function buildAttendanceActivityPeriods(historyRows,visibleEmployees,attendanceR
       .sort((a,b)=>new Date(a.timeIn)-new Date(b.timeIn));
     return {...group,attendance,latestActivity:group.activities[0],kind:new Date(group.activities[0].createdAt).getTime()>=cutoffMs?"recent":"archive",
       attendanceDays:new Set(attendance.map(row=>sydneyDateKey(row.timeIn))).size,
-      netMin:attendance.reduce((sum,row)=>sum+(Number.isFinite(Number(row.netMin))?Number(row.netMin):0),0)};
+      netMin:attendance.reduce((sum,row)=>sum+(Number.isFinite(Number(row.netMin))?Number(row.netMin):0),0),
+      invalidAttendance:attendance.filter(row=>!isAttendancePayable(row))};
   }).sort((a,b)=>new Date(b.latestActivity.createdAt)-new Date(a.latestActivity.createdAt)||a.employeeOrder-b.employeeOrder||b.periodStart.localeCompare(a.periodStart));
 }
 function attendanceActivityExpansionKey(kind,period){
@@ -1684,6 +1731,9 @@ function attendancePeriodApprovalReadiness(employeeId,periodStart){
   }
   if(rows.some(row=>row.status==null || !["draft","submitted","corrected","approved"].includes(row.status))){
     return {ready:false,reason:"This attendance period contains attendance requiring separate review.",rows};
+  }
+  if(rows.some(row=>!isAttendancePayable(row))){
+    return {ready:false,reason:"This attendance period contains invalid recorded times and requires correction before approval.",rows};
   }
   return {ready:true,reason:"",rows};
 }
@@ -1846,6 +1896,9 @@ function formatAttendanceReviewDate(dateKey){
 function attendanceReviewDateNetMinutes(dateGroup){
   return dateGroup.attendance.reduce((sum,attendance)=>
     sum+(Number.isFinite(Number(attendance.netMin))?Number(attendance.netMin):0),0);
+}
+function attendanceReviewNetDisplay(attendanceRows,totalMinutes){
+  return attendanceRows.some(attendance=>!isAttendancePayable(attendance))?"Review required":hm(totalMinutes);
 }
 function jobEntryDurationSeconds(entry){
   const recorded=Number(entry.durationSeconds);
@@ -2207,7 +2260,7 @@ function renderAttendanceReviewDetails(period,jobEntriesByAttendance,{readOnly=f
   return `<div class="attendance-date-grid">${attendanceReviewDateGroups(period).map(dateGroup=>`<section class="attendance-date-card">
     <div class="attendance-date-header">
       <div class="attendance-date-heading">${formatAttendanceReviewDate(dateGroup.dateKey)}</div>
-      <div class="attendance-date-total">Total: <b>${hm(attendanceReviewDateNetMinutes(dateGroup))}</b></div>
+      <div class="attendance-date-total">Total: <b>${attendanceReviewNetDisplay(dateGroup.attendance,attendanceReviewDateNetMinutes(dateGroup))}</b></div>
     </div>
     <div>
       ${dateGroup.attendance.map((attendance,index)=>{
@@ -2217,6 +2270,7 @@ function renderAttendanceReviewDetails(period,jobEntriesByAttendance,{readOnly=f
         const historyIndicator=attendanceCorrectionHistoryIndicator(attendance);
         return `<div class="attendance-session">
           ${multiple?`<div class="attendance-session-heading">Attendance Session ${index+1}</div>`:""}
+          ${isAttendancePayable(attendance)?"":`<div class="small" style="color:var(--danger);margin-bottom:8px;"><b>Review required:</b> ${escapeHtml(attendanceIntegrityIssues(attendance).join("; "))}.</div>`}
           <div class="attendance-fields">
             <div class="attendance-field attendance-field-time-in"><div class="attendance-field-label"><span class="attendance-field-icon">&#8631;</span>Time In</div><div class="attendance-field-value">${fmtTime(attendance.timeIn)}</div></div>
             <div class="attendance-field attendance-field-time-out"><div class="attendance-field-label"><span class="attendance-field-icon">&#8630;</span>Time Out</div><div class="attendance-field-value">${fmtTime(attendance.timeOut)}</div></div>
@@ -3193,6 +3247,10 @@ async function startJobTracking(jobId){
 }
 
 async function closeJobAt(active,iso,reason="manual"){
+  if(!validTimestampOrder(active?.startTime,iso,{allowEqual:true})){
+    console.error("Job close refused: end time cannot precede start time.");
+    return false;
+  }
   const seconds=Math.max(0,Math.floor((new Date(iso)-new Date(active.startTime))/1000));
   const {error}=await supabaseClient.from("job_time_entries").update({
     end_time:iso,duration_seconds:seconds,end_reason:reason,updated_at:iso
@@ -3202,6 +3260,10 @@ async function closeJobAt(active,iso,reason="manual"){
   return true;
 }
 async function closeCurrentJobAt(active,iso){
+  if(!validTimestampOrder(active?.startTime,iso,{allowEqual:true})){
+    console.error("Job close refused: end time cannot precede start time.");
+    return false;
+  }
   const seconds=Math.max(0,Math.floor((new Date(iso)-new Date(active.startTime))/1000));
   const {data,error}=await supabaseClient.from("job_time_entries").update({
     end_time:iso,duration_seconds:seconds,end_reason:"manual",updated_at:iso
@@ -3430,6 +3492,11 @@ function doEndBreak(){
   const emp = currentEmployee(); const att = empOpenAttendance(emp.id); const brk = empOpenBreak(att.id);
   requireLocation(async(pos)=>{
     const end=nowISO(),gpsEnd={lat:pos.lat,lng:pos.lng,accuracy:pos.accuracy};
+    if(!validTimestampOrder(brk?.start,end,{allowEqual:true})){
+      console.error("Break close refused: end time cannot precede start time.");
+      toast("Break could not be ended because its recorded times are invalid. Please contact a manager.");
+      return;
+    }
     const { data:savedBreak, error: breakEndError } = await supabaseClient
   .from("breaks")
   .update({
@@ -3500,12 +3567,23 @@ if(activeJob){
     const gps = {lat:pos.lat, lng:pos.lng, accuracy:pos.accuracy};
     const address = await reverseGeocode(pos.lat,pos.lng);
     showWorkSummaryModal(async (summary)=>{
-      att.timeOut = timeOutISO;
-      att.grossMin = mins(new Date(att.timeOut)-new Date(att.timeIn));
+      if(!validTimestampOrder(att.timeIn,timeOutISO,{allowEqual:true})){
+        console.error("Time Out refused: end time cannot precede Time In.");
+        toast("Time Out could not be saved because the recorded times are invalid. Please contact a manager.");
+        return;
+      }
       const brks = DB.breaks.filter(b=>att.breakIds.includes(b.id));
-      att.unpaidBreakMin = brks.filter(b=>!b.paid).reduce((s,b)=>s+mins(new Date(b.end)-new Date(b.start)),0);
-      att.paidBreakMin = brks.filter(b=>b.paid).reduce((s,b)=>s+mins(new Date(b.end)-new Date(b.start)),0);
-      att.netMin = att.grossMin - att.unpaidBreakMin;
+      const totals=completedBreakSummary(att,timeOutISO,brks);
+      if(totals.error){
+        console.error(`Time Out refused: ${totals.error}`);
+        toast("Time Out could not be saved because the recorded break times are invalid. Please contact a manager.");
+        return;
+      }
+      att.timeOut = timeOutISO;
+      att.grossMin = totals.grossMin;
+      att.unpaidBreakMin = totals.unpaidMin;
+      att.paidBreakMin = totals.paidMin;
+      att.netMin = totals.netMin;
       att.summary = summary; att.status="draft";
       const { error: clockOutError } = await supabaseClient
   .from("attendance")
@@ -4314,7 +4392,7 @@ function renderAttendanceActivitySection(title,periods,kind,jobEntriesByAttendan
       return `<div class="card attendance-review-period">
         <div class="attendance-period-header">
           <div><div class="attendance-period-name">${escapeHtml(period.employee.name)}</div><div class="tiny muted" style="margin-top:3px;">${formatReviewPeriodDate(period.periodStart)} &ndash; ${formatReviewPeriodDate(period.displayEnd,true)}</div></div>
-          <div class="attendance-period-total"><span>Net Hours</span><b>${hm(period.netMin)}</b></div>
+          <div class="attendance-period-total"><span>Net Hours</span><b>${attendanceReviewNetDisplay(period.attendance,period.netMin)}</b></div>
         </div>
         <div class="small" style="margin-top:8px;"><b>${statusLabel}</b></div>
         <div class="tiny muted" style="margin-top:4px;overflow-wrap:anywhere;">Approved by ${escapeHtml(latest.actor||"Actor not recorded")} &middot; ${escapeHtml(formatSydneyApprovalTimestamp(latest.createdAt))}</div>
@@ -4367,7 +4445,7 @@ function screenAdminTimesheets(){
     ${reviewPeriods.map(period=>`<div class="card attendance-review-period">
       <div class="attendance-period-header">
         <div><div class="attendance-period-name">${escapeHtml(period.employee.name)}</div><div class="tiny muted" style="margin-top:3px;">${formatReviewPeriodDate(period.periodStart)} – ${formatReviewPeriodDate(period.displayEnd,true)}</div></div>
-        <div class="attendance-period-total"><span>Net Hours</span><b>${hm(period.netMin)}</b></div>
+        <div class="attendance-period-total"><span>Net Hours</span><b>${attendanceReviewNetDisplay(period.attendance,period.netMin)}</b></div>
       </div>
       <div class="small muted" style="margin-top:7px;">${period.attendanceDays} attendance ${period.attendanceDays===1?"day":"days"}</div>
       ${canActorApproveAttendancePeriod(period)?`<div class="attendance-period-actions"><span class="small muted">Approve this employee's completed Friday–Thursday attendance.</span><button class="btn btn-ok btn-sm" data-approve-attendance-period="${escapeHtml(period.employee.id)}" data-period-start="${escapeHtml(period.periodStart)}" ${attendancePeriodApprovalState.has(attendancePeriodApprovalKey(period.employee.id,period.periodStart))?"disabled":""}>${attendancePeriodApprovalState.get(attendancePeriodApprovalKey(period.employee.id,period.periodStart))?.stage==="approving"?"Approving…":"Approve Period"}</button></div>`:""}
@@ -4457,9 +4535,10 @@ function payrollRows(fromDate,toDate){
       new Date(a.timeIn)<=to
     );
 
-    let regularSec=0,otSec=0;
+    let regularSec=0,otSec=0,invalidShifts=0;
 
     recs.forEach(att=>{
+      if(!isAttendancePayable(att)){invalidShifts++;return;}
       const attStart=new Date(att.timeIn),attEnd=new Date(att.timeOut);
       const entries=(DB.jobTimeEntries||[]).filter(e=>
         e.employeeId===emp.id &&
@@ -4469,7 +4548,7 @@ function payrollRows(fromDate,toDate){
       );
 
       if(!entries.length){
-        regularSec+=(att.netMin||0)*60;
+        regularSec+=Math.max(0,Number(att.netMin)||0)*60;
         return;
       }
 
@@ -4499,7 +4578,7 @@ function payrollRows(fromDate,toDate){
       regular:regularSec/3600,
       ot:otSec/3600,
       total:(regularSec+otSec)/3600,
-      shifts:recs.length
+      shifts:recs.length,invalidShifts
     };
   }).filter(r=>r.shifts>0);
 }
@@ -4824,7 +4903,10 @@ function bindAdminScreen(){
   const r=DB.correctionRequests.find(x=>x.id===b.dataset.crApprove);
   const a=DB.attendance.find(x=>x.id===r.attendanceId);
   const timeIn=r.requestedTimeIn||a.timeIn,timeOut=r.requestedTimeOut||a.timeOut;
-  const gross=mins(new Date(timeOut)-new Date(timeIn)),net=gross-(a.unpaidBreakMin||0);
+  if(!validTimestampOrder(timeIn,timeOut,{allowEqual:true})){
+    toast("Correction cannot be approved because Time Out is earlier than Time In.");return;
+  }
+  const gross=mins(new Date(timeOut)-new Date(timeIn)),net=Math.max(0,gross-(a.unpaidBreakMin||0));
   const reviewedAt=nowISO(),reviewer=DB.session.name;
 
   const {error:attError}=await supabaseClient.from("attendance").update({
@@ -4921,7 +5003,7 @@ function bindAdminScreen(){
     document.getElementById("payrollResults").innerHTML = `
       <table>
         <tr><th>Employee ID</th><th>Employee</th><th>Regular</th><th>OT</th><th>Total</th></tr>
-        ${rows.map(r=>`<tr><td>${escapeHtml(r.emp.empId)}</td><td>${escapeHtml(r.emp.name)}</td><td>${r.regular.toFixed(2)}</td><td>${r.ot.toFixed(2)}</td><td><b>${r.total.toFixed(2)}</b></td></tr>`).join("")}
+        ${rows.map(r=>`<tr><td>${escapeHtml(r.emp.empId)}</td><td>${escapeHtml(r.emp.name)}${r.invalidShifts?`<div class="tiny" style="color:var(--danger);">${r.invalidShifts} invalid attendance ${r.invalidShifts===1?"record":"records"} excluded — review required</div>`:""}</td><td>${r.regular.toFixed(2)}</td><td>${r.ot.toFixed(2)}</td><td><b>${r.total.toFixed(2)}</b></td></tr>`).join("")}
         ${rows.length===0? `<tr><td colspan="5" class="muted" style="text-align:center;padding:16px;">No approved timesheets in this range</td></tr>`:""}
       </table>
       <button class="btn btn-ghost btn-block" style="margin-top:14px;" id="payExport">Export Payroll CSV</button>
@@ -5007,8 +5089,11 @@ function modalEditApproved(attId){
   d.setHours(h,m,0,0);
 
   const timeOut=d.toISOString();
+  if(!validTimestampOrder(a.timeIn,timeOut,{allowEqual:true})){
+    toast("Time Out must not be earlier than Time In.");return;
+  }
   const grossMin=mins(new Date(timeOut)-new Date(a.timeIn));
-  const netMin=grossMin-(a.unpaidBreakMin||0);
+  const netMin=Math.max(0,grossMin-(a.unpaidBreakMin||0));
   const updatedAt=nowISO();
 
   const {error}=await supabaseClient.from("attendance").update({
