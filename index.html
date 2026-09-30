@@ -1735,6 +1735,12 @@ function attendancePeriodApprovalReadiness(employeeId,periodStart){
   if(rows.some(row=>!isAttendancePayable(row))){
     return {ready:false,reason:"This attendance period contains invalid recorded times and requires correction before approval.",rows};
   }
+  if(rows.some(row=>attendancePayableCalculation(row).invalid)){
+    return {ready:false,reason:"This attendance period contains an invalid unpaid-break interval and requires correction before approval.",rows};
+  }
+  if(rows.some(row=>attendancePayableCalculation(row).reviewSec>0)){
+    return {ready:false,reason:"This attendance period contains confirmed overtime without job allocation and requires review before approval.",rows};
+  }
   return {ready:true,reason:"",rows};
 }
 function attendancePeriodApprovalSnapshot(period,allRows){
@@ -2268,9 +2274,15 @@ function renderAttendanceReviewDetails(period,jobEntriesByAttendance,{readOnly=f
         const multiple=dateGroup.attendance.length>1;
         const correction=readOnly?{canEdit:false,reason:""}:attendanceCorrectionReadiness(attendance);
         const historyIndicator=attendanceCorrectionHistoryIndicator(attendance);
+        const payable=attendancePayableCalculation(attendance,jobEntriesByAttendance.get(attendance.id)||[],DB.breaks);
         return `<div class="attendance-session">
           ${multiple?`<div class="attendance-session-heading">Attendance Session ${index+1}</div>`:""}
           ${isAttendancePayable(attendance)?"":`<div class="small" style="color:var(--danger);margin-bottom:8px;"><b>Review required:</b> ${escapeHtml(attendanceIntegrityIssues(attendance).join("; "))}.</div>`}
+          ${payable.invalid&&isAttendancePayable(attendance)?`<div class="small" style="color:var(--danger);margin-bottom:8px;"><b>Review required:</b> An unpaid-break interval is invalid.</div>`:""}
+          ${payable.reviewSec>0?`<div class="small" style="color:var(--danger);margin-bottom:8px;"><b>Review required:</b> ${formatJobDuration(payable.reviewSec)} of confirmed post-4 PM time has no job allocation.</div>`:""}
+          ${payable.overlap?`<div class="small" style="color:var(--warn);margin-bottom:8px;"><b>Allocation review:</b> Overlapping job sessions were recorded; overlap does not increase payable time.</div>`:""}
+          ${payable.breakReview?`<div class="small" style="color:var(--warn);margin-bottom:8px;"><b>Break review:</b> Recorded unpaid breaks do not reconcile with the attendance total.</div>`:""}
+          ${payable.unassignedRegularSec>0?`<div class="small muted" style="margin-bottom:8px;"><b>Unassigned / No Job:</b> ${formatJobDuration(payable.unassignedRegularSec)} Regular.</div>`:""}
           <div class="attendance-fields">
             <div class="attendance-field attendance-field-time-in"><div class="attendance-field-label"><span class="attendance-field-icon">&#8631;</span>Time In</div><div class="attendance-field-value">${fmtTime(attendance.timeIn)}</div></div>
             <div class="attendance-field attendance-field-time-out"><div class="attendance-field-label"><span class="attendance-field-icon">&#8630;</span>Time Out</div><div class="attendance-field-value">${fmtTime(attendance.timeOut)}</div></div>
@@ -4442,20 +4454,20 @@ function screenAdminTimesheets(){
     }).join("")}`:""}
 
     <div class="h3" style="margin-bottom:10px;">ATTENDANCE PERIODS AWAITING REVIEW (${reviewPeriods.length})</div>
-    ${reviewPeriods.map(period=>`<div class="card attendance-review-period">
+    ${reviewPeriods.map(period=>{const approvalKey=attendancePeriodApprovalKey(period.employee.id,period.periodStart),approvalState=attendancePeriodApprovalState.get(approvalKey),approvalReadiness=attendancePeriodApprovalReadiness(period.employee.id,period.periodStart);return `<div class="card attendance-review-period">
       <div class="attendance-period-header">
         <div><div class="attendance-period-name">${escapeHtml(period.employee.name)}</div><div class="tiny muted" style="margin-top:3px;">${formatReviewPeriodDate(period.periodStart)} – ${formatReviewPeriodDate(period.displayEnd,true)}</div></div>
         <div class="attendance-period-total"><span>Net Hours</span><b>${attendanceReviewNetDisplay(period.attendance,period.netMin)}</b></div>
       </div>
       <div class="small muted" style="margin-top:7px;">${period.attendanceDays} attendance ${period.attendanceDays===1?"day":"days"}</div>
-      ${canActorApproveAttendancePeriod(period)?`<div class="attendance-period-actions"><span class="small muted">Approve this employee's completed Friday–Thursday attendance.</span><button class="btn btn-ok btn-sm" data-approve-attendance-period="${escapeHtml(period.employee.id)}" data-period-start="${escapeHtml(period.periodStart)}" ${attendancePeriodApprovalState.has(attendancePeriodApprovalKey(period.employee.id,period.periodStart))?"disabled":""}>${attendancePeriodApprovalState.get(attendancePeriodApprovalKey(period.employee.id,period.periodStart))?.stage==="approving"?"Approving…":"Approve Period"}</button></div>`:""}
+      ${canActorApproveAttendancePeriod(period)?`<div class="attendance-period-actions"><span class="small muted">${approvalReadiness.ready?"Approve this employee's completed Friday–Thursday attendance.":`<b style="color:var(--danger);">Review required:</b> ${escapeHtml(approvalReadiness.reason)}`}</span><button class="btn btn-ok btn-sm" data-approve-attendance-period="${escapeHtml(period.employee.id)}" data-period-start="${escapeHtml(period.periodStart)}" ${(!approvalReadiness.ready||approvalState) ?"disabled":""}>${approvalState?.stage==="approving"?"Approving…":"Approve Period"}</button></div>`:""}
       <details class="attendance-period-details" data-attendance-review-key="${escapeHtml(attendanceReviewExpansionKey(period))}" ${attendanceReviewExpandedPeriods.has(attendanceReviewExpansionKey(period))?"open":""}>
         <summary class="link">Details</summary>
         <div style="margin-top:10px;border-top:1px solid var(--line);">
           ${renderAttendanceReviewDetails(period,jobEntriesByAttendance)}
         </div>
       </details>
-    </div>`).join("")}
+    </div>`;}).join("")}
     ${reviewPeriods.length===0? `<div class="empty small">Nothing waiting for review.</div>`:""}
 
     ${rejected.length>0? `<div class="h3" style="margin:20px 0 10px;">REJECTED — WITH EMPLOYEE</div>
@@ -4521,9 +4533,91 @@ function unpaidBreakOverlapSeconds(att,start,end){
     .filter(b=>b.attendanceId===att.id&&!b.paid&&b.start&&b.end)
     .reduce((sum,b)=>sum+overlapSeconds(start,end,b.start,b.end),0);
 }
+function mergeTimeIntervals(intervals){
+  const sorted=intervals.filter(interval=>interval.end>interval.start)
+    .sort((a,b)=>a.start-b.start||a.end-b.end),merged=[];
+  sorted.forEach(interval=>{
+    const last=merged[merged.length-1];
+    if(last&&interval.start<=last.end) last.end=Math.max(last.end,interval.end);
+    else merged.push({...interval});
+  });
+  return merged;
+}
+function clipTimeInterval(startValue,endValue,boundStart,boundEnd){
+  const start=Math.max(new Date(startValue).getTime(),boundStart),end=Math.min(new Date(endValue).getTime(),boundEnd);
+  return Number.isFinite(start)&&Number.isFinite(end)&&end>start?{start,end}:null;
+}
+function subtractTimeIntervals(baseIntervals,removedIntervals){
+  const removed=mergeTimeIntervals(removedIntervals);
+  return baseIntervals.flatMap(base=>{
+    let cursor=base.start;const kept=[];
+    removed.forEach(cut=>{
+      if(cut.end<=cursor||cut.start>=base.end)return;
+      if(cut.start>cursor)kept.push({start:cursor,end:Math.min(cut.start,base.end)});
+      cursor=Math.max(cursor,cut.end);
+    });
+    if(cursor<base.end)kept.push({start:cursor,end:base.end});
+    return kept;
+  });
+}
+function intersectTimeIntervals(leftIntervals,rightIntervals){
+  const left=mergeTimeIntervals(leftIntervals),right=mergeTimeIntervals(rightIntervals),result=[];
+  let i=0,j=0;
+  while(i<left.length&&j<right.length){
+    const start=Math.max(left[i].start,right[j].start),end=Math.min(left[i].end,right[j].end);
+    if(end>start)result.push({start,end});
+    if(left[i].end<=right[j].end)i++;else j++;
+  }
+  return result;
+}
+function timeIntervalSeconds(intervals){
+  return mergeTimeIntervals(intervals).reduce((sum,interval)=>sum+(interval.end-interval.start)/1000,0);
+}
+function attendanceJobIntervals(attendance,entries=DB.jobTimeEntries||[]){
+  const attStart=new Date(attendance.timeIn).getTime(),attEnd=new Date(attendance.timeOut).getTime();
+  return entries.filter(entry=>entry.employeeId===attendance.employeeId&&entry.startTime&&entry.endTime)
+    .map(entry=>clipTimeInterval(entry.startTime,entry.endTime,attStart,attEnd)).filter(Boolean);
+}
+function attendancePayableCalculation(attendance,entries=DB.jobTimeEntries||[],breakRows=DB.breaks||[]){
+  const attStart=new Date(attendance.timeIn).getTime(),attEnd=new Date(attendance.timeOut).getTime();
+  if(!isAttendancePayable(attendance)||!Number.isFinite(attStart)||!Number.isFinite(attEnd)||attEnd<attStart){
+    return {invalid:true,regularSec:0,otSec:0,reviewSec:0,payableSec:0,unassignedRegularSec:0,overlap:false,breakReview:false};
+  }
+  const attendanceInterval=attEnd>attStart?[{start:attStart,end:attEnd}]:[];
+  const attendanceBreaks=breakRows.filter(row=>row.attendanceId===attendance.id&&!row.paid);
+  let invalidBreak=false;
+  const unpaidIntervals=attendanceBreaks.map(row=>{
+    if(!validTimestampOrder(row.start,row.end,{allowEqual:true}))invalidBreak=true;
+    const clipped=clipTimeInterval(row.start,row.end,attStart,attEnd);
+    if(!clipped&&new Date(row.end).getTime()!==new Date(row.start).getTime())invalidBreak=true;
+    if(clipped&&(clipped.start!==new Date(row.start).getTime()||clipped.end!==new Date(row.end).getTime()))invalidBreak=true;
+    return clipped;
+  }).filter(Boolean);
+  const mergedUnpaid=mergeTimeIntervals(unpaidIntervals),unpaidSec=timeIntervalSeconds(mergedUnpaid);
+  const storedUnpaid=Number(attendance.unpaidBreakMin),breakReview=invalidBreak||
+    Number.isFinite(storedUnpaid)&&Math.abs(unpaidSec-storedUnpaid*60)>60;
+  if(invalidBreak){
+    return {invalid:true,regularSec:0,otSec:0,reviewSec:0,payableSec:0,unassignedRegularSec:0,overlap:false,breakReview:true};
+  }
+  const payableIntervals=subtractTimeIntervals(attendanceInterval,mergedUnpaid),payableSec=timeIntervalSeconds(payableIntervals);
+  const rawJobs=attendanceJobIntervals(attendance,entries),jobIntervals=mergeTimeIntervals(rawJobs);
+  const overlap=rawJobs.reduce((sum,interval)=>sum+(interval.end-interval.start)/1000,0)>timeIntervalSeconds(jobIntervals)+0.001;
+  const cutoff=sydney4pmISO(attendance.timeIn).getTime(),confirmed=!!attendance.overtimeConfirmedAt;
+  const preCutoff=intersectTimeIntervals(payableIntervals,[{start:attStart,end:Math.min(attEnd,cutoff)}]);
+  const postCutoff=intersectTimeIntervals(payableIntervals,[{start:Math.max(attStart,cutoff),end:attEnd}]);
+  if(!confirmed){
+    const uncovered=subtractTimeIntervals(payableIntervals,jobIntervals);
+    return {invalid:false,regularSec:payableSec,otSec:0,reviewSec:0,payableSec,
+      unassignedRegularSec:timeIntervalSeconds(uncovered),overlap,breakReview};
+  }
+  const coveredPost=intersectTimeIntervals(postCutoff,jobIntervals),uncoveredPost=subtractTimeIntervals(postCutoff,jobIntervals);
+  const uncoveredPre=subtractTimeIntervals(preCutoff,jobIntervals);
+  return {invalid:false,regularSec:timeIntervalSeconds(preCutoff),otSec:timeIntervalSeconds(coveredPost),
+    reviewSec:timeIntervalSeconds(uncoveredPost),payableSec,unassignedRegularSec:timeIntervalSeconds(uncoveredPre),overlap,breakReview};
+}
 function payrollRows(fromDate,toDate){
-  const from=fromDate?new Date(fromDate):startOfWeek();
-  const to=toDate?new Date(toDate+"T23:59:59"):new Date();
+  const fromKey=/^\d{4}-\d{2}-\d{2}$/.test(fromDate||"")?fromDate:payrollDefaultFromDate();
+  const toKey=/^\d{4}-\d{2}-\d{2}$/.test(toDate||"")?toDate:sydneyDateKey();
   const emps=DB.employees.filter(e=>isFieldStaff(e));
 
   return emps.map(emp=>{
@@ -4531,46 +4625,21 @@ function payrollRows(fromDate,toDate){
       a.employeeId===emp.id &&
       a.status==="approved" &&
       a.timeOut &&
-      new Date(a.timeIn)>=from &&
-      new Date(a.timeIn)<=to
+      sydneyDateKey(a.timeIn)>=fromKey &&
+      sydneyDateKey(a.timeIn)<=toKey
     );
 
-    let regularSec=0,otSec=0,invalidShifts=0;
+    let regularSec=0,otSec=0,reviewSec=0,payableSec=0,unassignedRegularSec=0;
+    let invalidShifts=0,overlapShifts=0,breakReviewShifts=0;
 
     recs.forEach(att=>{
       if(!isAttendancePayable(att)){invalidShifts++;return;}
-      const attStart=new Date(att.timeIn),attEnd=new Date(att.timeOut);
-      const entries=(DB.jobTimeEntries||[]).filter(e=>
-        e.employeeId===emp.id &&
-        e.startTime && e.endTime &&
-        new Date(e.startTime)<attEnd &&
-        new Date(e.endTime)>attStart
-      );
-
-      if(!entries.length){
-        regularSec+=Math.max(0,Number(att.netMin)||0)*60;
-        return;
-      }
-
-      const cutoff=sydney4pmISO(att.timeIn);
-      const otConfirmed=!!att.overtimeConfirmedAt;
-
-      entries.forEach(e=>{
-        const start=new Date(Math.max(new Date(e.startTime),attStart));
-        const end=new Date(Math.min(new Date(e.endTime),attEnd));
-        if(end<=start)return;
-
-        if(otConfirmed&&end>cutoff){
-          if(start<cutoff){
-            const regEnd=cutoff;
-            regularSec+=Math.max(0,overlapSeconds(start,regEnd,start,regEnd)-unpaidBreakOverlapSeconds(att,start,regEnd));
-          }
-          const otStart=start>cutoff?start:cutoff;
-          otSec+=Math.max(0,overlapSeconds(otStart,end,otStart,end)-unpaidBreakOverlapSeconds(att,otStart,end));
-        }else{
-          regularSec+=Math.max(0,overlapSeconds(start,end,start,end)-unpaidBreakOverlapSeconds(att,start,end));
-        }
-      });
+      const calculation=attendancePayableCalculation(att);
+      if(calculation.invalid){invalidShifts++;return;}
+      regularSec+=calculation.regularSec;otSec+=calculation.otSec;reviewSec+=calculation.reviewSec;
+      payableSec+=calculation.payableSec;unassignedRegularSec+=calculation.unassignedRegularSec;
+      if(calculation.overlap)overlapShifts++;
+      if(calculation.breakReview)breakReviewShifts++;
     });
 
     return {
@@ -4578,9 +4647,15 @@ function payrollRows(fromDate,toDate){
       regular:regularSec/3600,
       ot:otSec/3600,
       total:(regularSec+otSec)/3600,
-      shifts:recs.length,invalidShifts
+      payableTotal:payableSec/3600,reviewHours:reviewSec/3600,unassignedRegular:unassignedRegularSec/3600,
+      shifts:recs.length,invalidShifts,overlapShifts,breakReviewShifts,
+      reviewRequired:invalidShifts>0||reviewSec>0||overlapShifts>0||breakReviewShifts>0
     };
   }).filter(r=>r.shifts>0);
+}
+function payrollDefaultFromDate(){
+  const today=sydneyDateKey(),date=new Date(`${today}T00:00:00Z`),day=date.getUTCDay();
+  return addDateKeyDays(today,-((day+6)%7));
 }
 function screenAdminPayroll(){
   return `
@@ -4588,8 +4663,8 @@ function screenAdminPayroll(){
   <div class="content">
     <div class="card col gap-12" style="margin-bottom:16px;">
       <div class="grid2">
-        <div><label>From</label><input type="date" id="payFrom" value="${startOfWeek().toISOString().slice(0,10)}"></div>
-        <div><label>To</label><input type="date" id="payTo" value="${new Date().toISOString().slice(0,10)}"></div>
+        <div><label>From</label><input type="date" id="payFrom" value="${payrollDefaultFromDate()}"></div>
+        <div><label>To</label><input type="date" id="payTo" value="${sydneyDateKey()}"></div>
       </div>
       <button class="btn btn-accent btn-block" id="runPayroll">Generate Payroll Summary</button>
     </div>
@@ -4999,16 +5074,24 @@ function bindAdminScreen(){
   if($("runPayroll")) $("runPayroll").onclick = ()=>{
     const from = $("payFrom").value, to = $("payTo").value;
     const rows = payrollRows(from, to);
+    const exportBlocked=rows.some(row=>row.reviewRequired);
     window.__payrollRows = rows;
     document.getElementById("payrollResults").innerHTML = `
       <table>
         <tr><th>Employee ID</th><th>Employee</th><th>Regular</th><th>OT</th><th>Total</th></tr>
-        ${rows.map(r=>`<tr><td>${escapeHtml(r.emp.empId)}</td><td>${escapeHtml(r.emp.name)}${r.invalidShifts?`<div class="tiny" style="color:var(--danger);">${r.invalidShifts} invalid attendance ${r.invalidShifts===1?"record":"records"} excluded — review required</div>`:""}</td><td>${r.regular.toFixed(2)}</td><td>${r.ot.toFixed(2)}</td><td><b>${r.total.toFixed(2)}</b></td></tr>`).join("")}
+        ${rows.map(r=>`<tr><td>${escapeHtml(r.emp.empId)}</td><td>${escapeHtml(r.emp.name)}
+          ${r.invalidShifts?`<div class="tiny" style="color:var(--danger);">${r.invalidShifts} invalid attendance ${r.invalidShifts===1?"record":"records"} excluded &mdash; review required</div>`:""}
+          ${r.reviewHours>0?`<div class="tiny" style="color:var(--danger);">${r.reviewHours.toFixed(2)}h confirmed post-4 PM without job allocation &mdash; review required</div>`:""}
+          ${r.unassignedRegular>0?`<div class="tiny muted">${r.unassignedRegular.toFixed(2)}h Unassigned / No Job &mdash; included as Regular</div>`:""}
+          ${r.overlapShifts?`<div class="tiny" style="color:var(--warn);">${r.overlapShifts} attendance ${r.overlapShifts===1?"record has":"records have"} overlapping job allocations &mdash; review required</div>`:""}
+          ${r.breakReviewShifts?`<div class="tiny" style="color:var(--warn);">${r.breakReviewShifts} attendance ${r.breakReviewShifts===1?"record has":"records have"} an unpaid-break mismatch &mdash; review required</div>`:""}
+        </td><td>${r.regular.toFixed(2)}</td><td>${r.ot.toFixed(2)}</td><td><b>${r.total.toFixed(2)}</b>${r.reviewHours>0?`<div class="tiny muted">${r.payableTotal.toFixed(2)}h payable pending allocation review</div>`:""}</td></tr>`).join("")}
         ${rows.length===0? `<tr><td colspan="5" class="muted" style="text-align:center;padding:16px;">No approved timesheets in this range</td></tr>`:""}
       </table>
-      <button class="btn btn-ghost btn-block" style="margin-top:14px;" id="payExport">Export Payroll CSV</button>
+      ${exportBlocked?`<div class="small" style="color:var(--danger);margin-top:12px;"><b>Export blocked:</b> Resolve review-required attendance before exporting payroll.</div>`:""}
+      <button class="btn btn-ghost btn-block" style="margin-top:14px;" id="payExport" ${exportBlocked?"disabled":""}>Export Payroll CSV</button>
     `;
-    document.getElementById("payExport").onclick = ()=>{
+    if(!exportBlocked) document.getElementById("payExport").onclick = ()=>{
       const lines = ["Employee ID,Employee,Regular,OT,Total", ...rows.map(r=>`"${r.emp.empId}","${r.emp.name}",${r.regular.toFixed(2)},${r.ot.toFixed(2)},${r.total.toFixed(2)}`)];
       const blob = new Blob([lines.join("\n")], {type:"text/csv"});
       const url = URL.createObjectURL(blob);
