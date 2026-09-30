@@ -3,12 +3,12 @@
 Complete this work in order. Do not mark an item complete without repository and runtime evidence.
 
 1. **Database integrity and historical malformed-data strategy**
-   - Checkpoint the reviewed Phase 9 migration representation.
-   - Investigate the 8 malformed attendance rows and 7 reversed job time entries using source evidence; define approved repair, quarantine, or exception handling without guessing.
+   - Phase 9 core integrity checkpoint is complete in `ae60a13a01f3c909b20eb34719526dce41a566f1`; the committed migration represents constraints already installed live and must not be executed again.
+   - Investigate the 8 malformed attendance rows and 7 reversed job time entries using authoritative source evidence; define an approved repair, quarantine, or exception strategy without guessing timestamps or values.
    - Re-audit data, apply approved corrections safely, then validate constraints only when all existing rows comply.
 
-2. **Role and RLS hardening**
-   - Inventory every table, view, RPC, Storage path, and application role.
+2. **Read-only authorization / RLS audit**
+   - Before changing policies, inventory every relevant table, view, RPC, Storage path, application workflow, and current access rule for Super Admin, Admin, Manager, and Employee.
    - Verify least-privilege Employee self-access, intended Manager/Admin scope, Super Admin scope, Payroll access, and all write/delete boundaries. Add reviewed migrations and role tests for confirmed gaps.
 
 3. **Audit Log**
@@ -39,7 +39,7 @@ Complete this work in order. Do not mark an item complete without repository and
 
 ## Post-launch
 
-- Current RMS integration begins only after production stabilization. Do not implement it in the launch path.
+- Current RMS integration begins only after production stabilization and starts read-only. Xero integration is post-launch and server-side; notifications, analytics, observability, and other enhancements are also post-launch.
 
 ## Fresh Codex Thread Handoff
 
