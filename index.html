@@ -375,7 +375,7 @@ async function reconcilePostJobOtCore(){
   if(!employeeId) return false;
   const revision=++coreRealtime.revision,generation=coreRealtime.generation;
   try{
-    const snapshot=await fetchCoreTimeFromSupabase(employeeId,isAdminRole(role));
+    const snapshot=await fetchCoreTimeFromSupabase(employeeId,canReviewAttendance(role));
     if(generation!==coreRealtime.generation||revision!==coreRealtime.revision||
        DB.session?.employeeId!==employeeId||DB.session?.role!==role) return false;
     Object.assign(DB,snapshot);invalidateStaleBreakModal();invalidateStalePostJobOtReminder();save();
@@ -698,7 +698,7 @@ const NOTIFICATION_LABELS = {
   timesheetCorrection: "Employee submitted a correction request",
   timesheetApproved: "Timesheet was approved",
   timesheetRejected: "Timesheet was rejected",
-  adminCorrection: "Admin corrected an attendance record",
+  adminCorrection: "Attendance record corrected",
   xeroSyncFailure: "Xero sync failed"
 };
 function seed(){
@@ -709,7 +709,7 @@ function seed(){
     {id:"emp_julia", empId:"EMP-004", name:"Julia Douglas", role:"Site Manager", status:"active", email:"julia@upstage.co", department:"Production", payCategory:"Full-time", employmentType:"Full Time", hourlyRate:42.00, manager:"—", defaultLocation:"Upstage Workshop", permission:"Super Admin", fieldRole:true},
     {id:"emp_bodhi", empId:"EMP-005", name:"Bodhi Balson", role:"Labourer", status:"active", email:"bodhi@upstage.co", department:"Production", payCategory:"Casual", employmentType:"Casual", hourlyRate:32.00, manager:"Julia Douglas", defaultLocation:"Upstage Workshop", permission:"Employee"},
     {id:"emp_joel", empId:"EMP-006", name:"Joel Douglas", role:"Electrician", status:"active", email:"joel@upstage.co", department:"Production", payCategory:"Casual", employmentType:"Casual", hourlyRate:40.00, manager:"Julia Douglas", defaultLocation:"Upstage Workshop", permission:"Employee"},
-    {id:"emp_will", empId:"EMP-007", name:"William Rigney", role:"Office / Admin", status:"active", email:"william@upstage.co", department:"Office", payCategory:"Full-time", employmentType:"Full Time", hourlyRate:35.00, manager:"Julia Douglas", defaultLocation:"Upstage HQ", permission:"Payroll"},
+    {id:"emp_will", empId:"EMP-007", name:"William Rigney", role:"Office / Admin", status:"active", email:"william@upstage.co", department:"Office", payCategory:"Full-time", employmentType:"Full Time", hourlyRate:35.00, manager:"Julia Douglas", defaultLocation:"Upstage HQ", permission:"Employee"},
     {id:"emp_joss", empId:"EMP-008", name:"Joss Arhley-Smith", role:"Stagehand", status:"active", email:"joss@upstage.co", department:"Production", payCategory:"Casual", employmentType:"Casual", hourlyRate:33.00, manager:"Julia Douglas", defaultLocation:"Upstage Workshop", permission:"Employee"},
     {id:"emp_marjorie", empId:"EMP-009", name:"Marjorie Luzon", role:"Mechanical Engineer / Drafter", status:"active", email:"marjorie@upstage.co", department:"Workshop", payCategory:"Full-time", employmentType:"Full Time", hourlyRate:37.00, manager:"Julia Douglas", defaultLocation:"Upstage Workshop", permission:"Employee"},
   ];
@@ -825,7 +825,8 @@ async function syncCompanySettings(){
  };
 }
 async function updateCompanySetting(column,value,localKey){
- try{
+  if(!canUpdateSettings()){toast("Only Super Admin can change company settings.");return false;}
+  try{
   const {data,error}=await supabaseClient.from("company_settings")
    .update({[column]:value,updated_at:nowISO()}).eq("id",1).select("id").single();
   if(error || !data) throw error || new Error("Company settings row was not updated");
@@ -996,9 +997,9 @@ async function syncCoreTimeFromSupabase(employeeId,includeAll=false){
  Object.assign(DB,await fetchCoreTimeFromSupabase(employeeId,includeAll));
  save();
 }
-async function syncTimeDataFromSupabase(employeeId, includeAllWorklogs=false){
+async function syncTimeDataFromSupabase(employeeId, includeAllWorklogs=false, includeReviewTime=false){
 
- await syncCoreTimeFromSupabase(employeeId);
+ await syncCoreTimeFromSupabase(employeeId,includeReviewTime);
 
 await syncRosterJobsFromSupabase();
 
@@ -1045,9 +1046,6 @@ save();
     DB.correctionRequests.length,
     "correction requests loaded"
 );
-}
-async function syncAdminJobTimeEntries(){
- await syncCoreTimeFromSupabase(null,true);
 }
 
 const coreRealtime={channel:null,userId:null,employeeId:null,role:null,generation:0,
@@ -1147,7 +1145,7 @@ async function refreshCoreTimeFromRealtime(){
   const generation=coreRealtime.generation,revision=coreRealtime.revision;
   const employeeId=coreRealtime.employeeId,role=coreRealtime.role;
   try{
-    const snapshot=await fetchCoreTimeFromSupabase(employeeId,isAdminRole(role));
+    const snapshot=await fetchCoreTimeFromSupabase(employeeId,canReviewAttendance(role));
     if(generation!==coreRealtime.generation || revision!==coreRealtime.revision ||
        DB.session?.employeeId!==employeeId || DB.session?.role!==role) return;
     Object.assign(DB,snapshot);
@@ -1155,7 +1153,7 @@ async function refreshCoreTimeFromRealtime(){
     invalidateStaleFourPmReminder();
     invalidateStalePostJobOtReminder();
     save();
-    if(route.name==="admin-timesheets" && isAdminRole(role)) void fetchAttendanceApprovalHistory({force:true});
+    if(route.name==="admin-timesheets" && canReviewAttendance(role)) void fetchAttendanceApprovalHistory({force:true});
   }catch(error){
     if(generation===coreRealtime.generation) console.error("Core Realtime sync error:",error);
   }finally{
@@ -1255,12 +1253,12 @@ function startCoreRealtime(user,profile){
   coreRealtime.userId=user.id;
   coreRealtime.employeeId=profile.id;
   coreRealtime.role=profile.permission;
-  const global=isAdminRole(profile.permission);
+  const reviewScope=canReviewAttendance(profile.permission);
   let channel=supabaseClient.channel(`core-time-${user.id}`);
   for(const table of ["attendance","breaks","job_time_entries"]){
     for(const event of ["INSERT","UPDATE"]){
       const options={event,schema:"public",table};
-      if(!global && table!=="breaks") options.filter=`employee_id=eq.${profile.id}`;
+      if(!reviewScope && table!=="breaks") options.filter=`employee_id=eq.${profile.id}`;
       channel=channel.on("postgres_changes",options,payload=>{
         if(generation!==coreRealtime.generation) return;
         if(table==="attendance"&&event==="UPDATE") applyFourPmAttendanceRealtime(payload);
@@ -1315,24 +1313,38 @@ document.addEventListener("visibilitychange",()=>{
   }
 });
 
-function isAdminRole(perm){ return perm && perm!=="Employee"; }
-/* Which admin tabs each permission level can see */
+const APPLICATION_PERMISSIONS=["Employee","Super Admin"];
+function isApplicationPermission(permission){ return APPLICATION_PERMISSIONS.includes(permission); }
+function usesAdminShell(role=DB.session?.role){ return role==="Super Admin"; }
+function canReviewAttendance(role=DB.session?.role){ return role==="Super Admin"; }
+function canLoadCompanyAttendance(role=DB.session?.role){ return role==="Super Admin"; }
+function canManageJobs(role=DB.session?.role){ return role==="Super Admin"; }
+function canManageEmployees(role=DB.session?.role){ return role==="Super Admin"; }
+function canUpdateSettings(role=DB.session?.role){ return role==="Super Admin"; }
+/* Tabs available to the Super Admin application permission. */
 const ROLE_TAB_ACCESS = {
   "Super Admin": ["admin-dashboard","admin-employees","admin-jobs","admin-timesheets","admin-reports","admin-payroll","admin-notifications","admin-audit","admin-xero","admin-settings"],
-  "Admin":       ["admin-dashboard","admin-employees","admin-jobs","admin-timesheets","admin-reports","admin-payroll","admin-notifications","admin-audit","admin-xero","admin-settings"],
-  "Manager":     ["admin-dashboard","admin-employees","admin-jobs","admin-timesheets","admin-reports","admin-notifications"],
-  "Payroll":     ["admin-dashboard","admin-reports","admin-payroll","admin-notifications"],
 };
 function canAccess(tab){
   const role = DB.session?.role;
-  if(!isAdminRole(role)) return false;
+  if(!usesAdminShell(role)) return false;
   return (ROLE_TAB_ACCESS[role]||[]).includes(tab);
 }
-/* Admins/managers who are also field crew (e.g. Alex, Shadelle, Julia) get a "My Time" section
-   inside their admin shell reusing the same personal attendance and work-log screens. */
+/* Active, resolved employee profiles get "My Time" inside the relevant app shell,
+   reusing the same personal attendance and work-log screens. */
 const SELF_SERVICE_ROUTES = ["emp-home","job-select","worklog","worklog-add","worklog-detail","history","emp-att-detail"];
-function hasFieldAccess(){ const e = currentEmployee(); return !!(e && e.fieldRole); }
-function isFieldStaff(e){ return e.permission==="Employee" || e.permission==="Manager" || !!e.fieldRole; }
+function hasPersonalSelfServiceAccess(){
+  const employee=currentEmployee();
+  return !!(DB.session && isApplicationPermission(DB.session.role) && employee && employee.status==="active" && employee.id===DB.session.employeeId);
+}
+function canAccessSelfServiceRoute(name=route.name){
+  const employee=currentEmployee();
+  if(!hasPersonalSelfServiceAccess() || !employee || !SELF_SERVICE_ROUTES.includes(name)) return false;
+  if(name==="emp-att-detail") return DB.attendance.some(a=>a.id===route.id && a.employeeId===employee.id);
+  if(name==="worklog-detail") return DB.worklogs.some(w=>w.id===route.id && w.employeeId===employee.id);
+  return true;
+}
+function isFieldStaff(e){ return e.permission==="Employee" || !!e.fieldRole; }
 function firstAllowedTab(role){ return (ROLE_TAB_ACCESS[role]||["admin-dashboard"])[0]; }
 async function audit(actor,action,target,detail,worklogId=null){
   const ts=nowISO(),id=uid("aud");
@@ -1425,8 +1437,16 @@ function toast(msg){
 function go(name, params={}){
   if(route.name==="worklog-add" && name!=="worklog-add") clearWorklogPhotoSelection();
   if(route.name==="worklog-detail" && (name!=="worklog-detail" || route.id!==params.id)) clearWorklogDetailPhoto();
+  const returningToTimesheetsDetail = name==="admin-timesheets" && route.name==="admin-att-detail" && route.from==="admin-timesheets";
+  if(name==="admin-timesheets" && !returningToTimesheetsDetail) resetTimesheetTransientUiState();
   if(name==="admin-audit") adminAuditSyncState="idle";
   route = {name, ...params}; render(); window.scrollTo(0,0);
+}
+
+function resetTimesheetTransientUiState(){
+  attendanceReviewExpandedPeriods.clear();
+  attendanceProjectsExpandedSessions.clear();
+  attendanceBreaksExpandedGroups.clear();
 }
 
 function currentEmployee(){ return DB.employees.find(e=>e.id===DB.session?.employeeId); }
@@ -1538,15 +1558,10 @@ function normalizeAttendanceApprovalHistoryRow(row){
 function attendanceApprovalHistoryCutoff(nowMs=Date.now()){
   return nowMs-7*24*60*60*1000;
 }
-function isAttendanceReviewRole(role=DB.session?.role){
-  return role==="Manager" || role==="Admin" || role==="Super Admin";
-}
+function isAttendanceReviewRole(role=DB.session?.role){ return canReviewAttendance(role); }
 function attendanceReviewVisibleEmployees(){
   if(!isAttendanceReviewRole()) return [];
-  const visible=visibleEmployeeList();
-  if(DB.session?.role==="Admin" || DB.session?.role==="Super Admin") return visible;
-  const actor=currentEmployee();
-  return actor?visible.filter(employee=>employee.manager===actor.name):[];
+  return visibleEmployeeList();
 }
 function attendanceApprovalHistoryVisibleEmployees(){
   return attendanceReviewVisibleEmployees();
@@ -1715,10 +1730,7 @@ function attendanceRowsInReviewPeriod(employeeId,periodStart,rows=DB.attendance)
 }
 function canActorApproveAttendancePeriod(period){
   if(!period?.employee?.id || !DB.session) return false;
-  if(DB.session.role==="Admin" || DB.session.role==="Super Admin") return true;
-  if(DB.session.role!=="Manager") return false;
-  const actor=currentEmployee();
-  return !!actor && period.employee.manager===actor.name;
+  return DB.session.role==="Super Admin";
 }
 function attendancePeriodApprovalReadiness(employeeId,periodStart){
   const rows=attendanceRowsInReviewPeriod(employeeId,periodStart);
@@ -1752,7 +1764,7 @@ async function refreshAttendanceApprovalData(){
   const generation=coreRealtime.generation,employeeId=coreRealtime.employeeId,role=coreRealtime.role;
   if(!DB.session || !employeeId || DB.session.employeeId!==employeeId || DB.session.role!==role) throw new Error("Authenticated session changed.");
   coreRealtime.revision++;
-  const snapshot=await fetchCoreTimeFromSupabase(employeeId,isAdminRole(role));
+  const snapshot=await fetchCoreTimeFromSupabase(employeeId,canReviewAttendance(role));
   if(generation!==coreRealtime.generation || DB.session?.employeeId!==employeeId || DB.session?.role!==role) throw new Error("Authenticated session changed.");
   Object.assign(DB,snapshot);save();
 }
@@ -2113,10 +2125,7 @@ function attendanceCorrectionHistoryIndicator(attendance){
   return `<span class="attendance-correction-history-indicator">${escapeHtml(status||"Attendance")} &middot; ${count} ${count===1?"correction":"corrections"}</span>`;
 }
 function canActorCorrectAttendance(attendance){
-  const actor=currentEmployee(),target=DB.employees.find(employee=>employee.id===attendance?.employeeId);
-  if(!actor || !target || !DB.session) return false;
-  if(DB.session.role==="Admin" || DB.session.role==="Super Admin") return true;
-  return DB.session.role==="Manager" && target.manager===actor.name;
+  return !!attendance?.employeeId && DB.session?.role==="Super Admin";
 }
 function attendanceCorrectionReadiness(attendance,breakRows=DB.breaks){
   if(!attendance?.id || !attendance.timeOut || Number.isNaN(new Date(attendance.timeOut).getTime())) return {canEdit:false,reason:"Open attendance cannot be corrected."};
@@ -2367,7 +2376,7 @@ async function refreshAfterAttendanceCorrection(){
   const generation=coreRealtime.generation,employeeId=coreRealtime.employeeId,role=coreRealtime.role;
   if(!DB.session || !employeeId || DB.session.employeeId!==employeeId || DB.session.role!==role) throw new Error("Authenticated session changed.");
   coreRealtime.revision++;
-  const snapshot=await fetchCoreTimeFromSupabase(employeeId,isAdminRole(role));
+  const snapshot=await fetchCoreTimeFromSupabase(employeeId,canReviewAttendance(role));
   if(generation!==coreRealtime.generation || DB.session?.employeeId!==employeeId || DB.session?.role!==role) throw new Error("Authenticated session changed.");
   Object.assign(DB,snapshot);
   save();
@@ -2736,13 +2745,22 @@ async function loadWorklogDetailPhoto(w){
    ===================================================================== */
 function render(){
   const app = document.getElementById("app");
-  document.body.classList.toggle("wide", window.innerWidth>900 && isAdminRole(DB.session?.role));
+  document.body.classList.toggle("wide", window.innerWidth>900 && usesAdminShell(DB.session?.role));
   if(!DB.session){
     clearPostJobOtReminder();
     if(route.name==="privacy"){ app.innerHTML = screenPrivacy(); bindScreen(); return; }
     app.innerHTML = screenLogin(); bindLogin(); return;
   }
-  if(!isAdminRole(DB.session.role)){
+  if(!isApplicationPermission(DB.session.role)){
+    console.error("Unsupported session permission:",DB.session.role);
+    void supabaseClient.auth.signOut();
+    stopCoreRealtime();
+    DB.session=null;
+    adminAuditSyncState="idle";
+    save();
+    app.innerHTML=screenLogin(); bindLogin(); return;
+  }
+  if(DB.session.role==="Employee"){
     app.innerHTML = renderEmployeeShell();
     bindEmployeeShell();
   } else {
@@ -2792,8 +2810,7 @@ function loadAuthenticatedProfile(userId){
 }
 async function syncInitialDataForProfile(profile){
  await syncCompanySettings();
- await syncTimeDataFromSupabase(profile.id,profile.permission==="Super Admin");
- if(isAdminRole(profile.permission)) await syncAdminJobTimeEntries();
+  await syncTimeDataFromSupabase(profile.id,profile.permission==="Super Admin",canReviewAttendance(profile.permission));
 }
 async function boot(){
  DB.session=null;
@@ -2806,17 +2823,17 @@ async function boot(){
      return;
    }
    const {data:profile,error:profileError}=await loadAuthenticatedProfile(user.id);
-   if(profileError || !profile || profile.status==="disabled"){
-     console.error("Session profile validation error:",profileError || "Profile unavailable or disabled");
-     if(!profile || profile.status==="disabled") await supabaseClient.auth.signOut();
+   if(profileError || !profile || profile.status==="disabled" || !isApplicationPermission(profile.permission)){
+     console.error("Session profile validation error:",profileError || "Profile unavailable, disabled, or has an unsupported permission");
+     if(!profile || profile.status==="disabled" || !isApplicationPermission(profile.permission)) await supabaseClient.auth.signOut();
      save();
      return;
    }
    await syncInitialDataForProfile(profile);
-   DB.session={role:profile.permission,employeeId:profile.id,name:profile.name};
-   save();
-   route={name:isAdminRole(profile.permission)?firstAllowedTab(profile.permission):"emp-home"};
-   startCoreRealtime(user,profile);
+    DB.session={role:profile.permission,employeeId:profile.id,name:profile.name};
+    save();
+    route={name:profile.permission==="Super Admin"?firstAllowedTab(profile.permission):"emp-home"};
+    startCoreRealtime(user,profile);
  }catch(error){
    console.error("Session restore error:",error);
    DB.session=null;
@@ -2872,8 +2889,8 @@ function bindLogin(){
       return;
     }
 
-    if(profile.status === "disabled"){
-      toast("This account has been disabled. Contact your admin.");
+    if(profile.status === "disabled" || !isApplicationPermission(profile.permission)){
+      toast(profile.status==="disabled"?"This account has been disabled. Contact your admin.":"This account has an unsupported permission. Contact your administrator.");
       await supabaseClient.auth.signOut();
       return;
     }
@@ -2905,7 +2922,7 @@ function bindLogin(){
     startCoreRealtime(authData.user,profile);
 
     go(
-      isAdminRole(profile.permission)
+      profile.permission==="Super Admin"
         ? firstAllowedTab(profile.permission)
         : "emp-home"
     );
@@ -3082,7 +3099,7 @@ function screenJobSelect(){
   const jobs=employeeVisibleJobs(emp.id,active?.jobId);
 
   return `
-  <div class="topbar"><button class="backbtn" id="back">← Back</button><div class="h2">Select Job</div><div style="width:40px"></div></div>
+  <div class="topbar"><button class="backbtn" id="back">&larr; Back</button><div class="h2">Select Job</div><div style="width:40px"></div></div>
   <div class="content">
     <div class="muted small" style="margin-bottom:16px;">Start or end time tracking for an assigned job.</div>
 
@@ -3700,11 +3717,12 @@ function screenWorklog(){
 }
 function screenWorklogDetail(){
   const w = DB.worklogs.find(x=>x.id===route.id);
-  const isAdminCtx = isAdminRole(DB.session?.role);
-  if(!w) return `<div class="topbar"><button class="backbtn" id="back">← Back</button><div class="h2">Work Entry</div><div style="width:40px"></div></div><div class="content"><div class="empty">Entry not found.</div></div>`;
+  const isAdminCtx = usesAdminShell(DB.session?.role);
+  const employee=currentEmployee();
+  if(!w || (!isAdminCtx && (!hasPersonalSelfServiceAccess() || w.employeeId!==employee?.id))) return `<div class="topbar"><button class="backbtn" id="back">&larr; Back</button><div class="h2">Work Entry</div><div style="width:40px"></div></div><div class="content"><div class="empty">Entry not found.</div></div>`;
   const job = DB.jobs.find(j=>j.id===w.jobId);
   return `
-  <div class="topbar"><button class="backbtn" id="back">← Back</button><div class="h2">Work Entry Detail</div><div style="width:40px"></div></div>
+  <div class="topbar"><button class="backbtn" id="back">&larr; Back</button><div class="h2">Work Entry Detail</div><div style="width:40px"></div></div>
   <div class="content">
     <div class="card" style="margin-bottom:16px;">
       <div class="row-between"><div class="h2">${escapeHtml(job?job.name:'—')}</div></div>
@@ -3728,7 +3746,7 @@ function screenWorklogAdd(){
   const emp = currentEmployee();
   const jobs = DB.jobs.filter(j=>j.status!=="Completed");
   return `
-  <div class="topbar"><button class="backbtn" id="back">← Back</button><div class="h2">Add Work Entry</div><div style="width:40px"></div></div>
+  <div class="topbar"><button class="backbtn" id="back">&larr; Back</button><div class="h2">Add Work Entry</div><div style="width:40px"></div></div>
   <div class="content">
     <div class="field">
   <label>Job</label>
@@ -3789,10 +3807,11 @@ function screenHistory(){
 
 function screenEmpAttDetail(){
   const a = DB.attendance.find(x=>x.id===route.id);
+  if(!hasPersonalSelfServiceAccess() || !a || a.employeeId!==currentEmployee()?.id) return `<div class="content"><div class="empty">Attendance record not found.</div></div>`;
   const brks = DB.breaks.filter(b=>a.breakIds.includes(b.id));
   const openReq = DB.correctionRequests.find(r=>r.attendanceId===a.id && r.status==="pending");
   return `
-  <div class="topbar"><button class="backbtn" id="back">← Back</button><div class="h2">Shift Detail</div><div style="width:40px"></div></div>
+  <div class="topbar"><button class="backbtn" id="back">&larr; Back</button><div class="h2">Shift Detail</div><div style="width:40px"></div></div>
   <div class="content">
     <div class="row-between" style="margin-bottom:14px;">
       <div><div class="h2">${fmtDate(a.timeIn)}</div><div class="muted small">${escapeHtml(jobName(a.jobId))}${a.category?` · ${escapeHtml(a.category)}`:""}</div></div>
@@ -3838,7 +3857,7 @@ function screenProfile(){
 
 function screenPrivacy(){
   return `
-  <div class="topbar">${PRIVACY_FROM_LOGIN?'<div style="width:40px"></div>':'<button class="backbtn" id="back">← Back</button>'}<div class="h2">Privacy Notice</div><div style="width:40px"></div></div>
+  <div class="topbar">${PRIVACY_FROM_LOGIN?'<div style="width:40px"></div>':'<button class="backbtn" id="back">&larr; Back</button>'}<div class="h2">Privacy Notice</div><div style="width:40px"></div></div>
   <div class="content">
     <div class="card col gap-14">
       <div><b>Photo permission</b><div class="small muted" style="margin-top:4px;">Time In, Time Out, breaks and lunch never require a photo. A photo is only ever requested if you choose to attach one to an optional Work Log entry, and it's picked from your device's gallery rather than a live camera capture.</div></div>
@@ -3872,7 +3891,8 @@ function bindScreen(){
     else if(route.name==="worklog-add") go("worklog");
     else go("emp-home");
   };
-  if($("back") && route.name==="privacy" && !isAdminRole(DB.session?.role)) $("back").onclick = ()=> go("profile");
+  if($("back") && route.name==="job-select") $("back").onclick = ()=> go("emp-home");
+  if($("back") && route.name==="privacy" && !usesAdminShell(DB.session?.role)) $("back").onclick = ()=> go("profile");
   document.querySelectorAll("[data-emp-att]").forEach(el=> el.onclick = ()=> go("emp-att-detail",{id:el.dataset.empAtt}));
   if($("btnTimeIn")) $("btnTimeIn").onclick = ()=> go("job-select");
   document.querySelectorAll("[data-job]").forEach(b=> b.onclick = ()=> doTimeIn(b.dataset.job));
@@ -4027,7 +4047,7 @@ if(!DB.worklogs.some(w=>w.id===worklog.id)) DB.worklogs.push(worklog);
    ===================================================================== */
 function renderAdminShell(){
   const allTabs = [
-    ...(hasFieldAccess()? [["emp-home","⏱️","My Time"]] : []),
+    ...(hasPersonalSelfServiceAccess()? [["emp-home","⏱️","My Time"]] : []),
     ["admin-dashboard","📊","Dashboard"],
     ["admin-employees","👥","Employees"],
     ["admin-jobs","🧰","Jobs"],
@@ -4039,14 +4059,24 @@ function renderAdminShell(){
     ["admin-xero","🔗","Xero"],
     ["admin-settings","⚙️","Settings"],
   ];
-  const fieldAccess = hasFieldAccess();
-  const tabs = allTabs.filter(([k])=> k==="emp-home" ? fieldAccess : canAccess(k));
-  const detailExceptions = ["admin-att-detail","admin-employee-detail","admin-job-detail","privacy"];
-  const selfServiceOk = fieldAccess && SELF_SERVICE_ROUTES.includes(route.name);
-  const auditWorklogOk = route.name==="worklog-detail" && route.back?.name==="admin-audit"
-    && canAccess("admin-audit") && DB.auditLogs.some(a=>a.action==="Added work log entry" && a.worklogId===route.id)
-    && DB.worklogs.some(w=>w.id===route.id);
-  if(!canAccess(route.name) && !detailExceptions.includes(route.name) && !selfServiceOk && !auditWorklogOk){
+  const selfServiceAccess = hasPersonalSelfServiceAccess();
+  const tabs = allTabs.filter(([k])=> k==="emp-home" ? selfServiceAccess : canAccess(k));
+  const detailRouteAllowed=(()=>{
+    if(route.name==="privacy") return true;
+    if(route.name==="admin-employee-detail") return canAccess("admin-employees") && visibleEmployeeList().some(e=>e.id===route.id);
+    if(route.name==="admin-att-detail") return canAccess("admin-timesheets") && attendanceReviewVisibleEmployees().some(e=>e.id===DB.attendance.find(a=>a.id===route.id)?.employeeId);
+    if(route.name==="admin-job-detail") return canAccess("admin-jobs") && DB.jobs.some(j=>j.id===route.id);
+    return false;
+  })();
+  const selfServiceOk = selfServiceAccess && canAccessSelfServiceRoute();
+  const adminWorklogOrigin = route.back?.name;
+  const adminWorklogOriginAllowed = adminWorklogOrigin==="admin-audit" ? canAccess("admin-audit")
+    : adminWorklogOrigin==="admin-employee-detail" ? canAccess("admin-employees")
+    : adminWorklogOrigin==="admin-job-detail" ? canAccess("admin-jobs") : false;
+  const adminWorklog = route.name==="worklog-detail" && ["admin-audit","admin-employee-detail","admin-job-detail"].includes(adminWorklogOrigin)
+    && adminWorklogOriginAllowed && DB.worklogs.some(w=>w.id===route.id)
+    && (adminWorklogOrigin!=="admin-audit" || DB.auditLogs.some(a=>a.action==="Added work log entry" && a.worklogId===route.id));
+  if(!canAccess(route.name) && !detailRouteAllowed && !selfServiceOk && !adminWorklog){
     route = {name: firstAllowedTab(DB.session.role)};
   }
   const body = ({
@@ -4190,14 +4220,11 @@ function screenAdminDash(){
 }
 
 function visibleEmployeeList(){
-  const role = DB.session.role;
-  const all = DB.employees.filter(e=>isFieldStaff(e));
-  if(role==="Manager") return all.filter(e=> e.manager===DB.session.name || e.id===DB.session.employeeId);
-  return all;
+  return DB.employees.filter(e=>isFieldStaff(e));
 }
 function screenAdminEmployees(){
   const list = visibleEmployeeList();
-  const canAdd = DB.session.role!=="Manager";
+  const canAdd = canManageEmployees();
   return `
   <div class="topbar"><div class="h2">Employees</div>${canAdd?'<button class="btn btn-accent btn-sm" id="addEmp">+ Add Employee</button>':''}</div>
   <div class="content">
@@ -4213,14 +4240,15 @@ function screenAdminEmployees(){
 }
 function screenAdminEmployeeDetail(){
   const e = DB.employees.find(x=>x.id===route.id);
+  if(!e) return `<div class="content"><div class="empty">Employee not found.</div></div>`;
   const recs = DB.attendance.filter(a=>a.employeeId===e.id).sort((a,b)=>new Date(b.timeIn)-new Date(a.timeIn));
   const weekMin = weeklyNetMinutes(e.id, startOfWeek());
   const liveState=employeeLiveState(e.id),activeAtt=liveState.attendance,activeBreak=liveState.activeBreak;
   const activeBreakLabel=breakDescriptorForType(activeBreak?.type)?.key==="lunch"?"On Lunch":"On Break";
-  const canManage = DB.session.role!=="Manager";
-  const canSeeRate = DB.session.role==="Admin"||DB.session.role==="Super Admin"||DB.session.role==="Payroll";
+  const canSeeRate = DB.session.role==="Super Admin";
+  const canManageAttendance = DB.session?.role === "Super Admin";
   return `
-  <div class="topbar"><button class="backbtn" id="back">← Back</button><div class="h2">${escapeHtml(e.name)}</div><div style="width:40px"></div></div>
+  <div class="topbar"><button class="backbtn" id="back">&larr; Back</button><div class="h2">${escapeHtml(e.name)}</div><div style="width:40px"></div></div>
   <div class="content">
     <div class="card row gap-12" style="margin-bottom:16px;">
       <div class="avatar">${initials(e.name)}</div>
@@ -4236,15 +4264,11 @@ function screenAdminEmployeeDetail(){
       <div class="row-between small"><span class="muted">Default location</span><b>${escapeHtml(e.defaultLocation||'—')}</b></div>
       <div class="row-between small"><span class="muted">Permission level</span><b>${escapeHtml(e.permission)}</b></div>
     </div>
+    ${canManageAttendance?`<div class="card" style="margin-bottom:16px;"><button class="btn btn-accent btn-block" id="manageAttendance">Manage Attendance</button></div>`:""}
     <div class="grid2" style="margin-bottom:16px;">
       <div class="kpi"><div class="num">${hm(weekMin)}</div><div class="lab">Hours this week</div></div>
       <div class="kpi"><div class="num">${statusPill(liveState.status,activeBreakLabel,liveState.label)}</div><div class="lab">Current status</div></div>
     </div>
-    ${canManage? `<div class="flexwrap" style="margin-bottom:16px;">
-      <button class="btn btn-ghost btn-sm" id="resetPin">Reset PIN</button>
-      <button class="btn ${e.status==='active'?'btn-outline-danger':'btn-ok'} btn-sm" id="toggleActive">${e.status==='active'?'Disable Employee':'Re-enable Employee'}</button>
-      <button class="btn btn-ghost btn-sm" id="manualEntry">+ Manual Attendance Entry</button>
-    </div>`:""}
     <div class="h3" style="margin-bottom:10px;">ATTENDANCE RECORDS</div>
     ${recs.map(a=>`<div class="card card-tight" style="margin-bottom:8px;cursor:pointer;" data-att="${a.id}">
       <div class="row-between"><b class="small">${fmtDate(a.timeIn)}</b>${attStatusPill(a.status)}</div>
@@ -4255,10 +4279,11 @@ function screenAdminEmployeeDetail(){
 
 function screenAdminAttDetail(){
   const a = DB.attendance.find(x=>x.id===route.id);
+  if(!a) return `<div class="content"><div class="empty">Attendance record not found.</div></div>`;
   const brks = DB.breaks.filter(b=>a.breakIds.includes(b.id));
   const wl = DB.worklogs.filter(w=>w.attendanceId===a.id);
   return `
-  <div class="topbar"><button class="backbtn" id="back">← Back</button><div class="h2">Attendance Record</div><div style="width:40px"></div></div>
+  <div class="topbar"><button class="backbtn" id="back">&larr; Back</button><div class="h2">Attendance Record</div><div style="width:40px"></div></div>
   <div class="content">
     <div class="row-between" style="margin-bottom:14px;">
       <div><div class="h2">${escapeHtml(empName(a.employeeId))}</div><div class="muted small">${fmtDate(a.timeIn)} · ${escapeHtml(jobName(a.jobId))}</div></div>
@@ -4301,19 +4326,13 @@ function screenAdminAttDetail(){
       </div>`).join("")}`:""}
 
     ${a.rejectReason? `<div class="card" style="border-color:var(--danger);margin-bottom:12px;"><b class="small">Rejection reason</b><div class="small muted" style="margin-top:4px;">${escapeHtml(a.rejectReason)}</div></div>`:""}
-    ${a.status==="submitted"? `<div class="grid2" style="margin-top:10px;">
-      <button class="btn btn-ok" id="approveBtn">✅ Approve</button>
-      <button class="btn btn-danger" id="rejectBtn">✖ Reject</button>
-    </div>
-    <button class="btn btn-ghost btn-block" style="margin-top:8px;" id="correctBtn">Ask Employee to Correct</button>`:""}
-    ${(a.status==="approved"||a.status==="corrected")? `<button class="btn btn-ghost btn-block" style="margin-top:10px;" id="editApproved">Edit (creates audit record)</button>`:""}
   </div>`;
 }
 
 function screenAdminJobs(){
-  const canManageJobs = DB.session.role==="Manager" || DB.session.role==="Super Admin";
+  const canManageThisJobSet = canManageJobs();
   return `
-  <div class="topbar"><div class="h2">Jobs</div>${canManageJobs?`<button class="btn btn-accent btn-sm" id="addJob">+ New Job</button>`:""}</div>
+  <div class="topbar"><div class="h2">Jobs</div>${canManageThisJobSet?`<button class="btn btn-accent btn-sm" id="addJob">+ New Job</button>`:""}</div>
   <div class="content">
     ${DB.jobs.map(j=>`<div class="card" style="margin-bottom:10px;cursor:pointer;" data-job2="${j.id}">
       <div class="row-between"><b>${escapeHtml(j.name)}</b>
@@ -4326,13 +4345,14 @@ function screenAdminJobs(){
 }
 function screenAdminJobDetail(){
   const j = DB.jobs.find(x=>x.id===route.id);
+  if(!j) return `<div class="content"><div class="empty">Job not found.</div></div>`;
   const jobHistory = (DB.jobChangeHistory || [])
   .filter(h => h.jobId === j.id);
   const logs = DB.worklogs.filter(w=>w.jobId===j.id);
   const jobMins = DB.attendance.filter(a=>a.jobId===j.id).reduce((s,a)=>s+(a.netMin||0),0);
-  const canManageJobs = (DB.session.role==="Manager" || DB.session.role==="Super Admin") && j.status!=="Completed";
+  const canManageThisJob = canManageJobs() && j.status!=="Completed";
   return `
-  <div class="topbar"><button class="backbtn" id="back">← Back</button><div class="h2">Job Detail</div><div style="width:40px"></div></div>
+  <div class="topbar"><button class="backbtn" id="back">&larr; Back</button><div class="h2">Job Detail</div><div style="width:40px"></div></div>
   <div class="content">
     <div class="card" style="margin-bottom:16px;">
       <div class="row-between"><div class="h2">${escapeHtml(j.name)}</div><span class="pill ${j.status==='Active'?'pill-ok':j.status==='Upcoming'?'pill-warn':'pill-muted'}">${j.status}</span></div>
@@ -4347,11 +4367,11 @@ function screenAdminJobDetail(){
         <div class="row-between"><span class="muted">Job manager</span><b>${escapeHtml(j.manager)}</b></div>
         <div class="row-between"><span class="muted">Total hours logged</span><b style="color:var(--accent)">${hm(jobMins)}</b></div>
       </div>
-      ${canManageJobs?`<button class="btn btn-ghost btn-block" style="margin-top:14px;" id="editJob">Edit Job Details</button>`:""}
+      ${canManageThisJob?`<button class="btn btn-ghost btn-block" style="margin-top:14px;" id="editJob">Edit Job Details</button>`:""}
     </div>
-    <div class="row-between" style="margin-bottom:8px;"><div class="h3">ASSIGNED EMPLOYEES</div>${canManageJobs?`<a class="link small" id="addJobEmp">+ Add Employee</a>`:""}</div>
+    <div class="row-between" style="margin-bottom:8px;"><div class="h3">ASSIGNED EMPLOYEES</div>${canManageThisJob?`<a class="link small" id="addJobEmp">+ Add Employee</a>`:""}</div>
     <div class="flexwrap" style="margin-bottom:16px;">
-      ${j.assigned.map(id=>`<span class="pill pill-muted" style="display:inline-flex;align-items:center;gap:6px;">${escapeHtml(empName(id))}${canManageJobs?`<b data-remove-emp="${id}" style="cursor:pointer;color:var(--danger);margin-left:2px;">✕</b>`:""}</span>`).join("")}
+      ${j.assigned.map(id=>`<span class="pill pill-muted" style="display:inline-flex;align-items:center;gap:6px;">${escapeHtml(empName(id))}${canManageThisJob?`<b data-remove-emp="${id}" style="cursor:pointer;color:var(--danger);margin-left:2px;">✕</b>`:""}</span>`).join("")}
       ${j.assigned.length===0?`<div class="tiny muted">No employees assigned yet.</div>`:""}
     </div>
     <div class="h3" style="margin-bottom:8px;">JOB NOTES / WORK LOGS</div>
@@ -4422,37 +4442,22 @@ function renderAttendanceActivitySection(title,periods,kind,jobEntriesByAttendan
 }
 
 function screenAdminTimesheets(){
-  const visibleEmployees=attendanceReviewVisibleEmployees();
+  const requestedEmployeeId = route.employeeId || null;
+  const reviewVisibleEmployees = attendanceReviewVisibleEmployees();
+  const selectedEmployee = requestedEmployeeId ? reviewVisibleEmployees.find(employee=>employee.id===requestedEmployeeId) : null;
+  const selectedEmployeeId = selectedEmployee?.id || requestedEmployeeId;
+  const visibleEmployees = requestedEmployeeId ? (selectedEmployee ? [selectedEmployee] : []) : reviewVisibleEmployees;
+  const fromEmployeeDetail = route.from === "admin-employee-detail" && !!selectedEmployee;
   const reviewPeriods=buildAttendanceReviewPeriods(DB.attendance,visibleEmployees);
-  const activityPeriods=buildAttendanceActivityPeriods(attendanceApprovalHistoryState.rows,attendanceApprovalHistoryVisibleEmployees(),DB.attendance);
+  const activityPeriods=buildAttendanceActivityPeriods(attendanceApprovalHistoryState.rows,visibleEmployees,DB.attendance);
   const recentPeriods=activityPeriods.filter(period=>period.kind==="recent"),archivePeriods=activityPeriods.filter(period=>period.kind==="archive");
   const displayedAttendance=[...reviewPeriods,...activityPeriods].flatMap(period=>period.attendance);
   const jobEntriesByAttendance=assignJobEntriesToAttendance([...new Map(displayedAttendance.map(row=>[row.id,row])).values()],DB.jobTimeEntries||[]);
-  const rejected = DB.attendance.filter(a=>a.status==="rejected");
-  const corrections = DB.correctionRequests.filter(r=>r.status==="pending");
+  const rejected = DB.attendance.filter(a=>a.status==="rejected"&&(!selectedEmployeeId||a.employeeId===selectedEmployeeId));
   return `
-  <div class="topbar"><div class="h2">Timesheet Approval</div></div>
+  <div class="topbar">${fromEmployeeDetail?`<button class="backbtn" id="back">&larr; Back</button>`:""}<div class="h2">Timesheet Approval</div>${fromEmployeeDetail?`<div style="width:40px"></div>`:""}</div>
   <div class="content">
-    ${corrections.length>0? `<div class="h3" style="margin-bottom:10px;">CORRECTION REQUESTS (${corrections.length})</div>
-    ${corrections.map(r=>{
-      const a = DB.attendance.find(x=>x.id===r.attendanceId);
-      const empN = empName(r.employeeId);
-      const typeLabel = r.type==="both" ? "Time In & Time Out" : r.type==="timeIn" ? "Time In" : "Time Out";
-      const relatedLogs = DB.auditLogs.filter(l=> l.actor===empN && fmtDate(l.ts)===fmtDate(a.timeIn)).slice(0,5);
-      return `<div class="card" style="margin-bottom:10px;border-color:var(--warn);">
-        <div class="row-between"><b class="small">${escapeHtml(empN)}</b><span class="tiny muted">${fmtDate(a.timeIn)}</span></div>
-        <div class="tiny muted" style="margin-top:2px;">Correction type: <b>${typeLabel}</b></div>
-        ${r.requestedTimeIn? `<div class="small muted" style="margin-top:6px;">Time In — original: <b>${fmtTime(r.originalTimeIn)}</b> → requested: <b>${fmtTime(r.requestedTimeIn)}</b></div>`:""}
-        ${r.requestedTimeOut? `<div class="small muted" style="margin-top:4px;">Time Out — original: <b>${fmtTime(r.originalTimeOut)}</b> → requested: <b>${fmtTime(r.requestedTimeOut)}</b></div>`:""}
-        <div class="small" style="margin-top:6px;">"${escapeHtml(r.reason)}"</div>
-        ${relatedLogs.length? `<div class="tiny muted" style="margin-top:10px;padding-top:8px;border-top:1px solid var(--line);"><b>Related activity that day:</b><br>${relatedLogs.map(l=>`${fmtTime(l.ts)} — ${escapeHtml(l.action)}${l.detail?`: ${escapeHtml(auditDetailText(l.detail))}`:""}`).join("<br>")}</div>`:""}
-        <div class="grid2" style="margin-top:10px;">
-          <button class="btn btn-ok btn-sm" data-cr-approve="${r.id}">Approve Correction</button>
-          <button class="btn btn-danger btn-sm" data-cr-reject="${r.id}">Reject</button>
-        </div>
-      </div>`;
-    }).join("")}`:""}
-
+    ${selectedEmployee?`<div class="card card-tight" style="margin-bottom:16px;"><div class="small muted">Managing attendance for</div><b>${escapeHtml(selectedEmployee.name)}</b></div>`:""}
     <div class="h3" style="margin-bottom:10px;">ATTENDANCE PERIODS AWAITING REVIEW (${reviewPeriods.length})</div>
     ${reviewPeriods.map(period=>{const approvalKey=attendancePeriodApprovalKey(period.employee.id,period.periodStart),approvalState=attendancePeriodApprovalState.get(approvalKey),approvalReadiness=attendancePeriodApprovalReadiness(period.employee.id,period.periodStart);return `<div class="card attendance-review-period">
       <div class="attendance-period-header">
@@ -4692,7 +4697,7 @@ function buildNotifications(){
   const s = DB.settings.notifications;
   const otThreshold = DB.settings.overtimeThresholdHrs*60;
   DB.attendance.forEach(a=>{
-    const emp = DB.employees.find(e=>e.id===a.employeeId); if(!emp || emp.permission!=="Employee" && emp.permission!=="Manager") return;
+    const emp = DB.employees.find(e=>e.id===a.employeeId); if(!emp || emp.permission!=="Employee") return;
     if(s.forgotTimeOut && !a.timeOut && !sameDay(a.timeIn,new Date())){
       list.push({icon:"⚠️", color:"var(--danger)", title:"Missing Clock Out", detail:`${emp.name} has not clocked out. Last recorded: ${fmtTime(a.timeIn)} on ${fmtDate(a.timeIn)}.`, time:fmtDateShort(a.timeIn)});
     }
@@ -4770,6 +4775,16 @@ function screenAdminXero(){
 function screenAdminSettings(){
   const s = DB.settings;
   const cutoff=parseTimesheetReviewCutoff(s.timesheetReviewCutoffTime);
+  const canUpdate=canUpdateSettings();
+  const attendanceSettingControls=canUpdate
+    ? `<label class="settings-checkbox-row small"><span>Require photo</span><input type="checkbox" id="reqPhoto" ${s.requirePhoto?'checked':''}></label>
+       <label class="settings-checkbox-row small"><span>Require GPS</span><input type="checkbox" id="reqGps" ${s.requireGPS?'checked':''}></label>
+       <label class="settings-checkbox-row small"><span>Enforce geofence (block clock-in outside zone)</span><input type="checkbox" id="reqGeo" ${s.geofenceEnforced?'checked':''}></label>
+       <label class="settings-checkbox-row small"><span>Allow gallery photo upload</span><input type="checkbox" id="reqGallery" ${s.galleryUploadAllowed?'checked':''}></label>`
+    : `<div class="small muted">Only Super Admin can change attendance settings.</div>`;
+  const notificationSettingControls=canUpdate
+    ? Object.entries(NOTIFICATION_LABELS).map(([k,label],i)=>`<label class="settings-checkbox-row small" style="padding:12px 0;${i>0?'border-top:1px solid var(--line);':''}"><span>${label}</span><input type="checkbox" data-notif="${k}" ${s.notifications[k]?'checked':''}></label>`).join("")
+    : `<div class="small muted" style="padding:12px 0;">Only Super Admin can change notification settings.</div>`;
   return `
   <div class="topbar"><div class="h2">Company Settings</div></div>
   <div class="content">
@@ -4783,10 +4798,7 @@ function screenAdminSettings(){
 
     <div class="h3" style="margin-bottom:8px;">ATTENDANCE RULES</div>
     <div class="card col gap-12" style="margin-bottom:16px;">
-      <label class="settings-checkbox-row small"><span>Require photo</span><input type="checkbox" id="reqPhoto" ${s.requirePhoto?'checked':''}></label>
-      <label class="settings-checkbox-row small"><span>Require GPS</span><input type="checkbox" id="reqGps" ${s.requireGPS?'checked':''}></label>
-      <label class="settings-checkbox-row small"><span>Enforce geofence (block clock-in outside zone)</span><input type="checkbox" id="reqGeo" ${s.geofenceEnforced?'checked':''}></label>
-      <label class="settings-checkbox-row small"><span>Allow gallery photo upload</span><input type="checkbox" id="reqGallery" ${s.galleryUploadAllowed?'checked':''}></label>
+      ${attendanceSettingControls}
       <div class="row-between small"><span class="muted">Late threshold</span><b>${s.lateThresholdMin} min</b></div>
       <div class="row-between small"><span class="muted">Overtime after</span><b>${s.overtimeThresholdHrs}h/day</b></div>
       <div class="row-between small"><span class="muted">Auto clock-out after</span><b>${s.autoClockOutHrs}h</b></div>
@@ -4813,7 +4825,7 @@ function screenAdminSettings(){
 
     <div class="h3" style="margin-bottom:8px;">NOTIFICATIONS</div>
     <div class="card col" style="margin-bottom:16px;padding:4px 16px;">
-      ${Object.entries(NOTIFICATION_LABELS).map(([k,label],i)=>`<label class="settings-checkbox-row small" style="padding:12px 0;${i>0?'border-top:1px solid var(--line);':''}"><span>${label}</span><input type="checkbox" data-notif="${k}" ${s.notifications[k]?'checked':''}></label>`).join("")}
+      ${notificationSettingControls}
     </div>
     <button class="btn btn-ghost btn-block" id="viewPrivacyAdmin">View Employee Privacy Notice</button>
 
@@ -4894,12 +4906,54 @@ function bindAdminScreen(){
   }
   if($("retryAuditSync")) $("retryAuditSync").onclick=()=>{adminAuditSyncState="idle";render();};
   if($("refreshAudit")) $("refreshAudit").onclick=()=>{adminAuditSyncState="idle";render();};
-  if($("back")) $("back").onclick=()=>go(route.name==="admin-att-detail"?"admin-timesheets":route.name==="admin-employee-detail"?"admin-employees":"admin-dashboard");
+  if($("back")) $("back").onclick=()=>{
+    if(route.name==="admin-timesheets" && route.from==="admin-employee-detail" && route.employeeId){
+      go("admin-employee-detail",{id:route.employeeId});
+      return;
+    }
+    if(route.name==="admin-att-detail"){
+      if(route.from==="admin-employee-detail" && route.employeeId){ go("admin-employee-detail",{id:route.employeeId}); return; }
+      if(route.from==="admin-timesheets"){
+        const params={};
+        if(route.employeeId) params.employeeId=route.employeeId;
+        if(route.timesheetsFrom) params.from=route.timesheetsFrom;
+        go("admin-timesheets",params); return;
+      }
+      go("admin-timesheets"); return;
+    }
+    if(route.name==="admin-job-detail"){
+      go(["admin-jobs","admin-dashboard"].includes(route.from)?route.from:"admin-jobs"); return;
+    }
+    if(route.name==="worklog-detail" && route.back?.name){
+      go(route.back.name,route.back.params||{}); return;
+    }
+    if(route.name==="privacy" && route.from==="admin-settings"){
+      go("admin-settings"); return;
+    }
+    go(route.name==="admin-employee-detail"?"admin-employees":"admin-dashboard");
+  };
+  if($("manageAttendance")) $("manageAttendance").onclick=()=>{
+    if(DB.session?.role!=="Super Admin") { toast("Only Super Admin can manage attendance."); return; }
+    const employee=DB.employees.find(e=>e.id===route.id);
+    if(!employee) { toast("Employee not found."); return; }
+    go("admin-timesheets",{employeeId:employee.id,from:"admin-employee-detail"});
+  };
 
   document.querySelectorAll("[data-nav]").forEach(b=> b.onclick = ()=> go(b.dataset.nav));
   document.querySelectorAll("[data-emp]").forEach(tr=> tr.onclick = ()=> go("admin-employee-detail",{id:tr.dataset.emp}));
-  document.querySelectorAll("[data-job2]").forEach(c=> c.onclick = ()=> go("admin-job-detail",{id:c.dataset.job2}));
-  document.querySelectorAll("[data-att]").forEach(el=> el.onclick = ()=> go("admin-att-detail",{id:el.dataset.att}));
+  document.querySelectorAll("[data-job2]").forEach(c=> c.onclick = ()=> go("admin-job-detail",{id:c.dataset.job2,from:route.name}));
+  document.querySelectorAll("[data-att]").forEach(el=> el.onclick = ()=>{
+    const params={id:el.dataset.att};
+    if(route.name==="admin-timesheets"){
+      params.from="admin-timesheets";
+      if(route.employeeId) params.employeeId=route.employeeId;
+      if(route.from) params.timesheetsFrom=route.from;
+    }else if(route.name==="admin-employee-detail"){
+      params.from="admin-employee-detail";
+      params.employeeId=route.id;
+    }
+    go("admin-att-detail",params);
+  });
   document.querySelectorAll("[data-wl-detail]").forEach(el=> el.onclick = ()=> go("worklog-detail",{id:el.dataset.wlDetail, back:{name:route.name, params:route}}));
   document.querySelectorAll("[data-audit-worklog]").forEach(el=>{
     const open=()=>{
@@ -4911,13 +4965,13 @@ function bindAdminScreen(){
     el.onkeydown=e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();open();}};
   });
 
-  if($("addEmp")) $("addEmp").onclick = ()=> modalAddEmployee();
-  if($("addJob")) $("addJob").onclick = ()=> modalAddJob();
-  if($("editJob")) $("editJob").onclick = ()=> modalEditJob(route.id);
-  if($("addJobEmp")) $("addJobEmp").onclick = ()=> modalAssignEmployeeToJob(route.id);
+  if(canManageEmployees() && $("addEmp")) $("addEmp").onclick = ()=> modalAddEmployee();
+  if(canManageJobs() && $("addJob")) $("addJob").onclick = ()=> modalAddJob();
+  if(canManageJobs() && $("editJob")) $("editJob").onclick = ()=> modalEditJob(route.id);
+  if(canManageJobs() && $("addJobEmp")) $("addJobEmp").onclick = ()=> modalAssignEmployeeToJob(route.id);
   document.querySelectorAll("[data-start-job]").forEach(b=>b.onclick=()=>runJobAction(()=>startJobTracking(b.dataset.startJob)));
   document.querySelectorAll("[data-end-job]").forEach(b=>b.onclick=()=>runJobAction(()=>endJobTracking(b.dataset.endJob)));
-  document.querySelectorAll("[data-remove-emp]").forEach(b => {
+  if(canManageJobs()) document.querySelectorAll("[data-remove-emp]").forEach(b => {
   b.onclick = async ()=>{
     const j = DB.jobs.find(x=>x.id===route.id);
     const empId = b.dataset.removeEmp;
@@ -4963,63 +5017,6 @@ function bindAdminScreen(){
     go("admin-job-detail", { id: j.id });
   };
 });
-  if($("resetPin")) $("resetPin").onclick = ()=>{ const e=DB.employees.find(x=>x.id===route.id); audit(DB.session.name,"Reset PIN",e.name,"PIN reset to default 1111"); toast("PIN reset — employee notified"); };
-  if($("toggleActive")) $("toggleActive").onclick = ()=>{ const e=DB.employees.find(x=>x.id===route.id); e.status = e.status==='active'?'disabled':'active'; audit(DB.session.name, e.status==='active'?"Re-enabled employee":"Disabled employee", e.name,""); save(); go("admin-employee-detail",{id:e.id}); };
-  if($("manualEntry")) $("manualEntry").onclick = ()=> modalManualEntry(route.id);
-
-  if($("approveBtn")) $("approveBtn").onclick = ()=> setAttStatus(route.id,"approved");
-  if($("rejectBtn")) $("rejectBtn").onclick = ()=> setAttStatus(route.id,"rejected-needs-fix");
-  if($("correctBtn")) $("correctBtn").onclick = ()=> { toast("Correction request sent to employee"); audit(DB.session.name,"Requested correction",empName(DB.attendance.find(a=>a.id===route.id).employeeId),""); };
-  if($("editApproved")) $("editApproved").onclick = ()=> modalEditApproved(route.id);
-
-  document.querySelectorAll("[data-approve]").forEach(b=> b.onclick = ()=> { setAttStatus(b.dataset.approve,"approved"); });
-  document.querySelectorAll("[data-reject]").forEach(b=> b.onclick = ()=> { setAttStatus(b.dataset.reject,"rejected"); });
-  document.querySelectorAll("[data-cr-approve]").forEach(b=>b.onclick=async()=>{
-  const r=DB.correctionRequests.find(x=>x.id===b.dataset.crApprove);
-  const a=DB.attendance.find(x=>x.id===r.attendanceId);
-  const timeIn=r.requestedTimeIn||a.timeIn,timeOut=r.requestedTimeOut||a.timeOut;
-  if(!validTimestampOrder(timeIn,timeOut,{allowEqual:true})){
-    toast("Correction cannot be approved because Time Out is earlier than Time In.");return;
-  }
-  const gross=mins(new Date(timeOut)-new Date(timeIn)),net=Math.max(0,gross-(a.unpaidBreakMin||0));
-  const reviewedAt=nowISO(),reviewer=DB.session.name;
-
-  const {error:attError}=await supabaseClient.from("attendance").update({
-    time_in:timeIn,time_out:timeOut,gross_minutes:gross,net_minutes:net,
-    status:"corrected",updated_at:reviewedAt
-  }).eq("id",a.id);
-
-  if(attError){console.error("Attendance correction error:",attError);toast("Could not approve correction.");return;}
-
-  const {error:crError}=await supabaseClient.from("correction_requests").update({
-    status:"approved",reviewed_by:reviewer,reviewed_at:reviewedAt
-  }).eq("id",r.id);
-
-  if(crError){console.error("Correction approval error:",crError);toast("Could not complete approval.");return;}
-
-  const origIn=fmtTime(a.timeIn),origOut=fmtTime(a.timeOut);
-  a.timeIn=timeIn;a.timeOut=timeOut;a.grossMin=gross;a.netMin=net;a.status="corrected";
-  r.status="approved";r.reviewedBy=reviewer;r.reviewedAt=reviewedAt;
-
-  const detail=`${r.requestedTimeIn?`Time In: ${origIn} → ${fmtTime(timeIn)}. `:""}${r.requestedTimeOut?`Time Out: ${origOut} → ${fmtTime(timeOut)}. `:""}Reason: ${r.reason}`;
-  audit(DB.session.name,"Approved correction request",empName(r.employeeId),detail);
-  save();toast("Correction approved");go("admin-timesheets");
-});
-  document.querySelectorAll("[data-cr-reject]").forEach(b=>b.onclick=async()=>{
-  const r=DB.correctionRequests.find(x=>x.id===b.dataset.crReject);
-  const reviewedAt=nowISO(),reviewer=DB.session.name;
-
-  const {error}=await supabaseClient.from("correction_requests").update({
-    status:"rejected",reviewed_by:reviewer,reviewed_at:reviewedAt
-  }).eq("id",r.id);
-
-  if(error){console.error("Correction rejection error:",error);toast("Could not reject correction.");return;}
-
-  r.status="rejected";r.reviewedBy=reviewer;r.reviewedAt=reviewedAt;
-  audit(DB.session.name,"Rejected correction request",empName(r.employeeId),r.reason);
-  save();toast("Correction rejected");go("admin-timesheets");
-});
-
   if($("xeroToggle")) $("xeroToggle").onclick = ()=>{
     const x = DB.settings.xero;
     if(x.connected){ x.connected=false; x.tenant=null; audit(DB.session.name,"Disconnected Xero","Xero Integration",""); }
@@ -5033,7 +5030,7 @@ function bindAdminScreen(){
     save(); toast(`Synced ${approvedCount} approved timesheets (simulated)`); go("admin-xero");
   };
   if($("syncHistory")) $("syncHistory").onclick = ()=> go("admin-audit");
-  if($("viewPrivacyAdmin")) $("viewPrivacyAdmin").onclick = ()=> { PRIVACY_FROM_LOGIN=false; go("privacy"); };
+  if($("viewPrivacyAdmin")) $("viewPrivacyAdmin").onclick = ()=> { PRIVACY_FROM_LOGIN=false; go("privacy",{from:"admin-settings"}); };
   if($("resetDemoData")) $("resetDemoData").onclick = ()=>{
     if(confirm("Reset all demo data to the current built-in roster? This clears everything stored in this browser and cannot be undone.")){
       localStorage.removeItem(KEY);
@@ -5042,7 +5039,7 @@ function bindAdminScreen(){
   };
   if($("ackBtn")) $("ackBtn").onclick = ()=> go("admin-settings");
 
-  document.querySelectorAll("[data-notif]").forEach(cb=> cb.onchange = ()=>{ DB.settings.notifications[cb.dataset.notif]=cb.checked; save(); });
+  if(canUpdateSettings()) document.querySelectorAll("[data-notif]").forEach(cb=> cb.onchange = ()=>{ DB.settings.notifications[cb.dataset.notif]=cb.checked; save(); });
   if($("saveTimesheetReviewCutoff")) $("saveTimesheetReviewCutoff").onclick=async()=>{
     if(DB.session?.role!=="Super Admin"){toast("Only Super Admin can change this setting.");return;}
     const input=$("timesheetReviewCutoff"),candidate=timesheetReviewCutoffSaveValue(input.value);
@@ -5102,147 +5099,8 @@ function bindAdminScreen(){
   };
 }
 
-async function setAttStatus(attId,status){
-  if(status==="rejected"){modalReject(attId);return;}
-  const a=DB.attendance.find(x=>x.id===attId),updatedAt=nowISO();
-
-  const {error}=await supabaseClient.from("attendance")
-    .update({status,updated_at:updatedAt}).eq("id",attId);
-
-  if(error){console.error("Timesheet approval error:",error);toast("Could not update timesheet.");return;}
-
-  a.status=status;
-  audit(DB.session.name,"Approved timesheet",empName(a.employeeId),fmtDate(a.timeIn));
-  save();toast("Approved");go(route.name);
-}
-function modalReject(attId){
-  const a = DB.attendance.find(x=>x.id===attId);
-  const wrap = document.createElement("div"); wrap.className="modal-bg";
-  wrap.innerHTML = `<div class="modal">
-    <div class="h2" style="margin-bottom:14px;">Reject Timesheet Day</div>
-    <div class="field"><label>Reason (sent to employee, required)</label><textarea id="rejReason" rows="3" placeholder="e.g. Clock-out time looks incorrect, please confirm"></textarea></div>
-    <button class="btn btn-danger btn-block btn-lg" id="rejGo">Reject &amp; Notify Employee</button>
-    <button class="btn btn-ghost btn-block" style="margin-top:8px;" id="rejCancel">Cancel</button>
-  </div>`;
-  document.body.appendChild(wrap);
-  wrap.querySelector("#rejCancel").onclick=()=>wrap.remove();
-  wrap.querySelector("#rejGo").onclick=async()=>{
-  const reason=wrap.querySelector("#rejReason").value.trim();
-  if(!reason){toast("A reason is required");return;}
-
-  const updatedAt=nowISO();
-  const {error}=await supabaseClient.from("attendance").update({
-    status:"rejected",
-    rejection_reason:reason,
-    updated_at:updatedAt
-  }).eq("id",a.id);
-
-  if(error){
-    console.error("Timesheet rejection error:",error);
-    toast("Could not reject timesheet.");
-    return;
-  }
-
-  a.status="rejected";
-  a.rejectReason=reason;
-  a.updatedAt=updatedAt;
-
-  audit(DB.session.name,"Rejected timesheet",empName(a.employeeId),`${fmtDate(a.timeIn)}. Reason: ${reason}`);
-  save();wrap.remove();toast("Rejected — employee notified");go(route.name);
-};
-}
-function modalEditApproved(attId){
-  const a = DB.attendance.find(x=>x.id===attId);
-  const wrap = document.createElement("div"); wrap.className="modal-bg";
-  wrap.innerHTML = `<div class="modal">
-    <div class="h2" style="margin-bottom:14px;">Edit Approved Record</div>
-    <div class="field"><label>Time Out</label><input type="time" id="editOut" value="${new Date(a.timeOut).toTimeString().slice(0,5)}"></div>
-    <div class="field"><label>Reason for change (required)</label><textarea id="editReason" rows="2" placeholder="e.g. Employee forgot to clock out"></textarea></div>
-    <button class="btn btn-accent btn-block btn-lg" id="editSave">Save &amp; Log Audit Record</button>
-    <button class="btn btn-ghost btn-block" style="margin-top:8px;" id="editCancel">Cancel</button>
-  </div>`;
-  document.body.appendChild(wrap);
-  wrap.querySelector("#editCancel").onclick=()=>wrap.remove();
-  wrap.querySelector("#editSave").onclick=async()=>{
-  const reason=wrap.querySelector("#editReason").value.trim();
-  if(!reason){toast("A reason is required for audit purposes");return;}
-
-  const [h,m]=wrap.querySelector("#editOut").value.split(":").map(Number);
-  const oldOut=fmtTime(a.timeOut),d=new Date(a.timeOut);
-  d.setHours(h,m,0,0);
-
-  const timeOut=d.toISOString();
-  if(!validTimestampOrder(a.timeIn,timeOut,{allowEqual:true})){
-    toast("Time Out must not be earlier than Time In.");return;
-  }
-  const grossMin=mins(new Date(timeOut)-new Date(a.timeIn));
-  const netMin=Math.max(0,grossMin-(a.unpaidBreakMin||0));
-  const updatedAt=nowISO();
-
-  const {error}=await supabaseClient.from("attendance").update({
-    time_out:timeOut,
-    gross_minutes:grossMin,
-    net_minutes:netMin,
-    status:"corrected",
-    rejection_reason:null,
-    updated_at:updatedAt
-  }).eq("id",a.id);
-
-  if(error){
-    console.error("Approved record edit error:",error);
-    toast("Could not update approved record.");
-    return;
-  }
-
-  a.timeOut=timeOut;
-  a.grossMin=grossMin;
-  a.netMin=netMin;
-  a.status="corrected";
-  a.rejectReason=null;
-  a.updatedAt=updatedAt;
-
-  audit(DB.session.name,"Changed Time Out",empName(a.employeeId),`Original: ${oldOut} → New: ${fmtTime(a.timeOut)}. Reason: ${reason}`);
-  save();wrap.remove();toast("Updated — audit record created");go("admin-att-detail",{id:attId});
-};
-}
-function modalManualEntry(empId){
-  const e = DB.employees.find(x=>x.id===empId);
-  const jobs = DB.jobs;
-  const wrap = document.createElement("div"); wrap.className="modal-bg";
-  wrap.innerHTML = `<div class="modal">
-    <div class="h2" style="margin-bottom:14px;">Manual Attendance Entry</div>
-    <div class="field"><label>Job</label><select id="meJob">${jobs.map(j=>`<option value="${j.id}">${escapeHtml(j.name)}</option>`).join("")}</select></div>
-    <div class="grid2">
-      <div class="field"><label>Date</label><input type="date" id="meDate" value="${new Date().toISOString().slice(0,10)}"></div>
-      <div class="field"></div>
-    </div>
-    <div class="grid2">
-      <div class="field"><label>Time In</label><input type="time" id="meIn" value="08:00"></div>
-      <div class="field"><label>Time Out</label><input type="time" id="meOut" value="16:30"></div>
-    </div>
-    <div class="field"><label>Reason (required — will be recorded in audit log)</label><textarea id="meReason" rows="2" placeholder="e.g. Phone died on site, entered manually from supervisor confirmation"></textarea></div>
-    <button class="btn btn-accent btn-block btn-lg" id="meSave">Save Manual Entry</button>
-    <button class="btn btn-ghost btn-block" style="margin-top:8px;" id="meCancel">Cancel</button>
-  </div>`;
-  document.body.appendChild(wrap);
-  wrap.querySelector("#meCancel").onclick=()=>wrap.remove();
-  wrap.querySelector("#meSave").onclick=()=>{
-    const reason = wrap.querySelector("#meReason").value;
-    if(!reason){ toast("Reason is required"); return; }
-    const date = wrap.querySelector("#meDate").value;
-    const [ih,im] = wrap.querySelector("#meIn").value.split(":").map(Number);
-    const [oh,om] = wrap.querySelector("#meOut").value.split(":").map(Number);
-    const ti = new Date(date); ti.setHours(ih,im,0,0);
-    const to = new Date(date); to.setHours(oh,om,0,0);
-    const gross = mins(to-ti);
-    DB.attendance.push({id:uid("att"), employeeId:empId, jobId:wrap.querySelector("#meJob").value, timeIn:ti.toISOString(), timeOut:to.toISOString(),
-      photoIn:null, photoOut:null, gpsIn:{lat:0,lng:0,address:"Manual entry — no GPS captured"}, gpsOut:null, geofence:"n/a",
-      breakIds:[], grossMin:gross, unpaidBreakMin:0, paidBreakMin:0, netMin:gross, status:"submitted", source:"admin-manual", summary:reason});
-    audit(DB.session.name,"Added manual attendance entry", e.name, `${date} ${wrap.querySelector("#meIn").value}-${wrap.querySelector("#meOut").value}. Reason: ${reason}`);
-    save(); wrap.remove(); toast("Manual entry saved — pending approval"); go("admin-employee-detail",{id:empId});
-  };
-}
 function modalAddEmployee(){
+  if(!canManageEmployees()){toast("Only Super Admin can create employees.");return;}
   const wrap = document.createElement("div"); wrap.className="modal-bg";
   wrap.innerHTML = `<div class="modal">
     <div class="h2" style="margin-bottom:14px;">Add Employee</div>
@@ -5258,7 +5116,7 @@ function modalAddEmployee(){
       <div class="field"><label>Manager</label><input id="neManager" placeholder="e.g. Julia Douglas"></div>
       <div class="field"><label>Default location</label><input id="neLoc" placeholder="e.g. Upstage Workshop"></div>
     </div>
-    <div class="field"><label>Permission level</label><select id="nePerm"><option>Employee</option><option>Manager</option><option>Payroll</option><option>Admin</option><option>Super Admin</option></select></div>
+    <div class="field"><label>Permission level</label><select id="nePerm"><option>Employee</option><option>Super Admin</option></select></div>
     <div class="field"><label><input type="checkbox" id="neFieldRole" style="width:auto;margin-right:6px;">Also has field duties (clock in/out, breaks)</label></div>
     <button class="btn btn-accent btn-block btn-lg" id="neSave">Create Employee</button>
     <button class="btn btn-ghost btn-block" style="margin-top:8px;" id="neCancel">Cancel</button>
@@ -5267,9 +5125,14 @@ function modalAddEmployee(){
   wrap.querySelector("#neCancel").onclick=()=>wrap.remove();
   wrap.querySelector("#neSave").onclick = async ()=>{
     const name = wrap.querySelector("#neName").value;
+    const permission=wrap.querySelector("#nePerm").value;
 
 if(!name){
   toast("Name is required");
+  return;
+}
+if(!isApplicationPermission(permission)){
+  toast("Select a valid permission level.");
   return;
 }
 
@@ -5294,8 +5157,7 @@ const emp = {
     wrap.querySelector("#neManager").value || "—",
   defaultLocation:
     wrap.querySelector("#neLoc").value || "—",
-  permission:
-    wrap.querySelector("#nePerm").value,
+  permission,
   fieldRole:
     wrap.querySelector("#neFieldRole").checked
 };
@@ -5368,6 +5230,7 @@ go("admin-employees");
   };
 }
 function modalAddJob(){
+  if(!canManageJobs()){toast("Only Super Admin can manage jobs.");return;}
   const wrap = document.createElement("div"); wrap.className="modal-bg";
   wrap.innerHTML = `<div class="modal">
     <div class="h2" style="margin-bottom:14px;">New Job</div>
@@ -5448,6 +5311,7 @@ go("admin-jobs");
   };
 }
 function modalEditJob(jobId){
+  if(!canManageJobs()){toast("Only Super Admin can manage jobs.");return;}
   const j = DB.jobs.find(x=>x.id===jobId);
   const wrap = document.createElement("div"); wrap.className="modal-bg";
   wrap.innerHTML = `<div class="modal">
@@ -5576,6 +5440,7 @@ go("admin-job-detail", { id: j.id });
   };
 }
 function modalAssignEmployeeToJob(jobId){
+  if(!canManageJobs()){toast("Only Super Admin can manage job assignments.");return;}
   const j = DB.jobs.find(x=>x.id===jobId);
 
   const available = DB.employees.filter(
