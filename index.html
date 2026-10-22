@@ -106,6 +106,7 @@
   .attendance-session{min-width:0;}
   .attendance-session+.attendance-session{margin-top:13px;padding-top:13px;border-top:1px solid var(--line);}
   .attendance-session-heading{font-size:12px;font-weight:800;margin-bottom:9px;}
+  .attendance-review-reason{font-size:14px;line-height:1.45;overflow-wrap:anywhere;white-space:pre-wrap;}
   .attendance-fields{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));grid-template-areas:"time-in morning-break lunch" "time-out . .";gap:10px;}
   .attendance-field{min-width:0;}
   .attendance-field-time-in{grid-area:time-in;}
@@ -191,6 +192,7 @@
   .power-icon{width:20px;height:20px;display:block;flex:none;}
   .employee-nav .navbtn{min-width:0;min-height:44px;padding:6px 2px;}
   .employee-nav .nav-logout{flex:1;color:var(--danger);}
+  .sidebar .nav-logout,.admin-nav-actions .nav-logout{color:var(--danger);}
   .jobs-toolbar{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;}
   .jobs-filter-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;}
   .jobs-section>summary{cursor:pointer;font-weight:800;padding:4px 0 12px;}
@@ -299,7 +301,10 @@ html[data-theme="dark"] .card[style*="background:#effcf3"]{background:#142D20!im
 .history-record:focus-visible,.report-table-scroll:focus-visible{outline:2px solid var(--accent);outline-offset:3px;}
 .theme-control{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:44px;min-width:44px;padding:8px 10px;
   border:1px solid var(--line);border-radius:10px;background:var(--panel-2);color:var(--text);font:inherit;font-size:12px;font-weight:700;cursor:pointer;flex:none;}
-.theme-control svg{width:20px;height:20px;flex:none;}
+.theme-control svg{width:28px;height:28px;flex:none;color:#946200;}
+.theme-control:not(:disabled):hover svg,.theme-control:not(:disabled):active svg{color:#FFD24A;}
+html[data-theme="dark"] .theme-control svg{color:#FFD24A;}
+html[data-theme="dark"] .theme-control:not(:disabled):hover svg,html[data-theme="dark"] .theme-control:not(:disabled):active svg{color:#946200;}
 .theme-control:not(:disabled):hover{background:var(--accent);color:var(--accent-text);}
 .theme-control:not(:disabled):active{background:var(--accent-active);color:var(--accent-text);}
 .theme-control:disabled{opacity:.45;cursor:not-allowed;}
@@ -1460,7 +1465,7 @@ function appearanceControlContent(){
   const shape=appearanceTheme==="dark"
     ? '<path d="M20.5 13A8.5 8.5 0 0 1 11 3.5 8.5 8.5 0 1 0 20.5 13Z"/>'
     : '<circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5"/>';
-  return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">${shape}</svg><span>Dark theme</span>`;
+  return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">${shape}</svg>`;
 }
 function appearanceControlMarkup(){
   return `<button type="button" class="theme-control" data-theme-toggle aria-label="Dark theme" aria-pressed="${appearanceTheme==="dark"}" title="Switch to ${appearanceTheme==="dark"?"Light":"Dark"} theme">${appearanceControlContent()}</button>`;
@@ -2432,11 +2437,11 @@ function renderAttendanceReviewDetails(period,jobEntriesByAttendance,{readOnly=f
         const correction=readOnly?{canEdit:false,reason:""}:attendanceCorrectionReadiness(attendance);
         const historyIndicator=attendanceCorrectionHistoryIndicator(attendance);
         const payable=attendancePayableCalculation(attendance,jobEntriesByAttendance.get(attendance.id)||[],DB.breaks);
-        return `<div class="attendance-session">
+        return `<div class="attendance-session" data-attendance-session-id="${escapeHtml(attendance.id)}">
           ${multiple?`<div class="attendance-session-heading">Attendance Session ${index+1}</div>`:""}
-          ${isAttendancePayable(attendance)?"":`<div class="small" style="color:var(--danger);margin-bottom:8px;"><b>Review required:</b> ${escapeHtml(attendanceIntegrityIssues(attendance).join("; "))}.</div>`}
-          ${payable.invalid&&isAttendancePayable(attendance)?`<div class="small" style="color:var(--danger);margin-bottom:8px;"><b>Review required:</b> An unpaid-break interval is invalid.</div>`:""}
-          ${payable.reviewSec>0?`<div class="small" style="color:var(--danger);margin-bottom:8px;"><b>Review required:</b> ${formatJobDuration(payable.reviewSec)} of confirmed post-4 PM time has no job allocation.</div>`:""}
+          ${isAttendancePayable(attendance)?"":`<div class="small attendance-review-reason" style="color:var(--danger);margin-bottom:8px;"><b>Review required:</b> ${escapeHtml(attendanceIntegrityIssues(attendance).join("; "))}.</div>`}
+          ${payable.invalid&&isAttendancePayable(attendance)?`<div class="small attendance-review-reason" style="color:var(--danger);margin-bottom:8px;"><b>Review required:</b> An unpaid-break interval is invalid.</div>`:""}
+          ${payable.reviewSec>0?`<div class="small attendance-review-reason" style="color:var(--danger);margin-bottom:8px;"><b>Review required:</b> ${formatJobDuration(payable.reviewSec)} of confirmed post-4 PM time has no job allocation.</div>`:""}
           ${!readOnly && DB.session?.role==="Super Admin" && payable.reviewSec>0?`<div class="ui4-placeholder">
             <button type="button" class="btn btn-ghost btn-sm" id="ui4ApproveValidOt-${escapeHtml(attendance.id)}" disabled aria-describedby="ui4OtNote-${escapeHtml(attendance.id)}">Approve Valid OT</button>
             <p class="ui4-note" id="ui4OtNote-${escapeHtml(attendance.id)}">OT exception approval pending rule and audit review.</p>
@@ -2610,7 +2615,14 @@ async function saveAttendanceCorrection(wrap,snapshot){
   render();
   toast("Attendance correction saved.");
 }
-function openAttendanceCorrectionEditor(attendanceId){
+function attendanceReviewWarningTexts(button){
+  const attendanceId=button?.dataset.editAttendance,session=button?.closest(".attendance-session");
+  if(!attendanceId || !button.isConnected || !button.matches("button[data-edit-attendance]") || !session?.isConnected || session.dataset.attendanceSessionId!==attendanceId) return null;
+  const controls=[...session.querySelectorAll("[data-edit-attendance]")],warnings=[...session.querySelectorAll(".attendance-review-reason")];
+  if(controls.length!==1 || controls[0]!==button || warnings.some(node=>!node.isConnected || node.parentElement!==session || node.closest(".attendance-session")!==session)) return null;
+  return warnings.map(node=>node.textContent).filter(text=>text.trim());
+}
+function openAttendanceCorrectionEditor(attendanceId,reviewWarnings=[]){
   const attendance=DB.attendance.find(row=>row.id===attendanceId),readiness=attendanceCorrectionReadiness(attendance);
   if(!attendance || !readiness.canEdit){toast(readiness.reason||"This attendance cannot be corrected.");return;}
   const snapshot=attendanceCorrectionSnapshot(attendance),groups=attendanceBreakGroups(attendance,snapshot.breaks);
@@ -2621,6 +2633,7 @@ function openAttendanceCorrectionEditor(attendanceId){
   wrap.innerHTML=`<div class="modal" role="dialog" aria-modal="true" aria-labelledby="attendanceCorrectionTitle">
     <div class="h2" id="attendanceCorrectionTitle" style="margin-bottom:4px;">Correct Attendance</div>
     <div class="small muted" style="margin-bottom:14px;">${escapeHtml(empName(attendance.employeeId))} &middot; Times shown in Australia/Sydney</div>
+    ${reviewWarnings.length?`<section class="card card-tight" aria-label="Review Reason (read-only)" style="margin-bottom:14px;"><b class="small">Review Reason (read-only)</b>${reviewWarnings.map(reason=>`<div class="attendance-review-reason" style="color:var(--danger);margin-top:6px;">${escapeHtml(reason)}</div>`).join("")}</section>`:""}
     ${correctionDateTimeFields("correctionTimeIn","Time In",attendance.timeIn)}
     ${correctionDateTimeFields("correctionTimeOut","Time Out",attendance.timeOut)}
     <div class="correction-break-section"><div class="correction-break-title">Morning Break <span class="muted">(paid)</span></div>
@@ -4241,9 +4254,9 @@ function renderAdminShell(){
   const allTabs = [
     ...(hasPersonalSelfServiceAccess()? [["emp-home","⏱️","My Time"]] : []),
     ["admin-dashboard","📊","Dashboard"],
+    ["admin-job-progress","🔨","Job Progress Dashboard"],
     ["admin-employees","👥","Employees"],
     ["admin-jobs","🧰","Jobs"],
-    ["admin-job-progress","🔨","Job Progress"],
     ["admin-timesheets","🧾","Timesheets"],
     ["admin-reports","📈","Reports"],
     ["admin-payroll","💵","Payroll"],
@@ -4303,7 +4316,7 @@ function renderAdminShell(){
       <div class="sidebar">
         <div class="row gap-8" style="padding:8px 10px 20px;"><div style="background:#000;border-radius:8px;padding:4px 8px;display:flex;align-items:center;"><img src="${LOGO_DATA_URL}" alt="Upstage Co" style="width:34px;height:auto;display:block;"></div><div><b>Upstage Co</b><div class="tiny muted">Attendance &amp; Break Log</div></div></div>
         ${tabs.map(([k,i,l])=>`<button class="sidebtn ${activeTab===k?'active':''}" ${activeTab===k?'aria-current="page"':''} data-nav="${k}">${i}&nbsp; ${l}</button>`).join("")}
-        <button class="sidebtn" id="logoutBtn" type="button">${powerOffIcon()} Log Out</button>
+        <button class="sidebtn nav-logout" id="logoutBtn" type="button">${powerOffIcon()} Log Out</button>
         ${appearanceControlMarkup()}
       </div>
       <div class="main scroll">${body()}</div>
@@ -4315,7 +4328,7 @@ function renderAdminShell(){
     <div class="bottomnav" style="overflow-x:auto;justify-content:flex-start;">
       ${tabs.map(([k,i,l])=>`<button class="navbtn ${activeTab===k?'active':''}" ${activeTab===k?'aria-current="page"':''} data-nav="${k}" style="flex:0 0 auto;min-width:64px;"><span class="navico">${i}</span>${l}</button>`).join("")}
       <div class="admin-nav-actions">
-        <button class="navbtn" id="logoutBtn" type="button"><span class="navico">${powerOffIcon()}</span>Log Out</button>
+        <button class="navbtn nav-logout" id="logoutBtn" type="button"><span class="navico">${powerOffIcon()}</span>Log Out</button>
         ${appearanceControlMarkup()}
       </div>
     </div>`;
@@ -5209,7 +5222,11 @@ function bindAdminScreen(){
     bindPresentationExpansion(details,attendanceBreaksExpandedGroups,details.dataset.attendanceBreaksKey);
   });
   document.querySelectorAll("[data-edit-attendance]").forEach(button=>{
-    button.onclick=()=>openAttendanceCorrectionEditor(button.dataset.editAttendance);
+    button.onclick=()=>{
+      const reviewWarnings=attendanceReviewWarningTexts(button);
+      if(reviewWarnings===null){toast("Unable to identify this attendance session. Please reopen Timesheets.");return;}
+      openAttendanceCorrectionEditor(button.dataset.editAttendance,reviewWarnings);
+    };
   });
   document.querySelectorAll("[data-approve-attendance-period]").forEach(button=>{
     button.onclick=()=>openAttendancePeriodApproval(button.dataset.approveAttendancePeriod,button.dataset.periodStart);
