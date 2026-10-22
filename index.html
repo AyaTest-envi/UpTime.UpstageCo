@@ -11,6 +11,9 @@
     --panel-2:#ECECEC;
     --line:#DDDDDD;
     --accent:#0A0A0A;
+    --accent-text:#FFFFFF;
+    --accent-hover:#292929;
+    --accent-active:#454545;
     --accent-dim:#ECECEC;
     --ok:#2FD97B;
     --ok-dim:#123321;
@@ -40,7 +43,7 @@
   .btn:active{transform:scale(.97);}
   .btn-block{width:100%;}
   .btn-lg{padding:22px 18px;font-size:19px;border-radius:16px;}
-  .btn-accent{background:var(--accent);color:#FFFFFF;}
+  .btn-accent{background:var(--accent);color:var(--accent-text);}
   .btn-ghost{background:var(--panel-2);color:var(--text);border:1px solid var(--line);}
   .btn-ok{background:var(--ok);color:#052914;}
   .btn-warn{background:var(--warn);color:#2b2000;}
@@ -185,6 +188,33 @@
   .navbtn{flex:1;background:none;border:none;color:var(--muted);display:flex;flex-direction:column;align-items:center;gap:3px;padding:6px;font-size:10.5px;font-weight:700;}
   .navbtn.active{color:var(--accent);}
   .navico{font-size:19px;}
+  .power-icon{width:20px;height:20px;display:block;flex:none;}
+  .employee-nav .navbtn{min-width:0;min-height:44px;padding:6px 2px;}
+  .employee-nav .nav-logout{flex:1;color:var(--danger);}
+  .jobs-toolbar{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;}
+  .jobs-filter-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;}
+  .jobs-section>summary{cursor:pointer;font-weight:800;padding:4px 0 12px;}
+  .navbtn:focus-visible,.sidebtn:focus-visible{outline:2px solid var(--accent);outline-offset:-2px;}
+  .job-progress-placeholder{max-width:720px;margin:0 auto;text-align:center;}
+  .stage-development-badge{display:inline-block;padding:7px 12px;border-radius:999px;background:var(--panel-2);font-size:11px;font-weight:800;letter-spacing:1.2px;}
+  .stage-illustration{display:block;width:100%;max-width:560px;height:auto;margin:12px auto;}
+  .stage-quote{font-size:clamp(18px,3vw,25px);line-height:1.4;margin:12px 0;}
+  .stage-caption{max-width:420px;margin:0 auto;line-height:1.6;}
+  .stage-carpenter{animation:stage-arrive 12s ease-in-out infinite;}
+  .stage-panel{animation:stage-panel-one 12s ease-in-out infinite;}
+  .stage-panel-two{animation-name:stage-panel-two;}
+  .stage-panel-three{animation-name:stage-panel-three;}
+  .stage-hammer{transform-box:fill-box;transform-origin:12% 85%;animation:stage-fasten 12s ease-in-out infinite;}
+  .stage-backdrop{animation:stage-finish 12s ease-in-out infinite;}
+  @keyframes stage-arrive{0%,100%{opacity:0;transform:translateX(-65px);}14%,92%{opacity:1;transform:translateX(0);}98%{opacity:0;transform:translateX(-15px);}}
+  @keyframes stage-panel-one{0%,20%,100%{opacity:0;transform:translateY(-14px);}28%,94%{opacity:1;transform:translateY(0);}}
+  @keyframes stage-panel-two{0%,34%,100%{opacity:0;transform:translateY(-14px);}42%,94%{opacity:1;transform:translateY(0);}}
+  @keyframes stage-panel-three{0%,48%,100%{opacity:0;transform:translateY(-14px);}56%,94%{opacity:1;transform:translateY(0);}}
+  @keyframes stage-fasten{0%,22%,34%,46%,58%,70%,100%{transform:rotate(0);}26%,38%,50%,62%{transform:rotate(-25deg);}30%,42%,54%,66%{transform:rotate(12deg);}}
+  @keyframes stage-finish{0%,66%,100%{opacity:0;}76%,94%{opacity:1;}}
+  @media (prefers-reduced-motion:reduce){
+    .stage-carpenter,.stage-panel,.stage-hammer,.stage-backdrop{animation:none;opacity:1;transform:none;}
+  }
   .empty{text-align:center;padding:40px 20px;color:var(--muted);}
   .photo-thumb{width:56px;height:56px;border-radius:10px;object-fit:cover;background:var(--panel-2);border:1px solid var(--line);}
   video,canvas{width:100%;border-radius:14px;background:#000;}
@@ -248,6 +278,55 @@
 .job-track-icon{display:inline-grid;place-items:center;width:26px;height:26px;margin-right:8px;border-radius:50%;background:#fff}
 .job-start .job-track-icon{color:#16a34a}
 .job-end .job-track-icon{color:#dc2626}
+
+/* UI-3 appearance and read-only presentation; no application data state. */
+html[data-theme="dark"]{
+  color-scheme:dark;
+  --ink:#121416;--panel:#1D2024;--panel-2:#292D32;--line:#545B65;
+  --text:#F5F6F7;--muted:#B4BBC5;--accent:#FFFFFF;--accent-text:#000000;
+  --accent-hover:#E4E4E4;--accent-active:#CCCCCC;--accent-dim:#30353C;
+}
+html[data-theme="light"]{color-scheme:light;}
+html[data-theme="dark"] .topbar{background:rgba(18,20,22,.96);}
+html[data-theme="dark"] .bottomnav{background:rgba(18,20,22,.98);}
+html[data-theme="dark"] .job-track-card{background:var(--panel);}
+html[data-theme="dark"] .job-track-card.active,
+html[data-theme="dark"] .card[style*="background:#effcf3"]{background:#142D20!important;border-color:#48825B;}
+.btn-accent:not(:disabled):hover{background:var(--accent-hover);}
+.btn-accent:not(:disabled):active{background:var(--accent-active);}
+.btn-accent:disabled{opacity:.45;cursor:not-allowed;}
+.btn:focus-visible,.job-track-btn:focus-visible,.theme-control:focus-visible,
+.history-record:focus-visible,.report-table-scroll:focus-visible{outline:2px solid var(--accent);outline-offset:3px;}
+.theme-control{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:44px;min-width:44px;padding:8px 10px;
+  border:1px solid var(--line);border-radius:10px;background:var(--panel-2);color:var(--text);font:inherit;font-size:12px;font-weight:700;cursor:pointer;flex:none;}
+.theme-control svg{width:20px;height:20px;flex:none;}
+.theme-control:not(:disabled):hover{background:var(--accent);color:var(--accent-text);}
+.theme-control:not(:disabled):active{background:var(--accent-active);color:var(--accent-text);}
+.theme-control:disabled{opacity:.45;cursor:not-allowed;}
+.topbrand>.theme-control{margin-left:auto;}
+.sidebar>.theme-control{justify-content:flex-start;width:100%;}
+.admin-nav-actions{display:flex;flex-direction:column;gap:4px;flex:none;min-width:108px;padding:0 4px;}
+.admin-nav-actions>.navbtn{flex:none;min-height:44px;}
+.history-week{margin-bottom:22px;}
+.history-week-heading{margin:0 0 10px;font-size:15px;line-height:1.4;}
+.history-record{display:block;width:100%;margin-bottom:10px;text-align:left;color:var(--text);font:inherit;cursor:pointer;}
+.history-record .row-between{gap:8px;flex-wrap:wrap;}
+.history-record:not(:disabled):hover{border-color:var(--accent);}
+.history-record:not(:disabled):active{background:var(--panel-2);}
+.reports-filter-grid{grid-template-columns:repeat(auto-fit,minmax(min(100%,180px),1fr));}
+.reports-toolbar{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin:16px 0 10px;}
+.reports-toolbar .h3{margin:0;overflow-wrap:anywhere;}
+.reports-toolbar .row{flex-wrap:wrap;}
+.report-table-scroll{max-width:100%;overflow-x:auto;border:1px solid var(--line);border-radius:10px;}
+.report-table-scroll table{min-width:580px;}
+.report-table-scroll th,.report-table-scroll td{vertical-align:top;overflow-wrap:anywhere;}
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0;}
+@media(max-width:420px){.topbrand>.theme-control{font-size:11px;padding:8px;}.reports-toolbar .btn{min-height:44px;}}
+.ui4-placeholder{margin:12px 0;padding:12px;border:1px solid var(--line);border-radius:10px;}
+.ui4-controls{display:flex;flex-wrap:wrap;gap:8px;}
+.ui4-note{margin:8px 0 0;font-size:12px;line-height:1.5;color:var(--muted);overflow-wrap:anywhere;}
+.ui4-job-control{flex:0 1 180px;min-width:0;}
+.ui4-placeholder .btn:disabled,.ui4-job-control .btn:disabled{opacity:.65;cursor:not-allowed;min-height:44px;}
 
 </style>
 </head>
@@ -1056,6 +1135,7 @@ const workRecapExpandedGroups=new Set();
 const attendanceReviewExpandedPeriods=new Set();
 const attendanceProjectsExpandedSessions=new Set();
 const attendanceBreaksExpandedGroups=new Set();
+const jobsPresentation={projectId:"",jobId:"",status:"",month:"",year:"",filtersOpen:false,closedSections:new Set()};
 const attendanceCorrectionHistoryById=new Map();
 let attendanceCorrectionHistoryGeneration=0;
 const attendancePeriodApprovalState=new Map();
@@ -1081,6 +1161,8 @@ function stopCoreRealtime(){
   attendanceReviewExpandedPeriods.clear();
   attendanceProjectsExpandedSessions.clear();
   attendanceBreaksExpandedGroups.clear();
+  Object.assign(jobsPresentation,{projectId:"",jobId:"",status:"",month:"",year:"",filtersOpen:false});
+  jobsPresentation.closedSections.clear();
   attendanceCorrectionHistoryGeneration++;
   attendanceCorrectionHistoryById.clear();
   attendancePeriodApprovalState.clear();
@@ -1323,7 +1405,7 @@ function canManageEmployees(role=DB.session?.role){ return role==="Super Admin";
 function canUpdateSettings(role=DB.session?.role){ return role==="Super Admin"; }
 /* Tabs available to the Super Admin application permission. */
 const ROLE_TAB_ACCESS = {
-  "Super Admin": ["admin-dashboard","admin-employees","admin-jobs","admin-timesheets","admin-reports","admin-payroll","admin-notifications","admin-audit","admin-xero","admin-settings"],
+  "Super Admin": ["admin-dashboard","admin-employees","admin-jobs","admin-job-progress","admin-timesheets","admin-reports","admin-payroll","admin-notifications","admin-audit","admin-xero","admin-settings"],
 };
 function canAccess(tab){
   const role = DB.session?.role;
@@ -1346,6 +1428,59 @@ function canAccessSelfServiceRoute(name=route.name){
 }
 function isFieldStaff(e){ return e.permission==="Employee" || !!e.fieldRole; }
 function firstAllowedTab(role){ return (ROLE_TAB_ACCESS[role]||["admin-dashboard"])[0]; }
+/* Presentation only: never use this resolver to authorize a route. */
+function parentNavigationTab(current=route){
+  const admin=usesAdminShell();
+  if(current.name==="admin-employee-detail") return "admin-employees";
+  if(current.name==="admin-job-detail") return current.from==="admin-dashboard"?"admin-dashboard":"admin-jobs";
+  if(current.name==="admin-att-detail") return current.from==="admin-employee-detail"?"admin-employees":"admin-timesheets";
+  if(current.name==="admin-timesheets" && current.from==="admin-employee-detail") return "admin-employees";
+  if(current.name==="worklog-detail"){
+    if(admin && current.back?.name==="admin-employee-detail") return "admin-employees";
+    if(admin && current.back?.name==="admin-job-detail") return current.back.params?.from==="admin-dashboard"?"admin-dashboard":"admin-jobs";
+    if(admin && current.back?.name==="admin-audit") return "admin-audit";
+    return admin?"emp-home":"worklog";
+  }
+  if(current.name==="privacy") return admin?"admin-settings":"profile";
+  if(current.name==="emp-att-detail") return admin?"emp-home":"history";
+  if(current.name==="worklog-add") return admin?"emp-home":"worklog";
+  if(current.name==="job-select" || (admin && ["worklog","history"].includes(current.name))) return "emp-home";
+  return current.name;
+}
+function powerOffIcon(){
+  return `<svg class="power-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true" focusable="false"><path d="M12 3v9M6.3 5.7a9 9 0 1 0 11.4 0"/></svg>`;
+}
+const APPEARANCE_STORAGE_KEY="uptime-appearance-theme";
+function readAppearanceTheme(){
+  try{ return localStorage.getItem(APPEARANCE_STORAGE_KEY)==="dark"?"dark":"light"; }
+  catch{ return "light"; }
+}
+let appearanceTheme=readAppearanceTheme();
+function appearanceControlContent(){
+  const shape=appearanceTheme==="dark"
+    ? '<path d="M20.5 13A8.5 8.5 0 0 1 11 3.5 8.5 8.5 0 1 0 20.5 13Z"/>'
+    : '<circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5"/>';
+  return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">${shape}</svg><span>Dark theme</span>`;
+}
+function appearanceControlMarkup(){
+  return `<button type="button" class="theme-control" data-theme-toggle aria-label="Dark theme" aria-pressed="${appearanceTheme==="dark"}" title="Switch to ${appearanceTheme==="dark"?"Light":"Dark"} theme">${appearanceControlContent()}</button>`;
+}
+function applyAppearanceTheme(theme,{persist=false}={}){
+  appearanceTheme=theme==="dark"?"dark":"light";
+  document.documentElement.dataset.theme=appearanceTheme;
+  if(persist){ try{ localStorage.setItem(APPEARANCE_STORAGE_KEY,appearanceTheme); }catch{} }
+  document.querySelectorAll("[data-theme-toggle]").forEach(button=>{
+    button.setAttribute("aria-pressed",String(appearanceTheme==="dark"));
+    button.title=`Switch to ${appearanceTheme==="dark"?"Light":"Dark"} theme`;
+    button.innerHTML=appearanceControlContent();
+  });
+}
+function bindAppearanceControls(){
+  document.querySelectorAll("[data-theme-toggle]").forEach(button=>{
+    button.onclick=()=>applyAppearanceTheme(appearanceTheme==="dark"?"light":"dark",{persist:true});
+  });
+}
+applyAppearanceTheme(appearanceTheme);
 async function audit(actor,action,target,detail,worklogId=null){
   const ts=nowISO(),id=uid("aud");
   const {data:{user},error:userError}=await supabaseClient.auth.getUser();
@@ -2105,6 +2240,16 @@ function renderAttendanceCorrectionHistory(attendanceId){
   if(!state.loaded || !state.rows.length) return "";
   return `<details class="correction-history"><summary>Correction History (${state.rows.length})</summary><div class="correction-history-list">${state.rows.map(renderCorrectionHistoryEntry).join("")}</div></details>`;
 }
+function renderExistingCorrectionReasons(attendanceId){
+  const state=correctionHistoryState(attendanceId);
+  let body;
+  if(state.loading) body="Loading correction reasons&hellip;";
+  else if(state.error) body="Correction reasons unavailable. Use the history retry below.";
+  else if(!state.loaded) body="Correction reasons have not been loaded.";
+  else if(!state.rows.length) body="No previous corrections recorded.";
+  else body=state.rows.map((row,index)=>`<div style="margin-top:6px;white-space:pre-wrap;overflow-wrap:anywhere;"><b>Correction #${index+1}:</b> ${escapeHtml(row.reason||"Reason not recorded")}</div>`).join("");
+  return `<section class="card card-tight" aria-label="Existing correction reasons"><b class="small">Existing correction reasons (read-only)</b><div class="small" style="margin-top:6px;" role="status">${body}</div></section>`;
+}
 function bindCorrectionHistoryRetry(container,attendanceId){
   container?.querySelectorAll("[data-retry-correction-history]").forEach(button=>button.onclick=async()=>{
     button.disabled=true;button.textContent="Retrying...";
@@ -2112,6 +2257,9 @@ function bindCorrectionHistoryRetry(container,attendanceId){
   });
 }
 function refreshOpenAttendanceCorrectionHistory(attendanceId){
+  document.querySelectorAll("[data-existing-correction-reasons]").forEach(container=>{
+    if(container.dataset.existingCorrectionReasons===attendanceId) container.innerHTML=renderExistingCorrectionReasons(attendanceId);
+  });
   document.querySelectorAll("[data-attendance-correction-history]").forEach(container=>{
     if(container.dataset.attendanceCorrectionHistory!==attendanceId) return;
     container.innerHTML=renderAttendanceCorrectionHistory(attendanceId);
@@ -2289,12 +2437,16 @@ function renderAttendanceReviewDetails(period,jobEntriesByAttendance,{readOnly=f
           ${isAttendancePayable(attendance)?"":`<div class="small" style="color:var(--danger);margin-bottom:8px;"><b>Review required:</b> ${escapeHtml(attendanceIntegrityIssues(attendance).join("; "))}.</div>`}
           ${payable.invalid&&isAttendancePayable(attendance)?`<div class="small" style="color:var(--danger);margin-bottom:8px;"><b>Review required:</b> An unpaid-break interval is invalid.</div>`:""}
           ${payable.reviewSec>0?`<div class="small" style="color:var(--danger);margin-bottom:8px;"><b>Review required:</b> ${formatJobDuration(payable.reviewSec)} of confirmed post-4 PM time has no job allocation.</div>`:""}
+          ${!readOnly && DB.session?.role==="Super Admin" && payable.reviewSec>0?`<div class="ui4-placeholder">
+            <button type="button" class="btn btn-ghost btn-sm" id="ui4ApproveValidOt-${escapeHtml(attendance.id)}" disabled aria-describedby="ui4OtNote-${escapeHtml(attendance.id)}">Approve Valid OT</button>
+            <p class="ui4-note" id="ui4OtNote-${escapeHtml(attendance.id)}">OT exception approval pending rule and audit review.</p>
+          </div>`:""}
           ${payable.overlap?`<div class="small" style="color:var(--warn);margin-bottom:8px;"><b>Allocation review:</b> Overlapping job sessions were recorded; overlap does not increase payable time.</div>`:""}
           ${payable.breakReview?`<div class="small" style="color:var(--warn);margin-bottom:8px;"><b>Break review:</b> Recorded unpaid breaks do not reconcile with the attendance total.</div>`:""}
           ${payable.unassignedRegularSec>0?`<div class="small muted" style="margin-bottom:8px;"><b>Unassigned / No Job:</b> ${formatJobDuration(payable.unassignedRegularSec)} Regular.</div>`:""}
           <div class="attendance-fields">
             <div class="attendance-field attendance-field-time-in"><div class="attendance-field-label"><span class="attendance-field-icon">&#8631;</span>Time In</div><div class="attendance-field-value">${fmtTime(attendance.timeIn)}</div></div>
-            <div class="attendance-field attendance-field-time-out"><div class="attendance-field-label"><span class="attendance-field-icon">&#8630;</span>Time Out</div><div class="attendance-field-value">${fmtTime(attendance.timeOut)}</div></div>
+            <div class="attendance-field attendance-field-time-out"><div class="attendance-field-label"><span class="attendance-field-icon">&#8630;</span>Time Out</div><div class="attendance-field-value">${fmtTime(attendance.timeOut)}</div><div class="tiny muted" style="margin-top:4px;">${attendanceOvertimeDisplay(payable)}</div></div>
             <div class="attendance-field attendance-field-morning-break"><div class="attendance-field-label"><span class="attendance-field-icon">&#9749;</span>Morning Break</div><div class="attendance-field-value">${renderRecordedBreaks(breaks.morning)}</div></div>
             <div class="attendance-field attendance-field-lunch"><div class="attendance-field-label"><span class="attendance-field-icon">&#9671;</span>Lunch</div><div class="attendance-field-value">${renderRecordedBreaks(breaks.lunch)}</div></div>
           </div>
@@ -2310,6 +2462,13 @@ function renderAttendanceReviewDetails(period,jobEntriesByAttendance,{readOnly=f
       }).join("")}
     </div>
   </section>`).join("")}</div>`;
+}
+function attendanceOvertimeDisplay(calculation){
+  if(!calculation || !Number.isFinite(calculation.otSec) || calculation.otSec<0) return "OT: Unavailable";
+  if(calculation.invalid) return "OT: Invalid attendance / breaks";
+  if(calculation.breakReview || !Number.isFinite(calculation.reviewSec) || calculation.reviewSec!==0) return "OT: Review required";
+  if(calculation.otSec>0 && calculation.otSec<60) return `OT: ${Math.ceil(calculation.otSec)}s`;
+  return `OT: ${formatJobDuration(calculation.otSec)}`;
 }
 function correctionDateTimeFields(prefix,label,instant){
   const wall=instant?sydneyWallParts(instant):null;
@@ -2474,6 +2633,7 @@ function openAttendanceCorrectionEditor(attendanceId){
       ${correctionTimeField("correctionLunchEndTime","End",lunch?.end)}
       <div class="tiny muted">${lunch?"Recorded breaks cannot be deleted here.":"Leave all fields blank to keep Lunch unrecorded."}</div>
     </div>
+    <div data-existing-correction-reasons="${escapeHtml(attendance.id)}" style="margin-bottom:12px;">${renderExistingCorrectionReasons(attendance.id)}</div>
     <div data-attendance-correction-history="${escapeHtml(attendance.id)}">${renderAttendanceCorrectionHistory(attendance.id)}</div>
     <div class="field"><label for="attendanceCorrectionReason">Correction Reason (required)</label><textarea id="attendanceCorrectionReason" rows="3" placeholder="Explain why this attendance record is being corrected"></textarea></div>
     <div class="small" id="attendanceCorrectionMessage" role="alert" style="display:none;color:var(--danger);margin-bottom:10px;"></div>
@@ -2798,7 +2958,7 @@ function screenLogin(){
       <button class="btn btn-block btn-lg" id="loginBtn" style="background:#fff;color:#000;">Log In</button>
       <a class="link small" style="text-align:center;color:#fff;" id="forgotLink">Forgot Password?</a>
     </div>
-    <div class="tiny" style="text-align:center;margin-top:22px;color:#000;">
+    <div class="tiny" style="text-align:center;margin-top:22px;color:var(--text);">
       By logging in you acknowledge Upstage Co's attendance photo &amp; location policy. <span class="link" id="privacyLink">View privacy notice</span>.
     </div>
   </div>`;
@@ -2947,16 +3107,19 @@ function renderEmployeeShell(){
   const nav = ["emp-home","worklog","history","profile"];
   const icons = {"emp-home":"🏠","worklog":"🛠️","history":"📋","profile":"👤"};
   const labels = {"emp-home":"Home","worklog":"Work Log","history":"History","profile":"Profile"};
+  const activeTab=parentNavigationTab();
 
   return `
-    <div class="topbrand"><div style="background:#000;border-radius:6px;padding:3px 6px;display:flex;align-items:center;"><img src="${LOGO_DATA_URL}" alt="Upstage Co" style="width:22px;height:auto;display:block;"></div><b class="small">Upstage Co</b></div>
+    <div class="topbrand"><div style="background:#000;border-radius:6px;padding:3px 6px;display:flex;align-items:center;"><img src="${LOGO_DATA_URL}" alt="Upstage Co" style="width:22px;height:auto;display:block;"></div><b class="small">Upstage Co</b>${appearanceControlMarkup()}</div>
     <div class="scroll" style="flex:1;">${body}</div>
-    <div class="bottomnav">
-      ${nav.map(n=>`<button class="navbtn ${route.name===n?'active':''}" data-nav="${n}"><span class="navico">${icons[n]}</span>${labels[n]}</button>`).join("")}
+    <div class="bottomnav employee-nav">
+      ${nav.map(n=>`<button class="navbtn ${activeTab===n?'active':''}" ${activeTab===n?'aria-current="page"':''} data-nav="${n}"><span class="navico">${icons[n]}</span>${labels[n]}</button>`).join("")}
+      <button class="navbtn nav-logout" id="logoutBtn" type="button"><span class="navico">${powerOffIcon()}</span>Log Out</button>
     </div>
   `;
 }
 function bindEmployeeShell(){
+  bindAppearanceControls();
   document.querySelectorAll("[data-nav]").forEach(b=> b.onclick = ()=> go(b.dataset.nav));
   bindScreen();
 }
@@ -3782,26 +3945,52 @@ function screenWorklogAdd(){
   </div>`;
 }
 
+function employeeHistoryWeeks(rows,employeeId){
+  const groups=new Map(),undated=[];
+  rows.filter(a=>a.employeeId===employeeId).forEach(attendance=>{
+    if(!attendance.timeIn || !Number.isFinite(new Date(attendance.timeIn).getTime())){undated.push(attendance);return;}
+    const dateKey=sydneyDateKey(attendance.timeIn);
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)){undated.push(attendance);return;}
+    const period=attendanceReviewPeriod(dateKey);
+    if(!groups.has(period.periodStart)) groups.set(period.periodStart,{...period,attendance:[]});
+    groups.get(period.periodStart).attendance.push(attendance);
+  });
+  const weeks=[...groups.values()].sort((a,b)=>b.periodStart.localeCompare(a.periodStart));
+  weeks.forEach(week=>week.attendance.sort((a,b)=>new Date(b.timeIn)-new Date(a.timeIn)));
+  return {weeks,undated};
+}
+function employeeHistoryTimestamp(value,{date=false}={}){
+  if(!value) return "Not recorded";
+  if(!Number.isFinite(new Date(value).getTime())) return "Invalid date/time";
+  return new Date(value).toLocaleString("en-AU",{timeZone:"Australia/Sydney",
+    ...(date?{weekday:"short",day:"numeric",month:"short",year:"numeric"}:{hour:"numeric",minute:"2-digit"})});
+}
+function renderEmployeeHistoryRecord(a){
+  const dateLabel=employeeHistoryTimestamp(a.timeIn,{date:true});
+  return `<button type="button" class="card history-record" data-emp-att="${escapeHtml(a.id)}" aria-label="View attendance: ${escapeHtml(dateLabel)}; In: ${escapeHtml(employeeHistoryTimestamp(a.timeIn))}; Out: ${a.timeOut?escapeHtml(employeeHistoryTimestamp(a.timeOut)):'Not recorded'}; Status: ${escapeHtml(a.status||'Not recorded')}; Session: ${escapeHtml(a.id)}">
+    <span class="row-between"><b class="small">${escapeHtml(dateLabel)}</b>${attStatusPill(escapeHtml(a.status))}</span>
+    <span class="small muted" style="display:block;margin-top:4px;">${escapeHtml(jobName(a.jobId))}${a.category?` · ${escapeHtml(a.category)}`:""}</span>
+    <span class="row-between" style="margin-top:8px;">
+      <span class="small">In: <b>${escapeHtml(employeeHistoryTimestamp(a.timeIn))}</b></span>
+      <span class="small">Out: <b>${a.timeOut?escapeHtml(employeeHistoryTimestamp(a.timeOut)):'—'}</b></span>
+      <span class="small">Net: <b>${a.netMin!=null?hm(a.netMin):'—'}</b></span>
+    </span>
+  </button>`;
+}
 function screenHistory(){
-  const emp = currentEmployee();
-  const list = DB.attendance.filter(a=>a.employeeId===emp.id).sort((a,b)=>new Date(b.timeIn)-new Date(a.timeIn));
+  const emp=currentEmployee();
+  if(!emp || !hasPersonalSelfServiceAccess()) return `<div class="content"><div class="empty">Attendance history unavailable.</div></div>`;
+  const {weeks,undated}=employeeHistoryWeeks(DB.attendance,emp.id);
   return `
   <div class="topbar"><div class="h2">Attendance History</div></div>
   <div class="content">
-    ${list.map(a=>`
-      <div class="card" style="margin-bottom:10px;cursor:pointer;" data-emp-att="${a.id}">
-        <div class="row-between">
-          <b class="small">${fmtDate(a.timeIn)}</b>
-          ${attStatusPill(a.status)}
-        </div>
-        <div class="small muted" style="margin-top:4px;">${escapeHtml(jobName(a.jobId))}${a.category?` · ${escapeHtml(a.category)}`:""}</div>
-        <div class="row-between" style="margin-top:8px;">
-          <span class="small">In: <b>${fmtTime(a.timeIn)}</b></span>
-          <span class="small">Out: <b>${a.timeOut?fmtTime(a.timeOut):'—'}</b></span>
-          <span class="small">Net: <b>${a.netMin!=null?hm(a.netMin):'—'}</b></span>
-        </div>
-      </div>`).join("")}
-    ${list.length===0? `<div class="empty">No attendance records yet.</div>`:""}
+    <p class="small muted">Friday–Thursday workweeks · Australia/Sydney · All loaded records</p>
+    ${weeks.map(week=>`<section class="history-week" aria-label="Week ${formatReviewPeriodDate(week.periodStart,true)} to ${formatReviewPeriodDate(week.displayEnd,true)}">
+      <h3 class="history-week-heading">${formatReviewPeriodDate(week.periodStart,true)} – ${formatReviewPeriodDate(week.displayEnd,true)}</h3>
+      ${week.attendance.map(renderEmployeeHistoryRecord).join("")}
+    </section>`).join("")}
+    ${undated.length?`<section class="history-week" aria-label="Invalid or undated attendance"><h3 class="history-week-heading">Invalid or undated records</h3><p class="small muted">Preserved as recorded; the workweek cannot be determined.</p>${undated.map(renderEmployeeHistoryRecord).join("")}</section>`:""}
+    ${!weeks.length&&!undated.length?`<div class="empty">No attendance records yet.</div>`:""}
   </div>`;
 }
 
@@ -3845,13 +4034,16 @@ function screenProfile(){
       <div class="avatar" style="width:52px;height:52px;font-size:18px;">${initials(emp.name)}</div>
       <div><div class="h2">${escapeHtml(emp.name)}</div><div class="muted small">${escapeHtml(emp.role)} · ${escapeHtml(emp.department)}</div></div>
     </div>
+    <div class="ui4-placeholder">
+      <button type="button" class="btn btn-ghost btn-sm" id="ui4UploadProfilePhoto" disabled aria-describedby="ui4ProfilePhotoNote">Upload Profile Photo</button>
+      <p class="ui4-note" id="ui4ProfilePhotoNote">Profile photo upload pending secure storage approval.</p>
+    </div>
     <div class="card col gap-10" style="margin-bottom:16px;">
       <div class="row-between small"><span class="muted">Email</span><b>${escapeHtml(emp.email)}</b></div>
       <div class="row-between small"><span class="muted">Pay category</span><b>${escapeHtml(emp.payCategory)}</b></div>
       <div class="row-between small"><span class="muted">Status</span><b style="color:var(--ok)">Active</b></div>
     </div>
     <button class="btn btn-ghost btn-block" id="viewPrivacy" style="margin-bottom:10px;">Privacy &amp; Permissions</button>
-    <button class="btn btn-outline-danger btn-block" id="logoutBtn">Log Out</button>
   </div>`;
 }
 
@@ -3902,7 +4094,7 @@ function bindScreen(){
   if($("goWorklog")) $("goWorklog").onclick = ()=> go("worklog-add");
   if($("addWl")) $("addWl").onclick = ()=> go("worklog-add");
   if($("viewPrivacy")) $("viewPrivacy").onclick = ()=> { PRIVACY_FROM_LOGIN=false; go("privacy"); };
-  if($("logoutBtn")) $("logoutBtn").onclick = async () => {
+  if(DB.session?.role==="Employee" && $("logoutBtn")) $("logoutBtn").onclick = async () => {
   const employee = currentEmployee();
 
   if(employee){
@@ -4051,6 +4243,7 @@ function renderAdminShell(){
     ["admin-dashboard","📊","Dashboard"],
     ["admin-employees","👥","Employees"],
     ["admin-jobs","🧰","Jobs"],
+    ["admin-job-progress","🔨","Job Progress"],
     ["admin-timesheets","🧾","Timesheets"],
     ["admin-reports","📈","Reports"],
     ["admin-payroll","💵","Payroll"],
@@ -4085,6 +4278,7 @@ function renderAdminShell(){
     "admin-employee-detail": screenAdminEmployeeDetail,
     "admin-jobs": screenAdminJobs,
     "admin-job-detail": screenAdminJobDetail,
+    "admin-job-progress": screenJobProgressPlaceholder,
     "admin-att-detail": screenAdminAttDetail,
     "admin-timesheets": screenAdminTimesheets,
     "admin-reports": screenAdminReports,
@@ -4102,14 +4296,15 @@ function renderAdminShell(){
     "history": screenHistory,
     "emp-att-detail": screenEmpAttDetail,
   })[route.name] || screenAdminDash;
+  const activeTab=parentNavigationTab();
 
   if(isWide()){
     return `<div class="layout">
       <div class="sidebar">
         <div class="row gap-8" style="padding:8px 10px 20px;"><div style="background:#000;border-radius:8px;padding:4px 8px;display:flex;align-items:center;"><img src="${LOGO_DATA_URL}" alt="Upstage Co" style="width:34px;height:auto;display:block;"></div><div><b>Upstage Co</b><div class="tiny muted">Attendance &amp; Break Log</div></div></div>
-        ${tabs.map(([k,i,l])=>`<button class="sidebtn ${route.name===k?'active':''}" data-nav="${k}">${i}&nbsp; ${l}</button>`).join("")}
-        <div style="flex:1;"></div>
-        <button class="sidebtn" id="logoutBtn">🚪 Log Out</button>
+        ${tabs.map(([k,i,l])=>`<button class="sidebtn ${activeTab===k?'active':''}" ${activeTab===k?'aria-current="page"':''} data-nav="${k}">${i}&nbsp; ${l}</button>`).join("")}
+        <button class="sidebtn" id="logoutBtn" type="button">${powerOffIcon()} Log Out</button>
+        ${appearanceControlMarkup()}
       </div>
       <div class="main scroll">${body()}</div>
     </div>`;
@@ -4118,14 +4313,70 @@ function renderAdminShell(){
     <div class="topbrand"><div style="background:#000;border-radius:6px;padding:3px 6px;display:flex;align-items:center;"><img src="${LOGO_DATA_URL}" alt="Upstage Co" style="width:22px;height:auto;display:block;"></div><b class="small">Upstage Co</b></div>
     <div class="scroll" style="flex:1;">${body()}</div>
     <div class="bottomnav" style="overflow-x:auto;justify-content:flex-start;">
-      ${tabs.map(([k,i,l])=>`<button class="navbtn ${route.name===k?'active':''}" data-nav="${k}" style="flex:0 0 auto;min-width:64px;"><span class="navico">${i}</span>${l}</button>`).join("")}
+      ${tabs.map(([k,i,l])=>`<button class="navbtn ${activeTab===k?'active':''}" ${activeTab===k?'aria-current="page"':''} data-nav="${k}" style="flex:0 0 auto;min-width:64px;"><span class="navico">${i}</span>${l}</button>`).join("")}
+      <div class="admin-nav-actions">
+        <button class="navbtn" id="logoutBtn" type="button"><span class="navico">${powerOffIcon()}</span>Log Out</button>
+        ${appearanceControlMarkup()}
+      </div>
     </div>`;
 }
 function bindAdminShell(){
+  bindAppearanceControls();
   document.querySelectorAll("[data-nav]").forEach(b=> b.onclick = ()=> go(b.dataset.nav));
   const lo=document.getElementById("logoutBtn"); if(lo) lo.onclick=async()=>{ await audit(DB.session.name,"Logged out",`${DB.session.role} session`,""); const {error}=await supabaseClient.auth.signOut(); if(error){console.error("Logout error:",error);toast("Unable to log out. Please try again.");return;} stopCoreRealtime(); DB.session=null; adminAuditSyncState="idle"; save(); go("login"); };
   if(SELF_SERVICE_ROUTES.includes(route.name)){ bindScreen(); }
   else { bindAdminScreen(); }
+}
+
+function screenJobProgressPlaceholder(){
+  if(!canAccess("admin-job-progress")) return "";
+  return `<div class="topbar"><div class="h2">Job Progress Dashboard</div></div>
+    <div class="content job-progress-placeholder">
+      <span class="stage-development-badge">IN DEVELOPMENT</span>
+      <svg class="stage-illustration" viewBox="0 0 540 300" role="img" aria-labelledby="stageBuildTitle stageBuildDescription">
+        <title id="stageBuildTitle">A carpenter building a stage</title>
+        <desc id="stageBuildDescription">A friendly carpenter arrives, assembles three deck panels and fastens them. A backdrop and stage lights complete the illustration. This is decorative, not a progress indicator.</desc>
+        <rect x="20" y="20" width="500" height="260" rx="30" fill="#f1f5f5"/>
+        <ellipse cx="290" cy="254" rx="185" ry="13" fill="#dce5e4"/>
+        <g class="stage-backdrop">
+          <path d="M244 196V64h212v132" fill="#dce9ed" stroke="#527583" stroke-width="7" stroke-linejoin="round"/>
+          <path d="M250 70h200v18H250z" fill="#527583"/>
+          <path d="m264 85 18 37 18-37m96 0 18 37 18-37" fill="#f0c45c" opacity=".55"/>
+          <rect x="274" y="80" width="17" height="15" rx="4" fill="#233f4a"/>
+          <rect x="405" y="80" width="17" height="15" rx="4" fill="#233f4a"/>
+          <path d="M330 139h40m-50 12h60" stroke="#a6bec5" stroke-width="5" stroke-linecap="round"/>
+        </g>
+        <path d="M210 208h258v20H210z" fill="#46636c"/>
+        <path d="M223 228v20m80-20v20m80-20v20m70-20v20" stroke="#354e58" stroke-width="10"/>
+        <path d="m210 208 18-20h258l-18 20z" fill="#c2cecb" stroke="#8a9b97" stroke-width="2"/>
+        <g stroke="#9d7444" stroke-width="2" stroke-linejoin="round">
+          <path class="stage-panel" d="m210 208 18-20h84l-18 20z" fill="#e8bf80"/>
+          <path class="stage-panel stage-panel-two" d="m296 208 18-20h84l-18 20z" fill="#f1cf99"/>
+          <path class="stage-panel stage-panel-three" d="m382 208 18-20h86l-18 20z" fill="#e8bf80"/>
+        </g>
+        <g class="stage-carpenter">
+          <path d="m132 210-9 33m32-33 9 33" stroke="#304958" stroke-width="15" stroke-linecap="round"/>
+          <path d="M111 247h19m25 0h23" stroke="#233540" stroke-width="10" stroke-linecap="round"/>
+          <path d="M122 152q22-12 43 0l3 60h-49z" fill="#e4a653"/>
+          <path d="M132 149v26h23v-26m-34 36h46v27h-46z" fill="#548797"/>
+          <path d="m124 159-16 33 15 10" fill="none" stroke="#edba94" stroke-width="12" stroke-linecap="round"/>
+          <circle cx="144" cy="124" r="24" fill="#f1c8a7"/>
+          <path d="M118 119q0-30 27-30t27 30z" fill="#edbd48"/>
+          <path d="M115 119h60m-30-27v19" stroke="#c99629" stroke-width="6" stroke-linecap="round"/>
+          <circle cx="153" cy="128" r="2.3" fill="#35454c"/>
+          <path d="M146 138q7 5 13-1" fill="none" stroke="#975e45" stroke-width="2.5" stroke-linecap="round"/>
+          <g class="stage-hammer">
+            <path d="m163 158 20 15 14-15" fill="none" stroke="#edba94" stroke-width="12" stroke-linecap="round"/>
+            <path d="m197 163 13-27" stroke="#9b7043" stroke-width="7" stroke-linecap="round"/>
+            <path d="m199 132 24 10 5-10-24-10z" fill="#4b6570"/>
+          </g>
+          <path d="M120 190h48v9h-48z" fill="#8f6746"/>
+          <rect x="140" y="189" width="10" height="11" rx="2" fill="#efcf7f"/>
+        </g>
+      </svg>
+      <h2 class="stage-quote">&ldquo;Great stages take time to build. So do great features!&rdquo;</h2>
+      <p class="muted stage-caption">Our Job Progress Dashboard is under construction. Stay tuned for the big reveal!</p>
+    </div>`;
 }
 
 function todayStats(){
@@ -4264,6 +4515,13 @@ function screenAdminEmployeeDetail(){
       <div class="row-between small"><span class="muted">Default location</span><b>${escapeHtml(e.defaultLocation||'—')}</b></div>
       <div class="row-between small"><span class="muted">Permission level</span><b>${escapeHtml(e.permission)}</b></div>
     </div>
+    ${DB.session?.role==="Super Admin"?`<div class="ui4-placeholder">
+      <div class="ui4-controls">
+        <button type="button" class="btn btn-ghost btn-sm" id="ui4DisableEmployee" disabled aria-describedby="ui4EmployeeStatusNote">Disable Employee</button>
+        <button type="button" class="btn btn-ghost btn-sm" id="ui4ReactivateEmployee" disabled aria-describedby="ui4EmployeeStatusNote">Reactivate Employee</button>
+      </div>
+      <p class="ui4-note" id="ui4EmployeeStatusNote">Account status changes pending security approval. Existing records will be preserved.</p>
+    </div>`:""}
     ${canManageAttendance?`<div class="card" style="margin-bottom:16px;"><button class="btn btn-accent btn-block" id="manageAttendance">Manage Attendance</button></div>`:""}
     <div class="grid2" style="margin-bottom:16px;">
       <div class="kpi"><div class="num">${hm(weekMin)}</div><div class="lab">Hours this week</div></div>
@@ -4329,18 +4587,73 @@ function screenAdminAttDetail(){
   </div>`;
 }
 
+/* Presentation only: dates are existing calendar dates, never inferred from names. */
+function jobPresentationDate(job){
+  for(const value of [job.start,job.end]){
+    if(typeof value!=="string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) continue;
+    const date=new Date(`${value}T00:00:00Z`);
+    if(Number.isFinite(date.getTime()) && date.toISOString().slice(0,10)===value) return value;
+  }
+  return "";
+}
+function filteredPresentationJobs(jobs=DB.jobs,filters=jobsPresentation){
+  return [...jobs].filter(job=>{
+    const date=jobPresentationDate(job);
+    return (!filters.projectId || String(job.projectId)===filters.projectId)
+      && (!filters.jobId || String(job.id)===filters.jobId)
+      && (!filters.status || JSON.stringify(String(job.status??""))===filters.status)
+      && (!filters.month || date.slice(5,7)===filters.month)
+      && (!filters.year || (filters.year==="undated"?!date:date.slice(0,4)===filters.year));
+  }).sort((a,b)=>(jobPresentationDate(a)||"9999-99-99").localeCompare(jobPresentationDate(b)||"9999-99-99")
+    || String(a.name||"").localeCompare(String(b.name||"")) || String(a.id).localeCompare(String(b.id)));
+}
 function screenAdminJobs(){
   const canManageThisJobSet = canManageJobs();
+  const jobs=filteredPresentationJobs();
+  const projectIds=[...new Set(DB.jobs.map(job=>job.projectId).filter(id=>id!=null).map(String))];
+  const projects=projectIds.map(id=>({id,name:(DB.projects||[]).find(project=>String(project.id)===id)?.name||"Project name unavailable"}));
+  const statuses=[...new Set(["Active","Upcoming","Completed",...DB.jobs.map(job=>String(job.status??""))])];
+  const years=[...new Set(DB.jobs.map(job=>jobPresentationDate(job).slice(0,4)).filter(Boolean))].sort().reverse();
+  const option=(value,label,selected)=>`<option value="${escapeHtml(value)}" ${value===selected?"selected":""}>${escapeHtml(label)}</option>`;
+  const groups=["Active","Upcoming","Completed","Other / Unknown"];
   return `
-  <div class="topbar"><div class="h2">Jobs</div>${canManageThisJobSet?`<button class="btn btn-accent btn-sm" id="addJob">+ New Job</button>`:""}</div>
+  <div class="topbar"><div class="h2">Jobs</div><div class="jobs-toolbar">
+    <button class="btn btn-ghost btn-sm" id="jobsFilterToggle" aria-controls="jobsFilters" aria-expanded="${jobsPresentation.filtersOpen}">Filter</button>
+    <div class="ui4-job-control">
+      <button type="button" class="btn btn-ghost btn-sm" id="ui4JobsImport" disabled aria-describedby="ui4JobsImportNote">Import</button>
+      <p class="ui4-note" id="ui4JobsImportNote">Import pending approved validation and authorization workflow.</p>
+    </div>
+    <div class="ui4-job-control">
+      <button type="button" class="btn btn-ghost btn-sm" id="ui4JobsExport" disabled aria-describedby="ui4JobsExportNote">Export</button>
+      <p class="ui4-note" id="ui4JobsExportNote">Export pending reviewed Jobs serializer.</p>
+    </div>
+    ${canManageThisJobSet?`<button class="btn btn-accent btn-sm" id="addJob">+ New Job</button>`:""}
+  </div></div>
   <div class="content">
-    ${DB.jobs.map(j=>`<div class="card" style="margin-bottom:10px;cursor:pointer;" data-job2="${j.id}">
-      <div class="row-between"><b>${escapeHtml(j.name)}</b>
-        <span class="pill ${j.status==='Active'?'pill-ok':j.status==='Upcoming'?'pill-warn':'pill-muted'}">${j.status}</span>
+    <div id="jobsFilters" class="card" ${jobsPresentation.filtersOpen?"":"hidden"} style="margin-bottom:12px;">
+      <div class="jobs-filter-grid">
+        <div><label for="jobsProjectFilter">Project</label><select id="jobsProjectFilter" data-jobs-filter="projectId">${option("","All projects",jobsPresentation.projectId)}${projects.map(project=>option(project.id,project.name,jobsPresentation.projectId)).join("")}</select></div>
+        <div><label for="jobsNameFilter">Job name</label><select id="jobsNameFilter" data-jobs-filter="jobId">${option("","All jobs",jobsPresentation.jobId)}${[...DB.jobs].sort((a,b)=>String(a.name||"").localeCompare(String(b.name||""))).map(job=>option(String(job.id),`${job.name||"Unnamed job"} (#${job.number||job.id})`,jobsPresentation.jobId)).join("")}</select></div>
+        <div><label for="jobsStatusFilter">Status</label><select id="jobsStatusFilter" data-jobs-filter="status">${option("","All statuses",jobsPresentation.status)}${statuses.map(status=>option(JSON.stringify(status),status||"Unknown / missing",jobsPresentation.status)).join("")}</select></div>
+        <div><label for="jobsMonthFilter">Month</label><select id="jobsMonthFilter" data-jobs-filter="month">${option("","All months",jobsPresentation.month)}${Array.from({length:12},(_,i)=>option(String(i+1).padStart(2,"0"),new Date(Date.UTC(2000,i,1)).toLocaleDateString("en-AU",{month:"long",timeZone:"UTC"}),jobsPresentation.month)).join("")}</select></div>
+        <div><label for="jobsYearFilter">Year</label><select id="jobsYearFilter" data-jobs-filter="year">${option("","All years",jobsPresentation.year)}${years.map(year=>option(year,year,jobsPresentation.year)).join("")}${option("undated","Undated",jobsPresentation.year)}</select></div>
       </div>
-      <div class="tiny muted" style="margin-top:4px;">#${j.number} · ${escapeHtml(j.client)} · ${escapeHtml(j.venue)}, ${escapeHtml(j.location)}</div>
+      <button class="btn btn-ghost btn-sm" id="jobsFilterReset" style="margin-top:10px;">Reset filters</button>
+    </div>
+    <div class="tiny muted" style="margin-bottom:12px;">${jobs.length} of ${DB.jobs.length} jobs. Sorted oldest first by valid start date, then end-date fallback; undated jobs last. Month/year use the same date.</div>
+    ${groups.map(group=>{
+      const rows=jobs.filter(job=>group==="Other / Unknown"?!["Active","Upcoming","Completed"].includes(job.status):job.status===group);
+      return `<details class="jobs-section" data-jobs-section="${group}" ${jobsPresentation.closedSections.has(group)?"":"open"}>
+      <summary>${group} (${rows.length})</summary>
+      ${rows.map(j=>`<div class="card" style="margin-bottom:10px;cursor:pointer;" data-job2="${escapeHtml(j.id)}">
+      <div class="row-between"><b>${escapeHtml(j.name)}</b>
+        <span class="pill ${j.status==='Active'?'pill-ok':j.status==='Upcoming'?'pill-warn':'pill-muted'}">${escapeHtml(j.status||"Unknown")}</span>
+      </div>
+      <div class="tiny muted" style="margin-top:4px;">#${escapeHtml(j.number)} · ${escapeHtml(j.client)} · ${escapeHtml(j.venue)}, ${escapeHtml(j.location)}</div>
+      <div class="tiny muted" style="margin-top:2px;">${escapeHtml((DB.projects||[]).find(project=>project.id===j.projectId)?.name||(j.projectId?"Project name unavailable":"Standalone job"))} · ${jobPresentationDate(j)||"Undated"}</div>
       <div class="tiny muted" style="margin-top:2px;">${j.assigned.length} employees assigned</div>
-    </div>`).join("")}
+    </div>`).join("")}${rows.length?"":`<div class="empty small">No matching jobs.</div>`}</details>`;
+    }).join("")}
   </div>`;
 }
 function screenAdminJobDetail(){
@@ -4483,6 +4796,10 @@ function screenAdminTimesheets(){
 
     ${renderAttendanceActivitySection("RECENT ATTENDANCE ACTIVITY",recentPeriods,"recent",jobEntriesByAttendance)}
     ${renderAttendanceActivitySection("ARCHIVED ATTENDANCE ACTIVITY",archivePeriods,"archive",jobEntriesByAttendance)}
+    ${DB.session?.role==="Super Admin"?`<div class="ui4-placeholder">
+      <button type="button" class="btn btn-ghost btn-sm" id="ui4FullAttendanceArchive" disabled aria-describedby="ui4ArchiveNote">Full Attendance Archive</button>
+      <p class="ui4-note" id="ui4ArchiveNote">Full attendance archive pending scope and retention review.</p>
+    </div>`:""}
   </div>`;
 }
 
@@ -4498,23 +4815,30 @@ function screenAdminReports(){
   <div class="topbar"><div class="h2">Reports</div></div>
   <div class="content">
     <div class="field">
-      <label>Report type</label>
+      <label for="repType">Report type</label>
       <select id="repType">${reportTypes.map(([k,l])=>`<option value="${k}">${l}</option>`).join("")}</select>
     </div>
-    <div class="card col gap-12" style="margin-bottom:16px;">
-      <div class="grid2">
-        <div><label>Employee</label><select id="repEmp"><option value="">All</option>${empOpts}</select></div>
-        <div><label>Job</label><select id="repJob"><option value="">All</option>${jobOpts}</select></div>
+    <div class="card col gap-12" role="group" aria-label="Report filters" style="margin-bottom:16px;">
+      <div class="grid2 reports-filter-grid">
+        <div><label for="repEmp">Employee</label><select id="repEmp"><option value="">All</option>${empOpts}</select></div>
+        <div><label for="repJob">Job</label><select id="repJob"><option value="">All</option>${jobOpts}</select></div>
       </div>
-      <div class="grid2">
-        <div><label>Department</label><select id="repDept"><option value="">All</option>${deptOpts}</select></div>
-        <div><label>Status</label><select id="repStatus"><option value="">All</option><option value="draft">Draft</option><option value="submitted">Submitted</option><option value="approved">Approved</option><option value="rejected">Rejected</option><option value="corrected">Corrected</option><option value="open">Open</option></select></div>
+      <div class="grid2 reports-filter-grid">
+        <div><label for="repDept">Department</label><select id="repDept"><option value="">All</option>${deptOpts}</select></div>
+        <div><label for="repStatus">Status</label><select id="repStatus"><option value="">All</option><option value="draft">Draft</option><option value="submitted">Submitted</option><option value="approved">Approved</option><option value="rejected">Rejected</option><option value="corrected">Corrected</option><option value="open">Open</option></select></div>
       </div>
-      <div class="grid2">
-        <div><label>From</label><input type="date" id="repFrom"></div>
-        <div><label>To</label><input type="date" id="repTo"></div>
+      <div class="grid2 reports-filter-grid">
+        <div><label for="repFrom">From date</label><input type="date" id="repFrom"></div>
+        <div><label for="repTo">To date</label><input type="date" id="repTo"></div>
       </div>
-      <button class="btn btn-accent btn-block" id="runReport">Run Report</button>
+      <button class="btn btn-accent btn-block" type="button" id="runReport">Run Report</button>
+    </div>
+    <div class="ui4-placeholder">
+      <div class="ui4-controls">
+        <button type="button" class="btn btn-ghost btn-sm" id="ui4AllReportsCsv" disabled aria-describedby="ui4CombinedExportNote">All Reports CSV</button>
+        <button type="button" class="btn btn-ghost btn-sm" id="ui4AllReportsPdf" disabled aria-describedby="ui4CombinedExportNote">All Reports PDF</button>
+      </div>
+      <p class="ui4-note" id="ui4CombinedExportNote">Combined export pending format and security validation.</p>
     </div>
     <div id="reportResults"></div>
   </div>`;
@@ -4838,8 +5162,35 @@ function screenAdminSettings(){
 }
 
 /* ---------------- Admin bindings ---------------- */
+function bindPresentationExpansion(details,state,key,{closedKeys=false}={}){
+  const remember=()=>{
+    if(!details.isConnected) return;
+    if(closedKeys?!details.open:details.open) state.add(key);
+    else state.delete(key);
+  };
+  const summary=details.querySelector(":scope > summary");
+  if(summary) summary.onclick=event=>{
+    if(event.target.closest("a,button,input,select,textarea")) return;
+    event.preventDefault();
+    details.open=!details.open;
+    remember(); // Capture synchronously before an asynchronous rerender can replace the node.
+  };
+  details.ontoggle=remember;
+}
 function bindAdminScreen(){
   const $ = id=>document.getElementById(id);
+  if(route.name==="admin-jobs"){
+    if($("jobsFilterToggle")) $("jobsFilterToggle").onclick=()=>{jobsPresentation.filtersOpen=!jobsPresentation.filtersOpen;render();};
+    document.querySelectorAll("[data-jobs-filter]").forEach(control=>control.onchange=()=>{
+      if(!["projectId","jobId","status","month","year"].includes(control.dataset.jobsFilter)) return;
+      jobsPresentation[control.dataset.jobsFilter]=control.value;
+      if(control.dataset.jobsFilter==="year" && control.value==="undated") jobsPresentation.month="";
+      if(control.dataset.jobsFilter==="month" && control.value && jobsPresentation.year==="undated") jobsPresentation.year="";
+      render();
+    });
+    if($("jobsFilterReset")) $("jobsFilterReset").onclick=()=>{Object.assign(jobsPresentation,{projectId:"",jobId:"",status:"",month:"",year:""});render();};
+    document.querySelectorAll("details[data-jobs-section]").forEach(details=>bindPresentationExpansion(details,jobsPresentation.closedSections,details.dataset.jobsSection,{closedKeys:true}));
+  }
   if(route.name==="admin-timesheets"){
     const visibleEmployees=attendanceReviewVisibleEmployees();
     const visiblePeriods=[...buildAttendanceReviewPeriods(DB.attendance,visibleEmployees),
@@ -4849,22 +5200,13 @@ function bindAdminScreen(){
     void fetchAttendanceApprovalHistory();
   }
   document.querySelectorAll("details[data-attendance-review-key]").forEach(details=>{
-    details.ontoggle=()=>{
-      if(details.open) attendanceReviewExpandedPeriods.add(details.dataset.attendanceReviewKey);
-      else attendanceReviewExpandedPeriods.delete(details.dataset.attendanceReviewKey);
-    };
+    bindPresentationExpansion(details,attendanceReviewExpandedPeriods,details.dataset.attendanceReviewKey);
   });
   document.querySelectorAll("details[data-attendance-projects-key]").forEach(details=>{
-    details.ontoggle=()=>{
-      if(details.open) attendanceProjectsExpandedSessions.add(details.dataset.attendanceProjectsKey);
-      else attendanceProjectsExpandedSessions.delete(details.dataset.attendanceProjectsKey);
-    };
+    bindPresentationExpansion(details,attendanceProjectsExpandedSessions,details.dataset.attendanceProjectsKey);
   });
   document.querySelectorAll("details[data-attendance-breaks-key]").forEach(details=>{
-    details.ontoggle=()=>{
-      if(details.open) attendanceBreaksExpandedGroups.add(details.dataset.attendanceBreaksKey);
-      else attendanceBreaksExpandedGroups.delete(details.dataset.attendanceBreaksKey);
-    };
+    bindPresentationExpansion(details,attendanceBreaksExpandedGroups,details.dataset.attendanceBreaksKey);
   });
   document.querySelectorAll("[data-edit-attendance]").forEach(button=>{
     button.onclick=()=>openAttendanceCorrectionEditor(button.dataset.editAttendance);
@@ -5698,17 +6040,21 @@ else if(type==="location"){
 }
   window.__lastReportHeader = header; window.__lastReportRows = tableRows;
   el.innerHTML = `
-    <div class="row-between" style="margin:16px 0 10px;"><div class="h3">${title}</div>
+    <div class="reports-toolbar"><h3 class="h3" id="reportResultsHeading">${escapeHtml(title)}</h3>
       <div class="row gap-8">
-        <button class="btn btn-ghost btn-sm" id="expCsv">Export CSV</button>
-        <button class="btn btn-ghost btn-sm" id="expPdf">Export PDF</button>
+        <button class="btn btn-ghost btn-sm" type="button" id="expCsv">Export CSV</button>
+        <button class="btn btn-ghost btn-sm" type="button" id="expPdf">Export PDF</button>
       </div>
     </div>
+    <div class="report-table-scroll" role="region" aria-labelledby="reportResultsHeading" tabindex="0">
     <table>
-      <tr>${header.map(h=>`<th>${h}</th>`).join("")}</tr>
+      <caption class="sr-only">Report results</caption>
+      <thead><tr>${header.map(h=>`<th scope="col">${escapeHtml(h)}</th>`).join("")}</tr></thead>
+      <tbody>
       ${tableRows.map(r=>`<tr>${r.map(v=>`<td>${escapeHtml(String(v))}</td>`).join("")}</tr>`).join("")}
       ${tableRows.length===0? `<tr><td colspan="${header.length}" class="muted" style="text-align:center;padding:16px;">No matching records</td></tr>`:""}
-    </table>`;
+      </tbody>
+    </table></div>`;
   document.getElementById("expCsv").onclick = exportCSV;
   document.getElementById("expPdf").onclick=exportPDF;
 }
@@ -5776,3 +6122,4 @@ setInterval(()=>{
 
 </body>
 </html>
+ 
