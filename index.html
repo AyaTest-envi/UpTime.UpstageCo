@@ -3183,7 +3183,6 @@ function screenEmpHome(){
     todayMin += Math.max(0, elapsed - breaksSoFar - (openBrk? mins(new Date()-new Date(openBrk.start)) : 0));
   }
   const activeJobEntry=liveState.activeJobEntry;
-  const job=activeJobEntry?DB.jobs.find(j=>j.id===activeJobEntry.jobId):null;
   const visibleJobs=employeeVisibleJobs(emp.id,activeJobEntry?.jobId);
   const renderedJobs=activeJobEntry
     ? [...visibleJobs.filter(j=>j.id===activeJobEntry.jobId),...visibleJobs.filter(j=>j.id!==activeJobEntry.jobId)]
@@ -3199,23 +3198,56 @@ function screenEmpHome(){
   const todaysLogs = DB.worklogs.filter(w=>w.employeeId===emp.id && sydneyDateKey(w.start)===todayKey);
   const jobRecapGroups=buildProjectJobRecap(todaysJobEntries,DB.jobs,DB.projects||[]);
   const breakSecs = openBrk ? Math.floor((Date.now()-new Date(openBrk.start).getTime())/1000) : 0;
+  const selectedJob=activeJobEntry
+    ? renderedJobs.find(j=>j.id===activeJobEntry.jobId)||null
+    : null;
+  const otherJobs=renderedJobs.filter(j=>
+    j.id!==selectedJob?.id &&
+    j.assigned.includes(emp.id) &&
+    j.status!=="Completed"
+  );
+  const detailText=value=>escapeHtml(String(value??"").trim()||"Not provided");
+  const projectTitle=j=>{
+    const project=(DB.projects||[]).find(p=>p.id===j.projectId);
+    return j.projectId
+      ? escapeHtml(project?.name?.trim()||"Project name unavailable")
+      : detailText(j.name);
+  };
+  const jobContext=j=>`
+    <div class="small muted" style="margin-top:8px;overflow-wrap:anywhere;">
+      Venue: ${detailText(j.venue)} · Location: ${detailText(j.location)} · Manager: ${detailText(j.manager)}
+    </div>`;
+  const jobWork=j=>`
+    <div class="divider"></div>
+    <div class="col gap-12 small" style="min-width:0;overflow-wrap:anywhere;">
+      <div><div class="muted">Job / Work</div><b>${detailText(j.name)}</b></div>
+      <div><div class="muted">Assigned To</div>${j.assigned.includes(emp.id)?detailText(emp.name):"Not provided"}</div>
+      <div><div class="muted">Work To Do</div>No work tasks available.</div>
+      <div class="grid2">
+        <div><div class="muted">Planned Start Date</div>${detailText(j.start)}</div>
+        <div><div class="muted">Planned End Date</div>${detailText(j.end)}</div>
+      </div>
+    </div>`;
+  const renderJobCard=(j,active)=>`
+    <div class="card card-tight" style="margin-bottom:8px;${active?"background:#effcf3;":""}">
+      <div style="min-width:0;overflow-wrap:anywhere;">
+        <b class="${active?"h2":""}">${projectTitle(j)}</b>
+        <div class="tiny muted">${detailText(j.name)} · ${escapeHtml(j.number||"")}</div>
+      </div>
+      ${active?`${jobContext(j)}<div class="small" style="margin-top:8px;">Active job</div>`:""}
+      ${active||openAtt?`
+        <button class="btn ${active?"btn-danger":"btn-accent"} btn-block" style="margin-top:8px;" ${active?`data-end-job="${j.id}"`:`data-start-job="${j.id}"`}>${active?"⏹ End Job":"▶ Start Job"}</button>
+      `:""}
+      ${active?jobWork(j):`
+        <details style="margin-top:8px;">
+          <summary class="small" aria-label="${escapeHtml(`Preview ${j.name||"job"} (${j.number||j.id})`)}">Preview project/job details</summary>
+          ${jobContext(j)}${jobWork(j)}
+        </details>`}
+    </div>`;
 
   return `
   <div class="topbar"><div class="h2">${greeting}, ${escapeHtml(firstName)}</div><div class="row gap-8" style="align-items:center;justify-content:center;">${st==="break"?`<span id="statusTimer" data-since="${openBrk.start}" style="font-family:ui-monospace,Menlo,Consolas,monospace;font-size:15px;font-weight:700;color:var(--warn);">${hmsLive(breakSecs)}</span>`:""}${statusPill(st,activeBreakLabel,liveState.label)}</div></div>
   <div class="content">
-    <div class="card" style="margin-bottom:14px;">
-      <div class="row-between">
-        <div>
-          <div class="muted small">Current job</div>
-          <div class="h2">${job? escapeHtml(job.name) : "No job selected"}</div>
-        </div>
-        <div style="text-align:right;">
-          <div class="muted small">Since</div>
-          <div class="h2">${openAtt? fmtTime(openAtt.timeIn): "—"}</div>
-        </div>
-      </div>
-    </div>
-
     <div class="col gap-12" style="margin-bottom:20px;">
       ${st==="off" ? `
         <button class="btn btn-accent btn-block btn-lg" id="btnTimeIn">🟢 TIME IN</button>
@@ -3230,15 +3262,24 @@ function screenEmpHome(){
       `}
     </div>
 
-    <div class="row-between" style="margin-bottom:10px;"><div class="h3">TODAY'S WORK</div><a class="link small" id="goWorklog">Add +</a></div>
+    <div class="row-between" style="margin-bottom:10px;flex-wrap:wrap;gap:8px;">
+      <div class="h3">SELECTED PROJECT / EVENT</div>
+      <div style="text-align:right;">
+        <div class="muted small">Attendance since</div>
+        <div class="h2">${openAtt?fmtTime(openAtt.timeIn):"—"}</div>
+      </div>
+    </div>
+    ${selectedJob?renderJobCard(selectedJob,true):`
+      <div class="card card-tight" style="margin-bottom:8px;">
+        ${activeJobEntry?"Active job details unavailable.":"No job selected."}
+      </div>`}
 
-${(openAtt||activeJobEntry)?renderedJobs.filter(j=>openAtt||j.id===activeJobEntry.jobId).map(j=>{
-  const active=activeJobEntry?.jobId===j.id;
-  return `<div class="card card-tight" style="margin-bottom:8px;${active?"background:#effcf3;":""}">
-    <div class="row-between"><div><b>${escapeHtml(j.name)}</b><div class="tiny muted">${escapeHtml(j.number||"")}</div></div></div>
-    <button class="btn ${active?"btn-danger":"btn-accent"} btn-block" style="margin-top:8px;" ${active?`data-end-job="${j.id}"`:`data-start-job="${j.id}"`}>${active?"⏹ End Job":"▶ Start Job"}</button>
-  </div>`;
-}).join(""):""}
+    <div class="h3" style="margin:12px 0 10px;">Other Jobs / Projects</div>
+    ${otherJobs.length
+      ? otherJobs.map(j=>renderJobCard(j,false)).join("")
+      : `<div class="empty small">No other assigned jobs available.</div>`}
+
+    <div class="row-between" style="margin:14px 0 10px;"><div class="h3">TODAY'S WORK</div><a class="link small" id="goWorklog">Add +</a></div>
 
 ${jobRecapGroups.map(group=>`
   <details class="card card-tight" style="margin-bottom:8px;" data-work-recap-key="${escapeHtml(group.id)}" ${workRecapExpandedGroups.has(group.id)?"open":""}>
